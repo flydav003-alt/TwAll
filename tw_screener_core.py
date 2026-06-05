@@ -501,15 +501,14 @@ def calc_composite_tw(r):
         elif rsi >= 86:       score += 4
         elif rsi < 35:        score += 4
 
-    # 爆量 (15分) — 1.0~1.5x 主力溫和推進為最佳買點
+    # 爆量 (15分) — 1.0~2.0x 含爆量突破都給滿分，與K線分爆量加分區間對齊
     vr = r.get("volume_ratio")
     if vr is not None:
-        if   1.0 <= vr <= 1.5: score += 15
+        if   1.0 <= vr <= 2.0: score += 15
         elif 0.6 <= vr <  1.0: score += 11
-        elif 1.6 <= vr <= 2.0: score += 11
+        elif 2.1 <= vr <= 2.5: score += 11
         elif 0.3 <= vr <  0.6: score += 6
-        elif 2.1 <= vr <= 2.5: score += 6
-        elif vr > 2.5:         score += 3
+        elif vr > 2.5:         score += 6
         elif vr < 0.3:         score += 3
 
     # 法人連買 (15分) — 剛啟動 2~3 天為黃金期，過長遞減
