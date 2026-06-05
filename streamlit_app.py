@@ -206,6 +206,17 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .stats-empty{{padding:16px;color:var(--mid);font-size:13px;}}
 .stats-section-title{{padding:14px 14px 6px;font-size:13px;font-weight:700;color:var(--txt);}}
 .stats-scroll{{overflow-x:auto;}}
+.stats-tools{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--bdr);}}
+.stats-tools input{{
+  background:var(--bg);border:1px solid var(--bdr);color:var(--txt);
+  border-radius:6px;padding:7px 10px;font-size:13px;font-family:var(--sans);outline:none;
+}}
+.stats-tools input[type=text]{{width:220px;}}
+.stats-tools input[type=number]{{width:86px;}}
+.stats-tools input:focus{{border-color:var(--acc);}}
+.stats-tools label{{display:flex;align-items:center;gap:6px;color:var(--mid);font-size:12px;}}
+.stats-table th.stats-sort{{cursor:pointer;}}
+.stats-table th.stats-sort:hover{{color:var(--acc);}}
 @media(max-width:900px){{.stats-grid{{grid-template-columns:repeat(2,minmax(0,1fr));}}.stats-head{{align-items:flex-start;flex-direction:column;}}}}
 
 /* ── TABLE ── */
@@ -339,15 +350,15 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">K線分 ≥</span>
-    <input type="range" id="slK" min="0" max="100" step="5" value="0"
+    <input type="range" id="slK" min="0" max="100" step="5" value="75"
       oninput="updSlider(this,'kvK');applyFilter()">
-    <span class="sl-val" id="kvK">0</span>
+    <span class="sl-val" id="kvK">75</span>
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">綜合分 ≥</span>
-    <input type="range" id="slC" min="0" max="100" step="5" value="0"
+    <input type="range" id="slC" min="0" max="100" step="5" value="80"
       oninput="updSlider(this,'kvC');applyFilter()">
-    <span class="sl-val" id="kvC">0</span>
+    <span class="sl-val" id="kvC">80</span>
   </div>
 </div>
 
@@ -407,6 +418,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 const RAW = {rows_json};
 const STATS = {stats_json};
 let sortKey='kline', sortAsc=false;
+let statsSortKey='trade_date', statsSortAsc=false;
 const SC={{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3","📉量縮整理":"s4"}};
 const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
@@ -481,13 +493,22 @@ function pct(v){{
   return `${{n>0?'+':''}}${{n.toFixed(2)}}%`;
 }}
 function outcomePct(v){{
-  if(v==null || Number.isNaN(Number(v)))return'<span class="iz">待成熟</span>';
+  if(v==null || Number.isNaN(Number(v)))return'<span class="iz">pending</span>';
   const n=Number(v), cls=n>=0?'pos':'neg';
   return `<span class="${{cls}}">${{n>0?'+':''}}${{n.toFixed(2)}}%</span>`;
 }}
 function rate(v){{
   if(v==null || Number.isNaN(Number(v)))return'-';
   return `${{Number(v).toFixed(1)}}%`;
+}}
+function statCell(v){{
+  if(v==null || Number.isNaN(Number(v)))return'<span class="iz">pending</span>';
+  const n=Number(v), cls=n>=0?'pos':'neg';
+  return `<span class="${{cls}}">${{n>0?'+':''}}${{n.toFixed(2)}}%</span>`;
+}}
+function statNum(v){{
+  if(v==null || Number.isNaN(Number(v)))return null;
+  return Number(v);
 }}
 function labelEvent(v){{
   const m={{
@@ -504,6 +525,63 @@ function labelEvent(v){{
 function switchTab(id){{
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===id));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
+  schedResize();
+}}
+function renderThresholdStats(){{
+  const rows=(STATS.threshold_stats||[]).map(x=>`<tr>
+    <td>${{x.rule||'-'}}</td>
+    <td>T+${{x.horizon}}</td>
+    <td>${{x.sample_count||0}}</td>
+    <td class="${{(x.win_rate||0)>=50?'pos':'neg'}}">${{rate(x.win_rate)}}</td>
+    <td class="${{(x.avg_return||0)>=0?'pos':'neg'}}">${{pct(x.avg_return)}}</td>
+    <td>${{pct(x.avg_max_gain)}}</td>
+    <td>${{pct(x.avg_max_drawdown)}}</td>
+  </tr>`).join('');
+  return `<div class="stats-section-title">門檻成果表：勝率 / 報酬 / 持有天數</div>
+    <div class="stats-scroll">
+    <table class="stats-table">
+      <thead><tr><th>條件</th><th>持有</th><th>樣本</th><th>勝率</th><th>平均報酬</th><th>平均最高</th><th>平均回撤</th></tr></thead>
+      <tbody>${{rows || '<tr><td colspan="7">尚無已成熟績效資料。</td></tr>'}}</tbody>
+    </table>
+    </div>`;
+}}
+function renderRecentStats(){{
+  const host=document.getElementById('recentStatsBody');
+  if(!host)return;
+  const q=((document.getElementById('statsQ')||{{}}).value||'').toLowerCase();
+  const kMin=Number((document.getElementById('statsK')||{{value:0}}).value||0);
+  const cMin=Number((document.getElementById('statsC')||{{value:0}}).value||0);
+  let data=(STATS.recent||[]).filter(r=>{{
+    if(q && !(String(r.ticker||'').toLowerCase().includes(q) || String(r.name||'').toLowerCase().includes(q)))return false;
+    if((r.kline_score||0)<kMin)return false;
+    if((r.composite_score||0)<cMin)return false;
+    return true;
+  }});
+  data=[...data].sort((a,b)=>{{
+    const av=statNum(a[statsSortKey]) ?? a[statsSortKey] ?? '';
+    const bv=statNum(b[statsSortKey]) ?? b[statsSortKey] ?? '';
+    if(av===bv)return 0;
+    if(av==='')return 1;
+    if(bv==='')return -1;
+    if(typeof av==='number' && typeof bv==='number')return statsSortAsc?av-bv:bv-av;
+    return statsSortAsc?String(av).localeCompare(String(bv)):String(bv).localeCompare(String(av));
+  }});
+  host.innerHTML=data.map(r=>`<tr>
+    <td>${{r.trade_date||'-'}}</td>
+    <td>${{r.ticker||'-'}}</td>
+    <td>${{r.name||'-'}}</td>
+    <td>${{labelEvent(r.event_type)}}</td>
+    <td>${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</td>
+    <td>${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</td>
+    <td>${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
+    <td>${{statCell(r.t1_return)}}</td>
+    <td>${{statCell(r.t3_return)}}</td>
+    <td>${{statCell(r.t5_return)}}</td>
+    <td>${{statCell(r.t7_return)}}</td>
+    <td>${{statCell(r.t10_return)}}</td>
+    <td>${{r.status||'-'}}</td>
+  </tr>`).join('') || '<tr><td colspan="13">沒有符合篩選的訊號。</td></tr>';
+  document.getElementById('recentStatsCount').textContent=data.length;
   schedResize();
 }}
 function renderStats(){{
@@ -547,21 +625,51 @@ function renderStats(){{
       <div class="stat-card"><div class="stat-k">績效筆數</div><div class="stat-v">${{c.outcomes||0}}</div></div>
       <div class="stat-card"><div class="stat-k">觀察追蹤</div><div class="stat-v">${{c.watches||0}}</div></div>
     </div>
+    ${{renderThresholdStats()}}
     <table class="stats-table">
       <thead><tr><th>T+5 策略</th><th>樣本</th><th>勝率</th><th>平均報酬</th><th>平均最高</th><th>平均回撤</th></tr></thead>
       <tbody>${{rows || '<tr><td colspan="6">T+5 樣本尚未成熟，累積幾個交易日後會自動出現。</td></tr>'}}</tbody>
     </table>
     <div class="stats-section-title">近期訊號與 T+1 / T+3 / T+5 / T+7 / T+10</div>
+    <div class="stats-tools">
+      <input type="text" id="statsQ" placeholder="代號 / 名稱" oninput="renderRecentStats()">
+      <label>K線 >= <input type="number" id="statsK" value="0" min="0" max="100" step="1" oninput="renderRecentStats()"></label>
+      <label>綜合分 >= <input type="number" id="statsC" value="0" min="0" max="100" step="1" oninput="renderRecentStats()"></label>
+      <span class="stats-note">顯示 <b id="recentStatsCount">0</b> 筆</span>
+    </div>
     <div class="stats-scroll">
     <table class="stats-table">
-      <thead><tr><th>日期</th><th>代號</th><th>名稱</th><th>訊號</th><th>K線分</th><th>綜合分</th><th>買進日收盤</th><th>T+1</th><th>T+3</th><th>T+5</th><th>T+7</th><th>T+10</th><th>狀態</th></tr></thead>
-      <tbody>${{recent || '<tr><td colspan="13">尚無近期訊號資料。</td></tr>'}}</tbody>
+      <thead><tr>
+        <th class="stats-sort" data-stat-k="trade_date">日期</th>
+        <th class="stats-sort" data-stat-k="ticker">代號</th>
+        <th class="stats-sort" data-stat-k="name">名稱</th>
+        <th class="stats-sort" data-stat-k="event_type">訊號</th>
+        <th class="stats-sort" data-stat-k="kline_score">K線分</th>
+        <th class="stats-sort" data-stat-k="composite_score">綜合分</th>
+        <th class="stats-sort" data-stat-k="entry_reference_close">買進日收盤</th>
+        <th class="stats-sort" data-stat-k="t1_return">T+1</th>
+        <th class="stats-sort" data-stat-k="t3_return">T+3</th>
+        <th class="stats-sort" data-stat-k="t5_return">T+5</th>
+        <th class="stats-sort" data-stat-k="t7_return">T+7</th>
+        <th class="stats-sort" data-stat-k="t10_return">T+10</th>
+        <th class="stats-sort" data-stat-k="status">狀態</th>
+      </tr></thead>
+      <tbody id="recentStatsBody"><tr><td colspan="13">載入近期訊號...</td></tr></tbody>
     </table>
     </div>
     <table class="stats-table">
       <thead><tr><th>觀察狀態</th><th>確認類型</th><th>數量</th></tr></thead>
       <tbody>${{watch || '<tr><td colspan="3">尚無觀察池資料。</td></tr>'}}</tbody>
     </table>`;
+  document.querySelectorAll('th.stats-sort').forEach(th=>{{
+    th.addEventListener('click',()=>{{
+      const k=th.dataset.statK;
+      if(statsSortKey===k)statsSortAsc=!statsSortAsc;
+      else{{statsSortKey=k;statsSortAsc=false;}}
+      renderRecentStats();
+    }});
+  }});
+  renderRecentStats();
 }}
 
 function updSlider(el,vidId){{
@@ -636,7 +744,7 @@ function toggleLegend(){{
 // 初始化滑桿漸層
 ['slK','slC'].forEach(id=>{{
   const el=document.getElementById(id);
-  el.style.setProperty('--pct','0%');
+  el.style.setProperty('--pct',(el.value/el.max*100)+'%');
 }});
 
 // 預設 K線分降序
