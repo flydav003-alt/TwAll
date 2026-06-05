@@ -17,12 +17,14 @@ import io
 import contextlib
 import logging
 from datetime import datetime
+import requests
 
 from tw_screener_core import (
     calc_kline_score, calc_entry_signal, calc_rsi,
     calc_composite_tw, detect_patterns_tw,
     is_otc, SIGNAL_RANK, _detect_rsi_divergence,
 )
+from stats_db import save_daily_run
 
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("peewee").setLevel(logging.CRITICAL)
@@ -30,6 +32,47 @@ logging.getLogger("peewee").setLevel(logging.CRITICAL)
 SLEEP_BETWEEN = 0.5
 STOCK_FILE    = "371檔股票.xlsx"
 DATA_DIR      = "data"
+
+
+def fetch_finmind_inst_days(stock_id: str, token: str, days: int = 10) -> int:
+    if not token:
+        return 0
+    end = datetime.now().strftime("%Y-%m-%d")
+    start = (datetime.now() - pd.Timedelta(days=days + 10)).strftime("%Y-%m-%d")
+    try:
+        r = requests.get(
+            "https://api.finmindtrade.com/api/v4/data",
+            params=dict(
+                dataset="TaiwanStockInstitutionalInvestorsBuySell",
+                data_id=stock_id,
+                start_date=start,
+                end_date=end,
+                token=token,
+            ),
+            timeout=12,
+        )
+        d = r.json()
+        if d.get("status") != 200:
+            return 0
+        daily = {}
+        for rec in d.get("data", []):
+            name = rec.get("name", "")
+            if name in ("Foreign_Investor", "Investment_Trust", "外資", "投信"):
+                daily.setdefault(rec["date"], 0)
+                daily[rec["date"]] += rec.get("buy", 0) - rec.get("sell", 0)
+        dates = sorted(daily, reverse=True)[:days]
+        if not dates:
+            return 0
+        sign = 1 if daily[dates[0]] >= 0 else -1
+        count = 0
+        for dt in dates:
+            if (1 if daily[dt] >= 0 else -1) == sign:
+                count += 1
+            else:
+                break
+        return sign * count
+    except Exception:
+        return 0
 
 
 # ──────────────────────────────────────────────────────────────
@@ -109,7 +152,12 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
             with contextlib.redirect_stderr(io.StringIO()):
                 t    = yf.Ticker(f"{sid}{suffix}")
                 info = t.info or {}
-                h    = t.history(period="1y")
+                h = None
+                for _ in range(3):
+                    h = t.history(period="1y")
+                    if h is not None and len(h) >= 20:
+                        break
+                    time.sleep(0.8)
             if h is not None and len(h) >= 20:
                 hist = h
                 detected_market    = suffix[1:]
@@ -223,6 +271,11 @@ def main():
         print("[WARN] 大盤資料無法取得")
 
     twii_ret5d = market_info["ret5d"] if market_info else None
+    finmind_token = os.environ.get("FINMIND_TOKEN", "").strip()
+    if finmind_token:
+        print("[INFO] FINMIND_TOKEN detected; institutional days will be stored in DB snapshots.")
+    else:
+        print("[WARN] FINMIND_TOKEN not set; inst_buy_days will remain 0 in DB snapshots.")
 
     results = []
     for i, (sid, name) in enumerate(stocks, 1):
@@ -231,6 +284,11 @@ def main():
 
         if twii_ret5d is not None and data.get("ret5d") is not None:
             data["rs5d"] = round(data["ret5d"] - twii_ret5d, 1)
+
+        if finmind_token and data.get("price") is not None:
+            data["inst_buy_days"] = fetch_finmind_inst_days(sid, finmind_token)
+            data["composite"] = calc_composite_tw(data)
+            data["patterns"] = detect_patterns_tw(data)
 
         results.append(data)
         time.sleep(SLEEP_BETWEEN)
@@ -250,6 +308,9 @@ def main():
     with open(market_path, "w", encoding="utf-8") as f:
         json.dump(market_info or {}, f, ensure_ascii=False)
     print(f"[INFO] 已儲存 → {market_path}")
+
+    save_daily_run(results, generated_at=ts)
+    print(f"[INFO] 已更新統計資料庫 → {os.path.join(DATA_DIR, 'stats.db')}")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tw_screener_core import calc_composite_tw, detect_patterns_tw, yahoo_tw_url
+from stats_db import export_stats_payload
 
 st.set_page_config(page_title="台股半導體 Screener", page_icon="📈",
                    layout="wide", initial_sidebar_state="collapsed")
@@ -129,6 +130,7 @@ def main():
     mkt_rsi = mkt.get("rsi")
     mkt_ma  = not mkt.get("below_ma20", False)
     rows_json = json.dumps(rows, ensure_ascii=False, default=str)
+    stats_json = json.dumps(export_stats_payload(), ensure_ascii=False, default=str)
     total     = len(rows)
     gen_at    = generated_at or "N/A"
     r5cls     = "pos" if mkt_r5>0 else ("neg" if mkt_r5<0 else "neu")
@@ -232,6 +234,22 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 /* ── STAT LINE ── */
 .stat{{padding:4px 24px 10px;font-size:12px;color:var(--mid);border-bottom:none;}}
 .stat b{{color:var(--txt);font-weight:500;}}
+
+/* ── STATS ── */
+.stats-wrap{{margin:0 24px 16px;border:1px solid var(--bdr);border-radius:8px;background:var(--bg2);overflow:hidden;}}
+.stats-head{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--bdr);gap:12px;}}
+.stats-title{{font-size:14px;font-weight:700;color:var(--txt);}}
+.stats-note{{font-size:12px;color:var(--mid);}}
+.stats-grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--bdr);}}
+.stat-card{{background:var(--bg2);padding:12px 14px;min-height:72px;}}
+.stat-k{{font-size:12px;color:var(--mid);margin-bottom:6px;}}
+.stat-v{{font-size:22px;font-weight:700;color:var(--txt);}}
+.stats-table{{width:100%;border-collapse:collapse;}}
+.stats-table th,.stats-table td{{padding:8px 10px;border-bottom:1px solid var(--bdr);font-size:12px;white-space:nowrap;}}
+.stats-table th{{color:var(--mid);font-weight:500;background:rgba(15,23,42,.35);}}
+.stats-table td{{color:var(--txt);}}
+.stats-empty{{padding:16px;color:var(--mid);font-size:13px;}}
+@media(max-width:900px){{.stats-grid{{grid-template-columns:repeat(2,minmax(0,1fr));}}.stats-head{{align-items:flex-start;flex-direction:column;}}}}
 
 /* ── TABLE ── */
 .tbl-wrap{{padding:0 24px 40px;overflow-x:auto;}}
@@ -340,6 +358,14 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <div class="mi"><span class="mi-l">MA20</span><span class="mi-v {ma_cls}">{ma_txt}</span></div>
 </div>
 
+<div class="stats-wrap" id="statsBox">
+  <div class="stats-head">
+    <div class="stats-title">資料庫統計</div>
+    <div class="stats-note">每日真實訊號 + T+1 / T+3 / T+5 / T+7 / T+10 事後績效</div>
+  </div>
+  <div id="statsContent" class="stats-empty">統計資料載入中...</div>
+</div>
+
 <div class="fb">
   <div class="srch">
     <span class="srch-ico">🔍</span>
@@ -411,6 +437,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 
 <script>
 const RAW = {rows_json};
+const STATS = {stats_json};
 let sortKey='kline', sortAsc=false;
 const SC={{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3","📉量縮整理":"s4"}};
 const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
@@ -478,6 +505,63 @@ function fChg(v){{
   if(v>0)return`<span class="pos">+${{v.toFixed(2)}}%</span>`;
   if(v<0)return`<span class="neg">${{v.toFixed(2)}}%</span>`;
   return'<span class="iz">0.00%</span>';
+}}
+
+function pct(v){{
+  if(v==null || Number.isNaN(Number(v)))return'-';
+  const n=Number(v);
+  return `${{n>0?'+':''}}${{n.toFixed(2)}}%`;
+}}
+function rate(v){{
+  if(v==null || Number.isNaN(Number(v)))return'-';
+  return `${{Number(v).toFixed(1)}}%`;
+}}
+function labelEvent(v){{
+  const m={{
+    BOTH_STRONG:'雙強',
+    ENTRY:'雙分進場',
+    COMP_STRONG_K_LOW:'綜強K低',
+    COMP_HIGH_K_LOW:'綜高K低',
+    K_STRONG_COMP_LOW:'K強綜低',
+    K_HIGH_COMP_LOW:'K高綜低',
+    WATCH_CONFIRMED:'觀察確認'
+  }};
+  return m[v]||v||'-';
+}}
+function renderStats(){{
+  const box=document.getElementById('statsContent');
+  if(!STATS || !STATS.ready){{
+    box.innerHTML='尚未建立 data/stats.db。GitHub Actions 跑完一次後會開始累積統計。';
+    return;
+  }}
+  const c=STATS.counts||{{}};
+  const t5=(STATS.summary||[]).filter(x=>x.group_name==='event_type'&&x.horizon===5)
+    .sort((a,b)=>(b.sample_count||0)-(a.sample_count||0)).slice(0,8);
+  const watch=(STATS.watch||[]).map(w=>`<tr><td>${{w.status||'-'}}</td><td>${{w.confirm_type||'-'}}</td><td>${{w.count}}</td></tr>`).join('');
+  const rows=t5.map(x=>`<tr>
+    <td>${{labelEvent(x.event_type)}}</td>
+    <td>${{x.sample_count}}</td>
+    <td class="${{(x.win_rate||0)>=50?'pos':'neg'}}">${{rate(x.win_rate)}}</td>
+    <td class="${{(x.avg_return||0)>=0?'pos':'neg'}}">${{pct(x.avg_return)}}</td>
+    <td>${{pct(x.avg_max_gain)}}</td>
+    <td>${{pct(x.avg_max_drawdown)}}</td>
+  </tr>`).join('');
+  box.className='';
+  box.innerHTML=`
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-k">每日快照</div><div class="stat-v">${{c.snapshots||0}}</div></div>
+      <div class="stat-card"><div class="stat-k">訊號事件</div><div class="stat-v">${{c.events||0}}</div></div>
+      <div class="stat-card"><div class="stat-k">績效筆數</div><div class="stat-v">${{c.outcomes||0}}</div></div>
+      <div class="stat-card"><div class="stat-k">觀察追蹤</div><div class="stat-v">${{c.watches||0}}</div></div>
+    </div>
+    <table class="stats-table">
+      <thead><tr><th>T+5 策略</th><th>樣本</th><th>勝率</th><th>平均報酬</th><th>平均最高</th><th>平均回撤</th></tr></thead>
+      <tbody>${{rows || '<tr><td colspan="6">T+5 樣本尚未成熟，累積幾個交易日後會自動出現。</td></tr>'}}</tbody>
+    </table>
+    <table class="stats-table">
+      <thead><tr><th>觀察狀態</th><th>確認類型</th><th>數量</th></tr></thead>
+      <tbody>${{watch || '<tr><td colspan="3">尚無觀察池資料。</td></tr>'}}</tbody>
+    </table>`;
 }}
 
 function updSlider(el,vidId){{
@@ -557,6 +641,7 @@ function toggleLegend(){{
 
 // 預設 K線分降序
 document.querySelector('th[data-k="kline"]').classList.add('desc');
+renderStats();
 applyFilter();
 
 // ResizeObserver
