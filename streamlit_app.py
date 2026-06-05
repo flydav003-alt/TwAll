@@ -192,34 +192,38 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .tab-panel.active{{display:block;}}
 
 /* ── STATS ── */
-.stats-wrap{{margin:0 24px 16px;border:1px solid var(--bdr);border-radius:8px;background:var(--bg2);overflow:hidden;}}
-.stats-head{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--bdr);gap:12px;}}
-.stats-title{{font-size:14px;font-weight:700;color:var(--txt);}}
-.stats-note{{font-size:12px;color:var(--mid);}}
-.stats-grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--bdr);}}
-.stat-card{{background:var(--bg2);padding:12px 14px;min-height:72px;}}
-.stat-k{{font-size:12px;color:var(--mid);margin-bottom:6px;}}
-.stat-v{{font-size:22px;font-weight:700;color:var(--txt);}}
+.stats-wrap{{margin:0 24px 16px;border:1px solid #3b4f6b;border-radius:10px;background:#1a2640;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.25);}}
+.stats-head{{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #2d4060;gap:12px;background:linear-gradient(90deg,#1e3a5f,#1a2e50);}}
+.stats-title{{font-size:15px;font-weight:700;color:#e2e8f0;letter-spacing:.5px;}}
+.stats-note{{font-size:12px;color:#93b4d4;}}
+.stats-grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#2d4060;}}
+.stat-card{{background:linear-gradient(135deg,#1e3251,#1a2d4a);padding:14px 16px;min-height:76px;transition:background .2s;}}
+.stat-card:hover{{background:linear-gradient(135deg,#243a60,#203455);}}
+.stat-k{{font-size:12px;color:#7eb8e0;margin-bottom:8px;font-weight:500;text-transform:uppercase;letter-spacing:.5px;}}
+.stat-v{{font-size:26px;font-weight:700;color:#e8f4ff;}}
 .stats-table{{width:100%;border-collapse:collapse;}}
-.stats-table th,.stats-table td{{padding:8px 10px;border-bottom:1px solid var(--bdr);font-size:12px;white-space:nowrap;}}
-.stats-table th{{color:var(--mid);font-weight:500;background:rgba(15,23,42,.35);}}
-.stats-table td{{color:var(--txt);}}
-.stats-empty{{padding:16px;color:var(--mid);font-size:13px;}}
-.stats-section-title{{padding:14px 14px 6px;font-size:13px;font-weight:700;color:var(--txt);}}
+.stats-table th,.stats-table td{{padding:9px 11px;border-bottom:1px solid #2a3f5a;font-size:12px;white-space:nowrap;}}
+.stats-table th{{color:#8ab8d8;font-weight:600;background:rgba(20,40,70,.6);}}
+.stats-table td{{color:#cde0f5;}}
+.stats-table tbody tr:hover td{{background:rgba(99,136,200,.08)!important;}}
+.stats-empty{{padding:20px;color:#7eb8e0;font-size:13px;}}
+.stats-section-title{{padding:14px 16px 8px;font-size:13px;font-weight:700;color:#a8d4f0;border-top:1px solid #2a3f5a;letter-spacing:.3px;}}
+.stats-section-title:first-of-type{{border-top:none;}}
 .stats-scroll{{overflow-x:auto;}}
-.stats-tools{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--bdr);}}
+.stats-tools{{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid #2d4060;background:rgba(20,45,80,.3);}}
 .stats-tools input{{
-  background:var(--bg);border:1px solid var(--bdr);color:var(--txt);
+  background:#152035;border:1px solid #2d4060;color:#cde0f5;
   border-radius:6px;padding:7px 10px;font-size:13px;font-family:var(--sans);outline:none;
 }}
 .stats-tools input[type=text]{{width:220px;}}
 .stats-tools input[type=number]{{width:86px;}}
-.stats-tools input:focus{{border-color:var(--acc);}}
-.stats-tools label{{display:flex;align-items:center;gap:6px;color:var(--mid);font-size:12px;}}
+.stats-tools input:focus{{border-color:#5b9bd5;box-shadow:0 0 0 2px rgba(91,155,213,.2);}}
+.stats-tools input::placeholder{{color:#4a7a9b;}}
+.stats-tools label{{display:flex;align-items:center;gap:6px;color:#7eb8e0;font-size:12px;}}
 .stats-sl-grp{{display:flex;align-items:center;gap:8px;}}
-.stats-sl-lbl{{font-size:12px;color:var(--mid);white-space:nowrap;}}
+.stats-sl-lbl{{font-size:12px;color:#7eb8e0;white-space:nowrap;font-weight:500;}}
 .stats-table th.stats-sort{{cursor:pointer;}}
-.stats-table th.stats-sort:hover{{color:var(--acc);}}
+.stats-table th.stats-sort:hover{{color:#a0d0f0;}}
 @media(max-width:900px){{.stats-grid{{grid-template-columns:repeat(2,minmax(0,1fr));}}.stats-head{{align-items:flex-start;flex-direction:column;}}}}
 
 /* ── TABLE ── */
@@ -575,8 +579,8 @@ function renderRecentStats(){{
     <td>${{r.ticker||'-'}}</td>
     <td>${{r.name||'-'}}</td>
     <td>${{labelEvent(r.event_type)}}</td>
-    <td>${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</td>
-    <td>${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</td>
+    <td>${{r.kline_score!=null?`<span style="color:${{kc(r.kline_score)}};font-weight:700">${{Math.round(r.kline_score)}}</span>`:'-'}}</td>
+    <td>${{r.composite_score!=null?`<span style="color:${{cc(r.composite_score)}};font-weight:700">${{Math.round(r.composite_score)}}</span>`:'-'}}</td>
     <td>${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td>
     <td>${{statCell(r.t3_return)}}</td>
