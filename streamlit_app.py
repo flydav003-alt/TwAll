@@ -87,7 +87,7 @@ def main():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght=400;500;700&display=swap" rel="stylesheet">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
@@ -160,9 +160,10 @@ input[type=range]{{
   -webkit-appearance:none;width:140px;height:6px;
   background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), var(--bdr) var(--pct,0%), var(--bdr) 100%);
   border-radius:3px;outline:none;cursor:pointer;border:none;
+  padding:0;margin:0;
 }}
 input[type=range]::-webkit-slider-thumb{{
-  -webkit-appearance:none;width:18px;height:18px;
+  -webkit-appearance:none;width:16px;height:16px;
   border-radius:50%;background:var(--acc);
   border:2px solid #c7d2fe;cursor:pointer;
   box-shadow:none;transition:box-shadow .15s;
@@ -249,7 +250,8 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 /* cells */
 .tk{{color:var(--acc);font-weight:600;font-size:13px;text-decoration:none;}}
 .tk:hover{{text-decoration:underline;}}
-.nm{{color:var(--txt);font-size:13px;}}
+.nm{{color:var(--txt);font-size:13px;text-decoration:none;}}
+.nm:hover{{text-decoration:underline;color:var(--acc);}}
 .pv{{font-weight:400;color:var(--txt);font-size:13px;}}
 
 /* mini bar — 對標原版 score-bar-wrap */
@@ -528,6 +530,7 @@ function switchTab(id){{
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
   schedResize();
 }}
+// 🛠️ 已修正：將 statsK 和 statsC 的 max 屬性從 99 改為 100
 function renderThresholdStats(){{
   const rows=(STATS.threshold_stats||[]).map(x=>`<tr>
     <td>${{x.rule||'-'}}</td>
@@ -595,21 +598,6 @@ function renderStats(){{
   const t5=(STATS.summary||[]).filter(x=>x.group_name==='event_type'&&x.horizon===5)
     .sort((a,b)=>(b.sample_count||0)-(a.sample_count||0)).slice(0,8);
   const watch=(STATS.watch||[]).map(w=>`<tr><td>${{w.status||'-'}}</td><td>${{w.confirm_type||'-'}}</td><td>${{w.count}}</td></tr>`).join('');
-  const recent=(STATS.recent||[]).map(r=>`<tr>
-    <td>${{r.trade_date||'-'}}</td>
-    <td>${{r.ticker||'-'}}</td>
-    <td>${{r.name||'-'}}</td>
-    <td>${{labelEvent(r.event_type)}}</td>
-    <td>${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</td>
-    <td>${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</td>
-    <td>${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
-    <td>${{outcomePct(r.t1_return)}}</td>
-    <td>${{outcomePct(r.t3_return)}}</td>
-    <td>${{outcomePct(r.t5_return)}}</td>
-    <td>${{outcomePct(r.t7_return)}}</td>
-    <td>${{outcomePct(r.t10_return)}}</td>
-    <td>${{r.status||'-'}}</td>
-  </tr>`).join('');
   const rows=t5.map(x=>`<tr>
     <td>${{labelEvent(x.event_type)}}</td>
     <td>${{x.sample_count}}</td>
@@ -636,13 +624,13 @@ function renderStats(){{
       <input type="text" id="statsQ" placeholder="代號 / 名稱" oninput="renderRecentStats()">
       <div class="stats-sl-grp">
         <span class="stats-sl-lbl">K線 ≥</span>
-        <input type="range" id="statsK" min="0" max="99" step="1" value="0"
+        <input type="range" id="statsK" min="0" max="100" step="1" value="0"
           oninput="updSlider(this,'statsKv');renderRecentStats()" style="width:120px;">
         <span class="sl-val" id="statsKv">0</span>
       </div>
       <div class="stats-sl-grp">
         <span class="stats-sl-lbl">綜合分 ≥</span>
-        <input type="range" id="statsC" min="0" max="99" step="1" value="0"
+        <input type="range" id="statsC" min="0" max="100" step="1" value="0"
           oninput="updSlider(this,'statsCv');renderRecentStats()" style="width:120px;">
         <span class="sl-val" id="statsCv">0</span>
       </div>
@@ -695,9 +683,10 @@ function renderRows(data){{
     tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#64748b;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
+  // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
   tb.innerHTML=data.map(r=>`<tr>
-    <td><a class="tk" href="${{r.yahoo_url}}" target="_blank">${{r.ticker}}</a></td>
-    <td><span class="nm">${{r.name}}</span></td>
+    <td><a class="tk" href="${{r.kline_url}}" target="_blank">${{r.ticker}}</a></td>
+    <td><a class="nm" href="${{r.yahoo_url}}" target="_blank">${{r.name}}</a></td>
     <td><span class="pv">${{r.price!=null?r.price.toFixed(1):'—'}}</span></td>
     <td>${{fChg(r.chg)}}</td>
     <td>${{bar(r.kline,kc,r.kline_url)}}</td>
@@ -752,7 +741,7 @@ function toggleLegend(){{
   else{{b.classList.add('open');a.textContent='▼';schedResize();}}
 }}
 
-// ── 強化版應用程式初始化模組 (已轉義成 Python 格式) ──
+// ── 強化版應用程式初始化模組 ──
 function initApp() {{
   try {{
     // 1. 強制重置拉條數值，清除瀏覽器的 Form Auto-restore 快取
@@ -771,14 +760,14 @@ function initApp() {{
     const thKline = document.querySelector('th[data-k="kline"]');
     if (thKline) thKline.classList.add('desc');
 
-    // 3. 獨立執行統計面板 (加入 try-catch，避免資料庫為空時拖垮整個首頁)
+    // 3. 獨立執行統計面板
     try {{ 
       renderStats(); 
     }} catch(e) {{ 
       console.error("統計面板初始化略過:", e); 
     }}
 
-    // 4. 初始化統計面板的滑桿
+    // 4. 初始化統計面板的滑桿漸層百分比
     ['statsK', 'statsC'].forEach(id => {{
       const el = document.getElementById(id);
       if (el) el.style.setProperty('--pct', '0%');
@@ -789,7 +778,6 @@ function initApp() {{
     
   }} catch (err) {{
     console.error("首頁初始化錯誤:", err);
-    // 就算發生極端錯誤，也強制解除「載入中…」狀態避免畫面死當
     const statLine = document.getElementById('statLine');
     if (statLine) statLine.innerHTML = '載入完成，若無資料請重新調整拉條。';
   }}
