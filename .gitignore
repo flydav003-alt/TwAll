@@ -1,0 +1,17 @@
+# Streamlit secrets（絕對不能 commit！）
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+
+# 暫存輸出（本機測試產生的，不需要進 repo）
+tw_semi_screener_*.csv
+tw_semi_screener_*.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
