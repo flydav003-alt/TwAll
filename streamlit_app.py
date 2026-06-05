@@ -141,193 +141,190 @@ def main():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
   --bg:      #0f172a;
   --bg2:     #1e293b;
-  --bg3:     #263347;
-  --row-odd: #172033;
-  --row-evn: #131e2f;
-  --hov:     #1e2d42;
-  --bdr:     rgba(51,65,85,0.80);
-  --bdr2:    rgba(99,102,241,0.45);
+  --bg3:     #1e293b;
+  --row-odd: #0f172a;
+  --row-evn: #0f172a;
+  --hov:     rgba(99,102,241,0.06);
+  --bdr:     #334155;
+  --bdr2:    #6366f1;
   --txt:     #e2e8f0;
-  --dim:     #475569;
-  --mid:     #64748b;
+  --dim:     #64748b;
+  --mid:     #94a3b8;
   --hd:      #94a3b8;
   --acc:     #6366f1;
   --red:     #ef4444;
   --grn:     #22c55e;
   --orn:     #f59e0b;
   --yel:     #fde68a;
-  --sans:    'Inter','Noto Sans TC',sans-serif;
+  --sans:    'Noto Sans TC',sans-serif;
 }}
 body{{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13px;}}
 
 /* ── HEADER ── */
 .hd{{
   display:flex;align-items:baseline;gap:14px;
-  padding:16px 28px 12px;
-  border-bottom:1px solid var(--bdr);
+  padding:20px 24px 6px;
+  border-bottom:none;
 }}
-.hd-t{{font-size:18px;font-weight:700;color:var(--acc);letter-spacing:.02em;}}
-.hd-m{{font-size:11px;color:var(--mid);}}
+.hd-t{{font-size:20px;font-weight:700;color:var(--acc);letter-spacing:0;}}
+.hd-m{{font-size:12px;color:var(--mid);}}
 
 /* ── MARKET BAR ── */
 .mkt{{
-  display:flex;border-bottom:1px solid var(--bdr);
-  background:var(--bg2);
+  display:flex;border:1px solid var(--bdr);
+  background:var(--bg2);border-radius:8px;
+  margin:0 24px 16px;padding:10px 18px;gap:24px;align-items:center;
 }}
 .mi{{
-  padding:10px 24px;border-right:1px solid var(--bdr);
-  display:flex;flex-direction:column;gap:3px;
+  padding:0;border-right:none;
+  display:flex;flex-direction:row;align-items:center;gap:8px;
 }}
 .mi:last-child{{border-right:none;}}
-.mi-l{{font-size:9.5px;color:var(--mid);letter-spacing:.10em;text-transform:uppercase;font-weight:500;}}
-.mi-v{{font-size:17px;font-weight:700;color:var(--txt);}}
+.mi-l{{font-size:13px;color:var(--txt);letter-spacing:0;text-transform:none;font-weight:400;}}
+.mi-v{{font-size:20px;font-weight:700;color:#fff;}}
 .pos{{color:var(--red)}} .neg{{color:var(--grn)}} .neu{{color:var(--mid)}}
 
 /* ── FILTER BAR ── */
 .fb{{
-  display:flex;align-items:center;gap:20px;flex-wrap:nowrap;
-  padding:12px 28px;background:var(--bg2);border-bottom:1px solid var(--bdr);
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:0 24px 12px;background:transparent;border-bottom:none;
 }}
-/* 搜尋框 */
 .srch{{
   position:relative;display:flex;align-items:center;
 }}
-.srch-ico{{position:absolute;left:11px;color:var(--dim);font-size:14px;pointer-events:none;}}
+.srch-ico{{position:absolute;left:11px;color:var(--mid);font-size:14px;pointer-events:none;}}
 .srch input{{
-  background:var(--bg3);border:1px solid var(--bdr2);color:var(--txt);
-  border-radius:7px;padding:8px 12px 8px 32px;
-  font-size:13px;font-family:var(--sans);width:210px;outline:none;
-  transition:border .15s,box-shadow .15s;
+  background:var(--bg2);border:1px solid var(--bdr);color:var(--txt);
+  border-radius:6px;padding:6px 12px 6px 32px;
+  font-size:13px;font-family:var(--sans);width:200px;outline:none;
 }}
-.srch input:focus{{border-color:var(--acc);box-shadow:0 0 0 2px rgba(99,102,241,.20);}}
+.srch input:focus{{border-color:var(--acc);}}
 .srch input::placeholder{{color:var(--mid);}}
 
 /* 滑桿群組 */
-.sl-grp{{display:flex;align-items:center;gap:10px;}}
-.sl-lbl{{font-size:12px;color:var(--mid);white-space:nowrap;font-weight:500;}}
-/* 粗滑桿 */
+.sl-grp{{display:flex;align-items:center;gap:8px;}}
+.sl-lbl{{font-size:13px;color:var(--mid);white-space:nowrap;font-weight:400;}}
 input[type=range]{{
-  -webkit-appearance:none;width:140px;height:7px;
-  background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), rgba(51,65,85,0.60) var(--pct,0%), rgba(51,65,85,0.60) 100%);
-  border-radius:4px;outline:none;cursor:pointer;border:none;
+  -webkit-appearance:none;width:140px;height:6px;
+  background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), var(--bdr) var(--pct,0%), var(--bdr) 100%);
+  border-radius:3px;outline:none;cursor:pointer;border:none;
 }}
 input[type=range]::-webkit-slider-thumb{{
   -webkit-appearance:none;width:18px;height:18px;
   border-radius:50%;background:var(--acc);
   border:2px solid #c7d2fe;cursor:pointer;
-  box-shadow:0 0 8px rgba(99,102,241,.55);
-  transition:box-shadow .15s;
+  box-shadow:none;transition:box-shadow .15s;
 }}
-input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 14px rgba(99,102,241,.85);}}
+input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,241,.25);}}
 .sl-val{{
-  font-size:14px;font-weight:700;color:#c7d2fe;
-  min-width:26px;text-align:center;
-  background:var(--bg2);border:1px solid var(--bdr2);
-  border-radius:5px;padding:3px 7px;
+  font-size:13px;font-weight:500;color:var(--txt);
+  min-width:28px;text-align:center;
+  background:var(--bg2);border:1px solid var(--bdr);
+  border-radius:6px;padding:4px 8px;
 }}
 
 /* ── STAT LINE ── */
-.stat{{padding:7px 28px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--bdr);}}
-.stat b{{color:var(--acc);font-weight:600;}}
+.stat{{padding:4px 24px 10px;font-size:12px;color:var(--mid);border-bottom:none;}}
+.stat b{{color:var(--txt);font-weight:500;}}
 
 /* ── TABLE ── */
-.tbl-wrap{{padding:0 28px 28px;}}
-table{{width:100%;border-collapse:collapse;margin-top:4px;}}
+.tbl-wrap{{padding:0 24px 40px;overflow-x:auto;}}
+table{{width:100%;border-collapse:collapse;}}
 thead th{{
-  background:var(--bg2);color:var(--hd);
-  font-size:10px;font-weight:600;letter-spacing:.10em;text-transform:uppercase;
-  padding:9px 14px;text-align:left;
+  background:var(--bg2);color:var(--mid);
+  font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;
+  padding:10px 8px;text-align:left;
   border-bottom:2px solid var(--bdr);
   white-space:nowrap;user-select:none;
   position:sticky;top:0;z-index:5;
 }}
 thead th.sortable{{cursor:pointer;}}
-thead th.sortable:hover{{color:var(--acc);background:var(--hov);}}
+thead th.sortable:hover{{color:var(--acc);}}
 .arr{{margin-left:4px;font-size:9px;opacity:.35;}}
 th.asc  .arr{{opacity:1;color:var(--acc);}}
 th.desc .arr{{opacity:1;color:var(--acc);}}
 th.asc  .arr::after{{content:'▲'}}
 th.desc .arr::after{{content:'▼'}}
-th:not(.asc):not(.desc) .arr::after{{content:'⇅'}}
+th:not(.asc):not(.desc) .arr::after{{content:'↕'}}
 
-tbody tr:nth-child(odd) {{background:var(--row-odd);}}
-tbody tr:nth-child(even){{background:var(--row-evn);}}
-tbody tr:hover{{background:var(--hov)!important;}}
-tbody td{{padding:8px 14px;vertical-align:middle;white-space:nowrap;}}
+tbody tr:nth-child(odd) {{background:var(--bg);}}
+tbody tr:nth-child(even){{background:var(--bg);}}
+tbody tr:hover td{{background:var(--hov)!important;}}
+tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom:1px solid var(--bdr);}}
 
 /* cells */
-.tk{{color:var(--acc);font-weight:600;font-size:13px;text-decoration:none;letter-spacing:.02em;}}
-.tk:hover{{color:#a5b4fc;text-decoration:underline;}}
-.nm{{color:var(--mid);font-size:12px;}}
-.pv{{font-weight:600;color:var(--txt);font-size:13px;}}
+.tk{{color:var(--acc);font-weight:600;font-size:13px;text-decoration:none;}}
+.tk:hover{{text-decoration:underline;}}
+.nm{{color:var(--txt);font-size:13px;}}
+.pv{{font-weight:400;color:var(--txt);font-size:13px;}}
 
-/* mini bar */
-.bc{{display:flex;align-items:center;gap:8px;}}
-.bb{{width:50px;height:4px;background:rgba(51,65,85,0.60);border-radius:2px;flex-shrink:0;}}
-.bf{{height:4px;border-radius:2px;}}
-.bn{{font-size:12.5px;font-weight:700;min-width:24px;}}
+/* mini bar — 對標原版 score-bar-wrap */
+.bc{{display:flex;align-items:center;gap:6px;min-width:90px;}}
+.bb{{height:6px;border-radius:3px;background:var(--bdr);flex:1;max-width:80px;overflow:hidden;}}
+.bf{{height:6px;border-radius:3px;}}
+.bn{{font-size:12px;font-weight:600;color:var(--txt);white-space:nowrap;min-width:24px;}}
 
-/* vol badge */
-.vb{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;}}
-.vf{{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.30);}}
-.vw{{background:rgba(245,158,11,.13);color:#fde68a;border:1px solid rgba(245,158,11,.28);}}
-.vd{{color:var(--dim);font-size:12px;}}
+/* vol badge — 對標原版 badge */
+.vb{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap;}}
+.vf{{background:#5c1a1a;color:#ff8c8c;}}
+.vw{{background:#422006;color:#fde68a;}}
+.vd{{color:var(--mid);font-size:13px;}}
 
 /* rsi */
-.rh{{color:#fca5a5;font-weight:600;}}
+.rh{{color:#ff6b6b;font-weight:600;}}
 .rm{{color:#fde68a;}}
 .rl{{color:#86efac;font-weight:600;}}
 .rn{{color:var(--mid);}}
 
 /* inst */
-.isb{{color:#ef4444;font-weight:800;}}
-.ib {{color:#fca5a5;font-weight:600;}}
-.iss{{color:#22c55e;font-weight:800;}}
-.is {{color:#86efac;font-weight:600;}}
-.iz {{color:var(--dim);}}
+.isb{{color:#ef4444;font-weight:700;font-size:13px;}}
+.ib {{color:#ef4444;font-weight:700;font-size:13px;}}
+.iss{{color:#22c55e;font-weight:700;font-size:13px;}}
+.is {{color:#22c55e;font-weight:700;font-size:13px;}}
+.iz {{color:var(--dim);font-size:12px;}}
 
-/* signal */
-.sg{{display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;white-space:nowrap;font-weight:500;}}
-.s1{{background:#7f1d1d;color:#fca5a5;border:1px solid rgba(239,68,68,.35);}}
-.s2{{background:#422006;color:#fde68a;border:1px solid rgba(245,158,11,.35);}}
-.s3{{background:#14532d;color:#86efac;border:1px solid rgba(34,197,94,.30);}}
-.s4{{background:#1e3a5f;color:#93c5fd;border:1px solid rgba(99,102,241,.35);}}
+/* signal — 對標原版 badge 實色 */
+.sg{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;white-space:nowrap;font-weight:600;}}
+.s1{{background:#7f1d1d;color:#fca5a5;}}
+.s2{{background:#422006;color:#fde68a;}}
+.s3{{background:#14532d;color:#86efac;}}
+.s4{{background:#1e293b;color:#94a3b8;border:1px solid #334155;}}
 
 /* pattern */
-.pt{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:3px;font-weight:500;}}
-.pa{{background:#7f1d1d;color:#fca5a5;border:1px solid rgba(239,68,68,.35);}}
-.pb{{background:#1e3a5f;color:#93c5fd;border:1px solid rgba(99,102,241,.35);}}
-.pc{{background:#4a1d96;color:#c4b5fd;border:1px solid rgba(139,92,246,.35);}}
+.pt{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:3px;font-weight:600;}}
+.pa{{background:#7f1d1d;color:#fca5a5;}}
+.pb{{background:#1e3a5f;color:#93c5fd;}}
+.pc{{background:#4a1d96;color:#c4b5fd;}}
 
 /* ── 說明欄 ── */
 .legend{{
-  margin:0 28px 28px;
-  border:1px solid var(--bdr);border-radius:8px;
+  margin:0 24px 24px;
+  border:1px solid var(--bdr);border-radius:6px;
   overflow:hidden;
 }}
 .legend-hd{{
-  padding:10px 16px;background:var(--bg2);
-  font-size:11px;font-weight:600;color:var(--hd);
-  letter-spacing:.08em;cursor:pointer;
+  padding:8px 14px;background:var(--bg2);
+  font-size:12px;font-weight:500;color:var(--mid);
+  cursor:pointer;
   display:flex;justify-content:space-between;align-items:center;
 }}
-.legend-hd:hover{{background:var(--hov);color:var(--acc);}}
-.legend-body{{display:none;padding:14px 16px;}}
+.legend-hd:hover{{color:var(--acc);}}
+.legend-body{{display:none;padding:14px;background:var(--bg2);}}
 .legend-body.open{{display:block;}}
 .legend-body table{{margin-top:0;}}
 .legend-body thead th{{
-  background:transparent;padding:6px 10px;font-size:10px;
-  border-bottom:1px solid var(--bdr);position:static;
+  background:transparent;padding:6px 8px;font-size:12px;font-weight:500;
+  border-bottom:1px solid var(--bdr);position:static;color:var(--mid);
 }}
-.legend-body tbody td{{padding:6px 10px;font-size:12px;border-bottom:1px solid var(--bdr);}}
+.legend-body tbody td{{padding:6px 8px;font-size:12px;border-bottom:1px solid var(--bdr);color:var(--txt);}}
 .legend-body tbody tr:last-child td{{border-bottom:none;}}
-.note{{color:var(--dim);font-size:11px;margin-top:10px;}}
+.note{{color:var(--mid);font-size:11px;margin-top:10px;}}
 </style>
 </head><body>
 
@@ -419,16 +416,14 @@ const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
 function kc(v){{
   if(v==null)return'#334155';
-  if(v>=75)return'#ef4444';if(v>=62)return'#f59e0b';
-  if(v>=50)return'#6366f1';return'#22c55e';
+  return'#6366f1';
 }}
 function cc(v){{
   if(v==null)return'#334155';
-  if(v>=60)return'#ef4444';if(v>=40)return'#f59e0b';
-  if(v>=25)return'#6366f1';return'#334155';
+  return'#f59e0b';
 }}
 function bar(val,cfn,link){{
-  if(val==null)return'<span style="color:#475569">—</span>';
+  if(val==null)return'<span style="color:#64748b">—</span>';
   const pct=Math.min(Math.max(val,0),100),c=cfn(val);
   const inner=`<div class="bc"><div class="bb"><div class="bf" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bn" style="color:${{c}}">${{Math.round(val)}}</span></div>`;
   return link?`<a href="${{link}}" target="_blank" style="text-decoration:none">${{inner}}</a>`:inner;
@@ -469,7 +464,7 @@ function fPat(arr){{
   return arr.map(([n,c])=>`<span class="pt ${{PC[c]||'pb'}}">${{n}}</span>`).join('');
 }}
 function fChg(v){{
-  if(v==null)return'<span style="color:#475569">—</span>';
+  if(v==null)return'<span style="color:#64748b">—</span>';
   if(v>0)return`<span class="pos">+${{v.toFixed(2)}}%</span>`;
   if(v<0)return`<span class="neg">${{v.toFixed(2)}}%</span>`;
   return'<span class="iz">0.00%</span>';
@@ -484,7 +479,7 @@ function updSlider(el,vidId){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#475569;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#64748b;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   tb.innerHTML=data.map(r=>`<tr>
