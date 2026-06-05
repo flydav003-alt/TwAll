@@ -156,6 +156,8 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
     if base["price"]:
         base["week52_pct"] = round((base["price"] - wh) / wh * 100, 1)
     base["rsi14"] = calc_rsi(closes)
+    if len(closes) >= 2:
+        base["prev_close"] = round(float(closes.iloc[-2]), 2)
     if len(closes) >= 6:
         base["ret5d"] = round((float(closes.iloc[-1]) / float(closes.iloc[-6]) - 1) * 100, 2)
     if len(closes) >= 25:
