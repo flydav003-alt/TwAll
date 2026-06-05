@@ -1,13 +1,10 @@
 """
-streamlit_app.py  ── 台股半導體 Screener（深海藍黑重設計版）
-- 無內嵌捲軸，全部交給瀏覽器
-- 欄位標頭可點擊排序
-- 篩選列：搜尋框 + K線分滑桿 + 綜合分滑桿，單橫排
-- 法人快取 2 小時
+streamlit_app.py — 台股半導體 Screener
+架構：components.html() + JS 排序，scrolling=False + ResizeObserver 撐高
+配色：深海藍黑（參考圖片風格）
 """
-
-import streamlit as st
-import json, os, requests
+import json, os, requests, streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tw_screener_core import calc_composite_tw, detect_patterns_tw, yahoo_tw_url
@@ -19,277 +16,20 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-
-# ── CSS ───────────────────────────────────────────────────────
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
-
-:root {
-  --bg:         #050d1a;
-  --bg-card:    #071326;
-  --bg-row-alt: #081628;
-  --bg-hover:   #0c1f3a;
-  --border:     rgba(30,80,140,0.35);
-  --border-hd:  rgba(40,100,180,0.5);
-  --text:       #ccdcf4;
-  --text-dim:   #3d5a7a;
-  --text-mid:   #6a8fb0;
-  --text-hd:    #4a7aaa;
-  --accent:     #2a7fff;
-  --red:        #f23a54;
-  --red-soft:   #c0304a;
-  --green:      #00bf72;
-  --green-soft: #008f55;
-  --orange:     #f08020;
-  --yellow:     #e8c040;
-  --purple:     #a070f0;
-  --sans:       'Inter', 'Noto Sans TC', sans-serif;
-}
-
-/* ── 全域 ── */
-html, body,
-[data-testid="stAppViewContainer"],
-[data-testid="stApp"] {
-  background: var(--bg) !important;
-  color: var(--text);
-  font-family: var(--sans);
-}
-[data-testid="stHeader"],
-[data-testid="stToolbar"],
-[data-testid="stDecoration"],
-footer { display: none !important; }
-[data-testid="stSidebar"] { background: var(--bg-card) !important; }
-
-/* 去掉 Streamlit 預設 padding，讓內容填滿 */
-.block-container {
-  padding: 1.2rem 2rem 3rem 2rem !important;
-  max-width: 100% !important;
-}
-
-/* ── Header ── */
-.sc-header {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
-}
-.sc-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #ddeeff;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.sc-meta {
-  font-size: 11px;
-  color: var(--text-dim);
-  letter-spacing: 0.05em;
-}
-
-/* ── 大盤 bar ── */
-.mkt-bar {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0;
-  margin-bottom: 14px;
-  overflow: hidden;
-}
-.mkt-item {
-  padding: 9px 20px;
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.mkt-item:last-child { border-right: none; }
-.mkt-label { font-size: 9.5px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; }
-.mkt-val   { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: 0.02em; }
-.mkt-pos   { color: var(--red); }
-.mkt-neg   { color: var(--green); }
-.mkt-neu   { color: var(--text-mid); }
-
-/* ── 篩選區 ── */
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 16px;
-  margin-bottom: 10px;
-  flex-wrap: nowrap;
-}
-.filter-label {
-  font-size: 10px;
-  color: var(--text-dim);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-/* Streamlit widget 美化 */
-[data-baseweb="input"] input {
-  background: rgba(10,30,60,0.8) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
-  border-radius: 4px !important;
-  font-size: 13px !important;
-  font-family: var(--sans) !important;
-  padding: 5px 10px !important;
-  height: 34px !important;
-}
-[data-baseweb="input"] input:focus {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px rgba(42,127,255,0.15) !important;
-}
-/* slider 顏色 */
-[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-}
-div[data-testid="stSlider"] > div > div > div { background: var(--accent) !important; }
-label[data-testid="stWidgetLabel"] p {
-  color: var(--text-mid) !important;
-  font-size: 11px !important;
-  letter-spacing: 0.04em;
-}
-
-/* ── 結果統計 ── */
-.result-stat {
-  font-size: 11px;
-  color: var(--text-dim);
-  margin-bottom: 8px;
-  letter-spacing: 0.04em;
-}
-.result-stat b { color: var(--accent); font-weight: 600; }
-
-/* ── 主表格 ── */
-.sc-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--sans);
-  font-size: 13px;
-  table-layout: auto;
-}
-.sc-table thead th {
-  background: var(--bg-card);
-  color: var(--text-hd);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 9px 12px;
-  text-align: left;
-  border-bottom: 1px solid var(--border-hd);
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-}
-.sc-table thead th:hover { color: var(--text); background: var(--bg-hover); }
-.sc-table thead th .sort-arrow { margin-left: 4px; opacity: 0.4; font-size: 9px; }
-.sc-table thead th.sorted-asc .sort-arrow::after  { content: ' ▲'; opacity: 1; color: var(--accent); }
-.sc-table thead th.sorted-desc .sort-arrow::after { content: ' ▼'; opacity: 1; color: var(--accent); }
-.sc-table thead th:not(.sorted-asc):not(.sorted-desc) .sort-arrow::after { content: ' ⇅'; }
-
-.sc-table tbody tr { border-bottom: 1px solid var(--border); }
-.sc-table tbody tr:nth-child(even) { background: var(--bg-row-alt); }
-.sc-table tbody tr:nth-child(odd)  { background: transparent; }
-.sc-table tbody tr:hover { background: var(--bg-hover) !important; }
-
-.sc-table tbody td {
-  padding: 7px 12px;
-  vertical-align: middle;
-  white-space: nowrap;
-  color: var(--text);
-}
-
-/* ── 欄位 ── */
-.tk-link {
-  color: #4a9fff;
-  text-decoration: none;
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.04em;
-}
-.tk-link:hover { color: #90c8ff; }
-.stk-name { color: var(--text-mid); font-size: 12px; }
-.price-v  { font-weight: 600; color: #ddeeff; }
-
-.chg-pos  { color: var(--red);   font-weight: 600; }
-.chg-neg  { color: var(--green); font-weight: 600; }
-.chg-zero { color: var(--text-dim); }
-
-/* mini score bar */
-.sc-bar-wrap { display:flex; align-items:center; gap:8px; }
-.sc-bar-bg {
-  width: 48px; height: 4px;
-  background: rgba(255,255,255,0.06);
-  border-radius: 2px; overflow: hidden; flex-shrink: 0;
-}
-.sc-bar-fill { height:100%; border-radius:2px; }
-.sc-bar-num  { font-size:12.5px; font-weight:700; min-width:24px; }
-
-/* 爆量 badge */
-.vol-b {
-  display:inline-block; padding:2px 8px;
-  border-radius:3px; font-size:11px; font-weight:700;
-}
-.vol-fire { background:rgba(242,58,84,0.15); color:#f23a54; border:1px solid rgba(242,58,84,0.3); }
-.vol-warn { background:rgba(240,128,32,0.15); color:#f08020; border:1px solid rgba(240,128,32,0.3); }
-.vol-dim  { color: var(--text-dim); font-size:12px; }
-
-/* RSI */
-.rsi-h { color: var(--red);    font-weight: 600; }
-.rsi-m { color: var(--yellow); }
-.rsi-l { color: var(--green);  font-weight: 600; }
-.rsi-n { color: var(--text-mid); }
-
-/* RS */
-.rs-p { color: var(--red);   font-weight:600; }
-.rs-n { color: var(--green); font-weight:600; }
-.rs-z { color: var(--text-dim); }
-
-/* 法人 */
-.inst-sb { color: var(--red);        font-weight:800; }
-.inst-b  { color: #f07060; font-weight:600; }
-.inst-ss { color: var(--green);      font-weight:800; }
-.inst-s  { color: #50b888; font-weight:600; }
-.inst-z  { color: var(--text-dim); }
-
-/* 訊號 badge */
-.sig-b {
-  display:inline-block; padding:2px 8px;
-  border-radius:3px; font-size:11px; white-space:nowrap;
-}
-.sig-1 { background:rgba(242,58,84,0.12);  color:#f26070; border:1px solid rgba(242,58,84,0.25); }
-.sig-2 { background:rgba(240,128,32,0.12); color:#f0a040; border:1px solid rgba(240,128,32,0.25); }
-.sig-3 { background:rgba(0,191,114,0.10);  color:#30d890; border:1px solid rgba(0,191,114,0.25); }
-.sig-4 { background:rgba(60,90,130,0.2);   color:#6090b8; border:1px solid rgba(60,90,130,0.4); }
-
-/* 型態 badge */
-.pat-t {
-  display:inline-block; padding:2px 7px;
-  border-radius:3px; font-size:10.5px; margin-right:3px;
-}
-.pat-a { background:rgba(240,128,32,0.14); color:#f0a040; border:1px solid rgba(240,128,32,0.3); }
-.pat-b { background:rgba(42,127,255,0.12); color:#70b0ff; border:1px solid rgba(42,127,255,0.3); }
-.pat-c { background:rgba(160,112,240,0.12);color:#c090f8; border:1px solid rgba(160,112,240,0.3); }
-
-</style>
-""", unsafe_allow_html=True)
+st.markdown("""<style>
+  [data-testid="stHeader"],[data-testid="stToolbar"],
+  [data-testid="stDecoration"],#MainMenu,footer { display:none!important; }
+  [data-testid="stAppViewContainer"]{padding:0!important;}
+  [data-testid="stVerticalBlock"]{gap:0!important;padding:0!important;}
+  [data-testid="element-container"]{padding:0!important;margin:0!important;}
+  .block-container{padding:0!important;max-width:100%!important;}
+  html,body{overflow:auto!important;height:auto!important;}
+  .stApp{overflow:visible!important;height:auto!important;}
+  iframe{display:block!important;border:none!important;margin:0!important;}
+</style>""", unsafe_allow_html=True)
 
 
-# ── FinMind（2 小時快取）────────────────────────────────────
+# ── FinMind 2h 快取 ───────────────────────────────────────────
 def _get_token():
     try: return st.secrets["FINMIND_TOKEN"]
     except: return ""
@@ -298,7 +38,7 @@ def _get_token():
 def _finmind_inst(stock_id, token, days=10):
     if not token: return 0
     end   = datetime.now().strftime("%Y-%m-%d")
-    start = (datetime.now() - timedelta(days=days+10)).strftime("%Y-%m-%d")
+    start = (datetime.now()-timedelta(days=days+10)).strftime("%Y-%m-%d")
     try:
         r = requests.get(
             "https://api.finmindtrade.com/api/v4/data",
@@ -306,128 +46,47 @@ def _finmind_inst(stock_id, token, days=10):
                         data_id=stock_id, start_date=start, end_date=end, token=token),
             timeout=10)
         d = r.json()
-        if d.get("status") != 200: return 0
-        daily = {}
-        for rec in d.get("data", []):
-            nm = rec.get("name","")
+        if d.get("status")!=200: return 0
+        daily={}
+        for rec in d.get("data",[]):
+            nm=rec.get("name","")
             if nm in ("外資","外資自營商","Foreign_Investor","投信","Investment_Trust"):
-                daily.setdefault(rec["date"], 0)
-                daily[rec["date"]] += rec.get("buy",0) - rec.get("sell",0)
-        dates = sorted(daily, reverse=True)[:days]
+                daily.setdefault(rec["date"],0)
+                daily[rec["date"]]+=rec.get("buy",0)-rec.get("sell",0)
+        dates=sorted(daily,reverse=True)[:days]
         if not dates: return 0
-        sign = 1 if daily[dates[0]] >= 0 else -1
-        cnt = sum(1 for _ in (d for d in dates if (1 if daily[d]>=0 else -1)==sign)
-                  if True) # walk
-        # proper walk
-        cnt = 0
+        sign=1 if daily[dates[0]]>=0 else -1
+        cnt=0
         for dt in dates:
-            if (1 if daily[dt]>=0 else -1) == sign: cnt += 1
+            if (1 if daily[dt]>=0 else -1)==sign: cnt+=1
             else: break
-        return sign * cnt
+        return sign*cnt
     except: return 0
 
 def _fetch_all_finmind(tickers, token):
-    res = {}
+    res={}
     with ThreadPoolExecutor(max_workers=8) as ex:
-        futs = {ex.submit(_finmind_inst, sid, token): sid for sid in tickers}
+        futs={ex.submit(_finmind_inst,sid,token):sid for sid in tickers}
         for f in as_completed(futs):
-            sid = futs[f]
-            try: res[sid] = f.result()
-            except: res[sid] = 0
+            sid=futs[f]
+            try: res[sid]=f.result()
+            except: res[sid]=0
     return res
 
 
 # ── 讀資料 ───────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_stocks():
-    p = os.path.join("data","screener_data.json")
-    if not os.path.exists(p): return None, None
-    with open(p, encoding="utf-8") as f: raw = json.load(f)
+    p=os.path.join("data","screener_data.json")
+    if not os.path.exists(p): return None,None
+    with open(p,encoding="utf-8") as f: raw=json.load(f)
     return raw.get("stocks",[]), raw.get("generated_at","")
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_market():
-    p = os.path.join("data","market_data.json")
+    p=os.path.join("data","market_data.json")
     if not os.path.exists(p): return {}
-    with open(p, encoding="utf-8") as f: return json.load(f)
-
-
-# ── 渲染輔助 ─────────────────────────────────────────────────
-def _kc(v):
-    if v is None: return "#3d5a7a"
-    if v>=75: return "#f23a54"
-    if v>=62: return "#f08020"
-    if v>=50: return "#e8c040"
-    return "#00bf72"
-
-def _cc(v):
-    if v is None: return "#3d5a7a"
-    if v>=60: return "#f23a54"
-    if v>=40: return "#f08020"
-    if v>=25: return "#e8c040"
-    return "#3d5a7a"
-
-def _bar(val, cfn, link=None):
-    if val is None: return '<span style="color:#3d5a7a">—</span>'
-    pct = min(max(val,0),100); c = cfn(val)
-    inner = f'''<div class="sc-bar-wrap">
-  <div class="sc-bar-bg"><div class="sc-bar-fill" style="width:{pct}%;background:{c}"></div></div>
-  <span class="sc-bar-num" style="color:{c}">{int(val)}</span>
-</div>'''
-    if link: return f'<a href="{link}" target="_blank" style="text-decoration:none">{inner}</a>'
-    return inner
-
-def _vol(v):
-    if v is None: return '<span class="vol-dim">—</span>'
-    if v>=2.0: return f'<span class="vol-b vol-fire">{v:.1f}x</span>'
-    if v>=1.5: return f'<span class="vol-b vol-warn">{v:.1f}x</span>'
-    return f'<span class="vol-dim">{v:.1f}x</span>'
-
-def _rsi(v):
-    if v is None: return '<span class="rsi-n">—</span>'
-    if v>=70: return f'<span class="rsi-h">{v:.0f}</span>'
-    if v>=50: return f'<span class="rsi-m">{v:.0f}</span>'
-    if v<=30: return f'<span class="rsi-l">{v:.0f}</span>'
-    return f'<span class="rsi-n">{v:.0f}</span>'
-
-def _rs(v):
-    if v is None: return '<span class="rs-z">—</span>'
-    if v>0:  return f'<span class="rs-p">+{v:.1f}%</span>'
-    if v<0:  return f'<span class="rs-n">{v:.1f}%</span>'
-    return '<span class="rs-z">0.0%</span>'
-
-def _inst(v):
-    v = v or 0
-    if v>=3:  return f'<span class="inst-sb">+{v}</span>'
-    if v>=1:  return f'<span class="inst-b">+{v}</span>'
-    if v<=-3: return f'<span class="inst-ss">{v}</span>'
-    if v<0:   return f'<span class="inst-s">{v}</span>'
-    return '<span class="inst-z">0</span>'
-
-def _sig(s):
-    if not s: return ''
-    m = {"💥突破放量":"sig-1","🚀主力進場":"sig-2","✅洗盤結束":"sig-3","📉量縮整理":"sig-4"}
-    return f'<span class="sig-b {m.get(s,"sig-4")}">{s}</span>'
-
-def _pat(pats):
-    if not pats: return ''
-    return ''.join(f'<span class="pat-t {c}">{n}</span>' for n,c in pats)
-
-def _chg(price, prev):
-    if price is None or not prev or prev==0:
-        return '<span class="chg-zero">—</span>', 0.0
-    p = (price-prev)/prev*100
-    if p>0: return f'<span class="chg-pos">+{p:.2f}%</span>', p
-    if p<0: return f'<span class="chg-neg">{p:.2f}%</span>', p
-    return '<span class="chg-zero">0.00%</span>', 0.0
-
-# 訊號排序權重
-SIG_RANK = {"💥突破放量":4,"🚀主力進場":3,"✅洗盤結束":2,"📉量縮整理":1,"":0}
-PAT_RANK_MAP = {"pat-a":3,"pat-b":2,"pat-c":1}
-
-def _pat_rank(pats):
-    if not pats: return 0
-    return max(PAT_RANK_MAP.get(c,0) for _,c in pats)
+    with open(p,encoding="utf-8") as f: return json.load(f)
 
 
 # ── 主程式 ───────────────────────────────────────────────────
@@ -439,30 +98,6 @@ def main():
         st.error("⚠️ 找不到 data/screener_data.json，請先執行 GitHub Actions。")
         st.stop()
 
-    total = len(stocks)
-
-    # Header
-    st.markdown(f"""
-<div class="sc-header">
-  <span class="sc-title">🇹🇼 台股半導體 Screener</span>
-  <span class="sc-meta">更新：{generated_at or 'N/A'} &nbsp;·&nbsp; {total} 檔</span>
-</div>""", unsafe_allow_html=True)
-
-    # 大盤
-    if mkt:
-        px   = mkt.get('price',0) or 0
-        r5   = mkt.get('ret5d',0) or 0
-        rsi  = mkt.get('rsi')
-        ma_ok= not mkt.get('below_ma20', False)
-        r5c  = "mkt-pos" if r5>0 else ("mkt-neg" if r5<0 else "mkt-neu")
-        st.markdown(f"""
-<div class="mkt-bar">
-  <div class="mkt-item"><span class="mkt-label">加權指數</span><span class="mkt-val">{px:,.0f}</span></div>
-  <div class="mkt-item"><span class="mkt-label">近5日</span><span class="mkt-val {r5c}">{r5:+.1f}%</span></div>
-  <div class="mkt-item"><span class="mkt-label">RSI(14)</span><span class="mkt-val mkt-neu">{f'{rsi:.0f}' if rsi else 'N/A'}</span></div>
-  <div class="mkt-item"><span class="mkt-label">MA20</span><span class="mkt-val {'mkt-pos' if ma_ok else 'mkt-neg'}">{'站上 ✓' if ma_ok else '跌破 ✗'}</span></div>
-</div>""", unsafe_allow_html=True)
-
     # FinMind
     token = _get_token()
     if token:
@@ -471,162 +106,435 @@ def main():
     else:
         inst_map = {}
 
+    SIG_RANK = {"💥突破放量":4,"🚀主力進場":3,"✅洗盤結束":2,"📉量縮整理":1,"":0}
+    PAT_RANK = {"pat-a":3,"pat-b":2,"pat-c":1}
+
+    rows = []
     for s in stocks:
         s["inst_buy_days"] = inst_map.get(s["ticker"], s.get("inst_buy_days",0))
         s["composite"]     = calc_composite_tw(s)
         s["patterns"]      = detect_patterns_tw(s)
-        prev = s.get("prev_close")
-        p    = s.get("price")
-        s["_chg_pct"] = (p-prev)/prev*100 if p and prev and prev!=0 else None
+        price = s.get("price")
+        prev  = s.get("prev_close")
+        chg   = round((price-prev)/prev*100, 2) if price and prev and prev!=0 else None
+        pat_r = max((PAT_RANK.get(c,0) for _,c in s.get("patterns",[])), default=0)
+        rows.append({
+            "ticker":    s["ticker"],
+            "name":      s.get("name", s["ticker"]),
+            "market":    s.get("market","TW"),
+            "price":     price,
+            "prev":      prev,
+            "chg":       chg,
+            "kline":     s.get("kline_score"),
+            "comp":      s.get("composite"),
+            "vol":       s.get("volume_ratio"),
+            "rsi":       s.get("rsi14"),
+            "rs5d":      s.get("rs5d"),
+            "inst":      s.get("inst_buy_days",0) or 0,
+            "signal":    s.get("entry_signal",""),
+            "sig_rank":  SIG_RANK.get(s.get("entry_signal",""),0),
+            "patterns":  [[n,c] for n,c in s.get("patterns",[])],
+            "pat_rank":  pat_r,
+            "yahoo_url": yahoo_tw_url(s["ticker"], s.get("market","TW")),
+            "kline_url": f"https://flydav003-alt.github.io/k-line/?stock={s['ticker']}",
+        })
 
-    # ── 篩選列（單橫排）──
-    c1, c2, c3 = st.columns([2.2, 3.5, 3.5])
-    with c1:
-        search_q = st.text_input("", placeholder="🔍  代號 / 名稱", label_visibility="collapsed")
-    with c2:
-        kline_min = st.slider("K線分 ≥", 0, 100, 0, 5)
-    with c3:
-        comp_min  = st.slider("綜合分 ≥", 0, 100, 0, 5)
+    # 大盤資料
+    mkt_px  = mkt.get("price",0) or 0
+    mkt_r5  = mkt.get("ret5d",0) or 0
+    mkt_rsi = mkt.get("rsi")
+    mkt_ma  = not mkt.get("below_ma20", False)
 
-    # 篩選
-    filtered = [
-        s for s in stocks
-        if (s.get("kline_score") is not None or s.get("volume_ratio") is not None)
-        and (s.get("kline_score") or 0) >= kline_min
-        and (s.get("composite")  or 0) >= comp_min
-        and (not search_q or
-             search_q.lower() in s["ticker"].lower() or
-             search_q.lower() in (s.get("name") or "").lower())
-    ]
+    rows_json = json.dumps(rows, ensure_ascii=False, default=str)
+    total     = len(rows)
+    gen_at    = generated_at or "N/A"
 
-    st.markdown(
-        f'<div class="result-stat">顯示 <b>{len(filtered)}</b> / {total} 檔 &nbsp;·&nbsp; 點欄位標頭排序</div>',
-        unsafe_allow_html=True)
-
-    # ── 建表格資料列 ──
-    COLS = ["代號","名稱","現價","漲跌%","K線分","綜合分","爆量","RSI","RS(5日)","法人","今日訊號","型態"]
-    # sort_key：對應到 s dict 的數值欄位（None = 不排序）
-    SORT_KEYS = {
-        "漲跌%":  "_chg_pct",
-        "K線分":  "kline_score",
-        "綜合分": "composite",
-        "爆量":   "volume_ratio",
-        "RSI":    "rsi14",
-        "RS(5日)":"rs5d",
-        "法人":   "inst_buy_days",
-        "今日訊號":"signal_rank",
-        "型態":   "_pat_rank",
-    }
-
-    # 排序 state
-    if "sort_col" not in st.session_state:
-        st.session_state.sort_col = "K線分"
-        st.session_state.sort_asc = False
-
-    # 預先計算 _pat_rank / signal_rank
-    for s in filtered:
-        s["_pat_rank"]   = _pat_rank(s.get("patterns",[]))
-        s["signal_rank"] = SIG_RANK.get(s.get("entry_signal",""), 0)
-
-    sk = SORT_KEYS.get(st.session_state.sort_col)
-    if sk:
-        asc = st.session_state.sort_asc
-        filtered.sort(key=lambda x: (x.get(sk) is None, x.get(sk,0) if asc else -(x.get(sk) or 0)))
-
-    # 建 HTML 列
-    rows_html = ""
-    for s in filtered:
-        ticker = s["ticker"]
-        mkt_s  = s.get("market","TW")
-        url    = yahoo_tw_url(ticker, mkt_s)
-        kurl   = f"https://flydav003-alt.github.io/k-line/?stock={ticker}"
-        price  = s.get("price")
-        chg_h, _ = _chg(price, s.get("prev_close"))
-        rows_html += f"""<tr>
-  <td><a class="tk-link" href="{url}" target="_blank">{ticker}</a></td>
-  <td><span class="stk-name">{s.get('name',ticker)}</span></td>
-  <td><span class="price-v">{f'{price:.1f}' if price is not None else '—'}</span></td>
-  <td>{chg_h}</td>
-  <td>{_bar(s.get('kline_score'), _kc, kurl)}</td>
-  <td>{_bar(s.get('composite'),   _cc)}</td>
-  <td>{_vol(s.get('volume_ratio'))}</td>
-  <td>{_rsi(s.get('rsi14'))}</td>
-  <td>{_rs(s.get('rs5d'))}</td>
-  <td>{_inst(s.get('inst_buy_days'))}</td>
-  <td>{_sig(s.get('entry_signal',''))}</td>
-  <td>{_pat(s.get('patterns',[]))}</td>
-</tr>"""
-
-    # 表頭（含排序箭頭）
-    sc = st.session_state.sort_col
-    asc_flag = st.session_state.sort_asc
-    ths = ""
-    for col in COLS:
-        cls = ""
-        if col in SORT_KEYS:
-            if col == sc:
-                cls = "sorted-asc" if asc_flag else "sorted-desc"
-            # 用 JS onclick 寄送
-            ths += f'<th class="{cls}" onclick="sortCol(\'{col}\')">{col}<span class="sort-arrow"></span></th>'
-        else:
-            ths += f'<th>{col}</th>'
-
-    table_html = f"""
-<script>
-function sortCol(col) {{
-  // 透過隱藏按鈕觸發 streamlit rerun
-  const btn = document.getElementById('sort_btn_' + col);
-  if (btn) btn.click();
+    # ── 組 HTML ──────────────────────────────────────────────
+    html_page = f"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+:root{{
+  --bg:         #070e1c;
+  --bg2:        #0a1628;
+  --bg3:        #0d1e35;
+  --bg-row:     #0b1a2e;
+  --bg-row-alt: #091525;
+  --bg-hov:     #112040;
+  --border:     rgba(40,90,160,0.28);
+  --border2:    rgba(50,110,190,0.45);
+  --text:       #c8dcf4;
+  --text-dim:   #3a5878;
+  --text-mid:   #6888aa;
+  --text-hd:    #4a78a8;
+  --accent:     #3a7fff;
+  --red:        #f03a52;
+  --green:      #00c070;
+  --orange:     #e87820;
+  --yellow:     #d8b830;
+  --sans:       'Inter','Noto Sans TC',sans-serif;
 }}
+body{{
+  background:var(--bg);color:var(--text);
+  font-family:var(--sans);font-size:13px;
+  min-height:100vh;
+}}
+
+/* ── Header ── */
+.hd{{
+  display:flex;align-items:baseline;gap:12px;
+  padding:14px 20px 10px;
+  border-bottom:1px solid var(--border);
+}}
+.hd-title{{font-size:17px;font-weight:700;color:#ddeeff;letter-spacing:.04em;}}
+.hd-meta{{font-size:11px;color:var(--text-dim);letter-spacing:.04em;}}
+
+/* ── 大盤 ── */
+.mkt{{
+  display:flex;align-items:stretch;
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:0 20px;
+}}
+.mkt-item{{
+  display:flex;flex-direction:column;justify-content:center;
+  padding:10px 20px 10px 0;margin-right:20px;
+  border-right:1px solid var(--border);
+}}
+.mkt-item:last-child{{border-right:none;}}
+.mkt-lbl{{font-size:9.5px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;}}
+.mkt-val{{font-size:16px;font-weight:700;}}
+.pos{{color:var(--red);}} .neg{{color:var(--green);}} .neu{{color:var(--text-mid);}}
+
+/* ── 篩選列 ── */
+.filter-bar{{
+  display:flex;align-items:center;gap:16px;
+  padding:10px 20px;
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  flex-wrap:nowrap;
+}}
+.filter-bar input[type=text]{{
+  background:rgba(10,25,55,0.9);
+  border:1px solid var(--border2);
+  color:var(--text);border-radius:5px;
+  padding:6px 12px;font-size:13px;
+  font-family:var(--sans);width:200px;
+  outline:none;transition:border .15s;
+}}
+.filter-bar input[type=text]:focus{{border-color:var(--accent);}}
+.filter-bar input[type=text]::placeholder{{color:var(--text-dim);}}
+.sl-wrap{{display:flex;align-items:center;gap:8px;}}
+.sl-lbl{{font-size:11px;color:var(--text-mid);white-space:nowrap;}}
+.sl-val{{font-size:12px;font-weight:600;color:var(--accent);min-width:22px;}}
+input[type=range]{{
+  -webkit-appearance:none;width:110px;height:3px;
+  background:var(--border2);border-radius:2px;outline:none;cursor:pointer;
+}}
+input[type=range]::-webkit-slider-thumb{{
+  -webkit-appearance:none;width:14px;height:14px;
+  border-radius:50%;background:var(--accent);
+  border:2px solid #ddeeff;cursor:pointer;
+  box-shadow:0 0 6px rgba(58,127,255,.5);
+}}
+.stat-line{{
+  padding:6px 20px;font-size:11px;color:var(--text-dim);
+  border-bottom:1px solid var(--border);
+}}
+.stat-line b{{color:var(--accent);}}
+
+/* ── 表格 ── */
+table{{width:100%;border-collapse:collapse;}}
+thead th{{
+  background:var(--bg2);color:var(--text-hd);
+  font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  padding:8px 12px;text-align:left;
+  border-bottom:1px solid var(--border2);
+  white-space:nowrap;cursor:pointer;user-select:none;
+  position:sticky;top:0;z-index:5;
+}}
+thead th:hover{{color:var(--text);background:var(--bg3);}}
+thead th .arr{{margin-left:4px;font-size:9px;opacity:.4;}}
+thead th.asc .arr{{opacity:1;color:var(--accent);}}
+thead th.asc .arr::after{{content:'▲';}}
+thead th.desc .arr{{opacity:1;color:var(--accent);}}
+thead th.desc .arr::after{{content:'▼';}}
+thead th:not(.asc):not(.desc) .arr::after{{content:'⇅';}}
+
+tbody tr:nth-child(odd)  {{background:var(--bg-row);}}
+tbody tr:nth-child(even) {{background:var(--bg-row-alt);}}
+tbody tr:hover{{background:var(--bg-hov)!important;}}
+tbody td{{padding:7px 12px;vertical-align:middle;white-space:nowrap;}}
+
+/* ── 欄位樣式 ── */
+.tk{{color:#4a9fff;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:.03em;}}
+.tk:hover{{color:#90c8ff;}}
+.nm{{color:var(--text-mid);font-size:12px;}}
+.pv{{font-weight:600;color:#ddeeff;}}
+
+/* bar */
+.bar-cell{{display:flex;align-items:center;gap:7px;}}
+.bar-bg{{width:44px;height:3px;background:rgba(255,255,255,.07);border-radius:2px;flex-shrink:0;}}
+.bar-fg{{height:3px;border-radius:2px;}}
+.bar-num{{font-size:12px;font-weight:700;min-width:22px;}}
+
+/* vol */
+.vb{{display:inline-block;padding:1px 7px;border-radius:3px;font-size:11px;font-weight:700;}}
+.v-fire{{background:rgba(240,58,82,.14);color:#f03a52;border:1px solid rgba(240,58,82,.3);}}
+.v-warn{{background:rgba(232,120,32,.14);color:#e87820;border:1px solid rgba(232,120,32,.3);}}
+.v-dim{{color:var(--text-dim);font-size:12px;}}
+
+/* rsi */
+.rh{{color:var(--red);font-weight:600;}} .rm{{color:var(--yellow);}} .rl{{color:var(--green);font-weight:600;}} .rn{{color:var(--text-mid);}}
+
+/* inst */
+.isb{{color:var(--red);font-weight:800;}} .ib{{color:#f07060;font-weight:600;}}
+.iss{{color:var(--green);font-weight:800;}} .is{{color:#50b888;font-weight:600;}}
+.iz{{color:var(--text-dim);}}
+
+/* signal */
+.sig{{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;white-space:nowrap;}}
+.s1{{background:rgba(240,58,82,.12);color:#f06070;border:1px solid rgba(240,58,82,.25);}}
+.s2{{background:rgba(232,120,32,.12);color:#f0a040;border:1px solid rgba(232,120,32,.25);}}
+.s3{{background:rgba(0,192,112,.10);color:#30d890;border:1px solid rgba(0,192,112,.25);}}
+.s4{{background:rgba(50,80,120,.20);color:#6090b8;border:1px solid rgba(50,80,120,.4);}}
+
+/* pattern */
+.pt{{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10.5px;margin-right:3px;}}
+.pa{{background:rgba(232,120,32,.14);color:#f0a040;border:1px solid rgba(232,120,32,.3);}}
+.pb{{background:rgba(42,127,255,.12);color:#70b0ff;border:1px solid rgba(42,127,255,.3);}}
+.pc{{background:rgba(160,100,240,.12);color:#c090f8;border:1px solid rgba(160,100,240,.3);}}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="hd">
+  <span class="hd-title">🇹🇼 台股半導體 Screener</span>
+  <span class="hd-meta">更新：{gen_at} &nbsp;·&nbsp; {total} 檔</span>
+</div>
+
+<!-- 大盤 -->
+<div class="mkt" id="mktBar">
+  <div class="mkt-item">
+    <div class="mkt-lbl">加權指數</div>
+    <div class="mkt-val">{mkt_px:,.0f}</div>
+  </div>
+  <div class="mkt-item">
+    <div class="mkt-lbl">近5日</div>
+    <div class="mkt-val {'pos' if mkt_r5>0 else 'neg' if mkt_r5<0 else 'neu'}">{mkt_r5:+.1f}%</div>
+  </div>
+  <div class="mkt-item">
+    <div class="mkt-lbl">RSI(14)</div>
+    <div class="mkt-val neu">{f'{mkt_rsi:.0f}' if mkt_rsi else 'N/A'}</div>
+  </div>
+  <div class="mkt-item">
+    <div class="mkt-lbl">MA20</div>
+    <div class="mkt-val {'pos' if mkt_ma else 'neg'}">{'站上 ✓' if mkt_ma else '跌破 ✗'}</div>
+  </div>
+</div>
+
+<!-- 篩選列 -->
+<div class="filter-bar">
+  <input type="text" id="searchQ" placeholder="🔍  代號 / 名稱" oninput="applyFilter()">
+  <div class="sl-wrap">
+    <span class="sl-lbl">K線分 ≥</span>
+    <input type="range" id="slKline" min="0" max="100" step="5" value="0" oninput="applyFilter();document.getElementById('kvKline').textContent=this.value">
+    <span class="sl-val" id="kvKline">0</span>
+  </div>
+  <div class="sl-wrap">
+    <span class="sl-lbl">綜合分 ≥</span>
+    <input type="range" id="slComp" min="0" max="100" step="5" value="0" oninput="applyFilter();document.getElementById('kvComp').textContent=this.value">
+    <span class="sl-val" id="kvComp">0</span>
+  </div>
+</div>
+
+<div class="stat-line" id="statLine">載入中…</div>
+
+<!-- 表格 -->
+<div id="tableWrap">
+<table id="mainTbl">
+<thead>
+<tr>
+  <th data-key="ticker" class="no-sort">代號</th>
+  <th data-key="name"   class="no-sort">名稱</th>
+  <th data-key="price"  class="no-sort">現價</th>
+  <th data-key="chg">漲跌%<span class="arr"></span></th>
+  <th data-key="kline">K線分<span class="arr"></span></th>
+  <th data-key="comp">綜合分<span class="arr"></span></th>
+  <th data-key="vol">爆量<span class="arr"></span></th>
+  <th data-key="rsi">RSI<span class="arr"></span></th>
+  <th data-key="rs5d">RS(5日)<span class="arr"></span></th>
+  <th data-key="inst">法人<span class="arr"></span></th>
+  <th data-key="sig_rank">今日訊號<span class="arr"></span></th>
+  <th data-key="pat_rank">型態<span class="arr"></span></th>
+</tr>
+</thead>
+<tbody id="tBody"></tbody>
+</table>
+</div>
+
+<script>
+const RAW = {rows_json};
+let sortKey = 'kline', sortAsc = false;
+
+const SIG_CSS = {{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3","📉量縮整理":"s4"}};
+const PAT_CSS = {{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
+
+function kc(v){{
+  if(v===null||v===undefined) return '#3a5878';
+  if(v>=75) return '#f03a52'; if(v>=62) return '#e87820';
+  if(v>=50) return '#d8b830'; return '#00c070';
+}}
+function cc(v){{
+  if(v===null||v===undefined) return '#3a5878';
+  if(v>=60) return '#f03a52'; if(v>=40) return '#e87820';
+  if(v>=25) return '#d8b830'; return '#3a5878';
+}}
+function bar(val,cfn,link){{
+  if(val===null||val===undefined) return '<span style="color:#3a5878">—</span>';
+  const pct=Math.min(Math.max(val,0),100), c=cfn(val);
+  const inner=`<div class="bar-cell"><div class="bar-bg"><div class="bar-fg" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bar-num" style="color:${{c}}">${{Math.round(val)}}</span></div>`;
+  return link ? `<a href="${{link}}" target="_blank" style="text-decoration:none">${{inner}}</a>` : inner;
+}}
+function vol(v){{
+  if(v===null||v===undefined) return '<span class="v-dim">—</span>';
+  if(v>=2.0) return `<span class="vb v-fire">${{v.toFixed(1)}}x</span>`;
+  if(v>=1.5) return `<span class="vb v-warn">${{v.toFixed(1)}}x</span>`;
+  return `<span class="v-dim">${{v.toFixed(1)}}x</span>`;
+}}
+function rsi(v){{
+  if(v===null||v===undefined) return '<span class="rn">—</span>';
+  if(v>=70) return `<span class="rh">${{Math.round(v)}}</span>`;
+  if(v>=50) return `<span class="rm">${{Math.round(v)}}</span>`;
+  if(v<=30) return `<span class="rl">${{Math.round(v)}}</span>`;
+  return `<span class="rn">${{Math.round(v)}}</span>`;
+}}
+function rs(v){{
+  if(v===null||v===undefined) return '<span class="iz">—</span>';
+  if(v>0) return `<span class="pos">+${{v.toFixed(1)}}%</span>`;
+  if(v<0) return `<span class="neg">${{v.toFixed(1)}}%</span>`;
+  return '<span class="iz">0.0%</span>';
+}}
+function inst(v){{
+  v=v||0;
+  if(v>=3) return `<span class="isb">+${{v}}</span>`;
+  if(v>=1) return `<span class="ib">+${{v}}</span>`;
+  if(v<=-3) return `<span class="iss">${{v}}</span>`;
+  if(v<0)   return `<span class="is">${{v}}</span>`;
+  return '<span class="iz">0</span>';
+}}
+function sig(s){{
+  if(!s) return '';
+  return `<span class="sig ${{SIG_CSS[s]||'s4'}}">${{s}}</span>`;
+}}
+function pats(arr){{
+  if(!arr||!arr.length) return '';
+  return arr.map(([n,c])=>`<span class="pt ${{PAT_CSS[c]||'pb'}}">${{n}}</span>`).join('');
+}}
+function chgHtml(v){{
+  if(v===null||v===undefined) return '<span style="color:#3a5878">—</span>';
+  if(v>0) return `<span class="pos">+${{v.toFixed(2)}}%</span>`;
+  if(v<0) return `<span class="neg">${{v.toFixed(2)}}%</span>`;
+  return '<span class="iz">0.00%</span>';
+}}
+
+function renderRows(data){{
+  const tb=document.getElementById('tBody');
+  if(!data.length){{
+    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:40px;color:#3a5878">沒有符合條件的股票</td></tr>';
+    return;
+  }}
+  tb.innerHTML=data.map(r=>`<tr>
+    <td><a class="tk" href="${{r.yahoo_url}}" target="_blank">${{r.ticker}}</a></td>
+    <td><span class="nm">${{r.name}}</span></td>
+    <td><span class="pv">${{r.price!==null?r.price.toFixed(1):'—'}}</span></td>
+    <td>${{chgHtml(r.chg)}}</td>
+    <td>${{bar(r.kline,kc,r.kline_url)}}</td>
+    <td>${{bar(r.comp,cc)}}</td>
+    <td>${{vol(r.vol)}}</td>
+    <td>${{rsi(r.rsi)}}</td>
+    <td>${{rs(r.rs5d)}}</td>
+    <td>${{inst(r.inst)}}</td>
+    <td>${{sig(r.signal)}}</td>
+    <td>${{pats(r.patterns)}}</td>
+  </tr>`).join('');
+}}
+
+function applyFilter(){{
+  const q=(document.getElementById('searchQ').value||'').toLowerCase();
+  const kMin=+document.getElementById('slKline').value;
+  const cMin=+document.getElementById('slComp').value;
+  let data=RAW.filter(r=>{{
+    if((r.kline===null&&r.vol===null)) return false;
+    if((r.kline||0)<kMin) return false;
+    if((r.comp||0)<cMin)  return false;
+    if(q && !r.ticker.toLowerCase().includes(q) && !r.name.toLowerCase().includes(q)) return false;
+    return true;
+  }});
+  data=sortData(data);
+  document.getElementById('statLine').innerHTML=`顯示 <b>${{data.length}}</b> / {total} 檔`;
+  renderRows(data);
+  scheduleResize();
+}}
+
+function sortData(data){{
+  return [...data].sort((a,b)=>{{
+    let av=a[sortKey], bv=b[sortKey];
+    const na=av===null||av===undefined;
+    const nb=bv===null||bv===undefined;
+    if(na&&nb) return 0;
+    if(na) return 1; if(nb) return -1;
+    return sortAsc ? av-bv : bv-av;
+  }});
+}}
+
+// 標頭排序
+document.querySelectorAll('thead th[data-key]').forEach(th=>{{
+  if(th.classList.contains('no-sort')) return;
+  th.addEventListener('click',()=>{{
+    const k=th.dataset.key;
+    if(sortKey===k) sortAsc=!sortAsc;
+    else{{ sortKey=k; sortAsc=false; }}
+    document.querySelectorAll('thead th').forEach(t=>t.classList.remove('asc','desc'));
+    th.classList.add(sortAsc?'asc':'desc');
+    applyFilter();
+  }});
+}});
+
+// 預設 K線分降序
+document.querySelector('th[data-key="kline"]').classList.add('desc');
+applyFilter();
+
+// ResizeObserver 撐高 iframe
+let raf=0;
+function contentH(){{
+  return Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))+4;
+}}
+function reportH(){{
+  window.parent.postMessage({{isStreamlitMessage:true,type:'streamlit:setFrameHeight',height:contentH()}},'*');
+}}
+function scheduleResize(){{
+  if(raf) cancelAnimationFrame(raf);
+  raf=requestAnimationFrame(reportH);
+}}
+if(window.ResizeObserver){{
+  new ResizeObserver(scheduleResize).observe(document.body);
+}}
+window.addEventListener('load',scheduleResize);
+setTimeout(scheduleResize,100);
+setTimeout(scheduleResize,600);
 </script>
-<table class="sc-table">
-<thead><tr>{ths}</tr></thead>
-<tbody>
-{rows_html or '<tr><td colspan="12" style="text-align:center;padding:40px;color:#3d5a7a">沒有符合條件的股票</td></tr>'}
-</tbody>
-</table>"""
+</body>
+</html>"""
 
-    st.markdown(table_html, unsafe_allow_html=True)
+    est_height = 300 + len(rows) * 38
+    components.html(html_page, height=est_height, scrolling=False)
 
-    # 隱藏的排序按鈕（Streamlit 無法從 JS 直接改 session_state，用 st.button 代替）
-    # 改用下拉選單排序取代 JS（Streamlit 限制）
-    st.markdown("<br>", unsafe_allow_html=True)
-    sort_cols_opts = ["K線分","綜合分","漲跌%","爆量","RSI","RS(5日)","法人","今日訊號","型態"]
-    col_s1, col_s2, col_s3 = st.columns([2, 2, 6])
-    with col_s1:
-        new_sort = st.selectbox("排序欄位", sort_cols_opts,
-                                index=sort_cols_opts.index(st.session_state.sort_col)
-                                if st.session_state.sort_col in sort_cols_opts else 0,
-                                label_visibility="visible")
-    with col_s2:
-        new_asc = st.radio("方向", ["↓ 高→低", "↑ 低→高"],
-                           index=0 if not st.session_state.sort_asc else 1,
-                           horizontal=True, label_visibility="visible")
-
-    if new_sort != st.session_state.sort_col or (new_asc=="↑ 低→高") != st.session_state.sort_asc:
-        st.session_state.sort_col = new_sort
-        st.session_state.sort_asc = (new_asc == "↑ 低→高")
-        st.rerun()
-
-    # 說明
-    with st.expander("📖 指標說明", expanded=False):
-        st.markdown("""
-| 指標 | 說明 |
-|------|------|
-| **K線分 ≥ 75** | 技術面強勢；62~74 偏多；50~61 中性；< 50 偏弱 |
-| **💥突破放量** | 爆量創5日新高 — 最強進場訊號 |
-| **🚀主力進場** | 大量紅K收高位 |
-| **✅洗盤結束** | 量縮後放量紅K |
-| **📉量縮整理** | 量縮蓄勢中 |
-| **爆量** | 1.5x 橘色警示；2.0x+ 紅色強訊號 |
-| **RSI** | ≥70 紅（過熱）；50~70 黃（偏強）；≤30 綠（超賣） |
-| **法人** | +3以上深紅強買；-3以下深綠強賣 |
-| **RS(5日)** | 個股5日漲跌 − 加權指數5日漲跌 |
-| **A法人爆量** | 法人連買≥3天 且 爆量≥1.5倍 |
-| **B回踩MA60** | 股價在MA60附近、RSI 32~55、MA20上升中 |
-| **C底背離** | RSI 底背離（技術反轉訊號）|
-> ⚠️ 本工具僅供技術面參考，不構成投資建議。
-        """)
 
 if __name__ == "__main__":
     main()
