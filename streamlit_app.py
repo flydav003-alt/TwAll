@@ -386,7 +386,6 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 </table>
 </div>
 
-<!-- 說明 -->
 <div class="legend">
   <div class="legend-hd" onclick="toggleLegend()">
     <span>📖 指標說明</span><span id="legArr">▶</span>
@@ -753,16 +752,17 @@ function toggleLegend(){{
   else{{b.classList.add('open');a.textContent='▼';schedResize();}}
 }}
 
-function initApp() {
-  try {
-    // 1. 強制重置拉條數值，打敗瀏覽器的 Form Auto-restore 快取
-    ['slK', 'slC'].forEach(id => {
+// ── 強化版應用程式初始化模組 (已轉義成 Python 格式) ──
+function initApp() {{
+  try {{
+    // 1. 強制重置拉條數值，清除瀏覽器的 Form Auto-restore 快取
+    ['slK', 'slC'].forEach(id => {{
       const el = document.getElementById(id);
-      if (el) {
+      if (el) {{
         el.value = 0; // 強制將真實數值歸零
         el.style.setProperty('--pct', '0%');
-      }
-    });
+      }}
+    }});
     // 強制重置旁邊顯示的數字
     document.getElementById('kvK').textContent = '0';
     document.getElementById('kvC').textContent = '0';
@@ -772,35 +772,35 @@ function initApp() {
     if (thKline) thKline.classList.add('desc');
 
     // 3. 獨立執行統計面板 (加入 try-catch，避免資料庫為空時拖垮整個首頁)
-    try { 
+    try {{ 
       renderStats(); 
-    } catch(e) { 
+    }} catch(e) {{ 
       console.error("統計面板初始化略過:", e); 
-    }
+    }}
 
     // 4. 初始化統計面板的滑桿
-    ['statsK', 'statsC'].forEach(id => {
+    ['statsK', 'statsC'].forEach(id => {{
       const el = document.getElementById(id);
       if (el) el.style.setProperty('--pct', '0%');
-    });
+    }});
 
     // 5. 執行最終過濾與渲染
     applyFilter();
     
-  } catch (err) {
+  }} catch (err) {{
     console.error("首頁初始化錯誤:", err);
     // 就算發生極端錯誤，也強制解除「載入中…」狀態避免畫面死當
     const statLine = document.getElementById('statLine');
     if (statLine) statLine.innerHTML = '載入完成，若無資料請重新調整拉條。';
-  }
-}
+  }}
+}}
 
 // 確保 DOM 與 Streamlit iframe 完全就緒後再啟動
-if (document.readyState === 'loading') {
+if (document.readyState === 'loading') {{
   document.addEventListener('DOMContentLoaded', initApp);
-} else {
+}} else {{
   initApp();
-}
+}}
 
 // ResizeObserver
 let raf=0;
