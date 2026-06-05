@@ -521,6 +521,38 @@ def export_stats_payload(db_path=DB_PATH):
         LIMIT 120
         """
     ).fetchall()]
+    threshold_stats = []
+    threshold_defs = [
+        ("K線 >= 70", "e.kline_score >= 70"),
+        ("K線 >= 75", "e.kline_score >= 75"),
+        ("K線 >= 78", "e.kline_score >= 78"),
+        ("K線 >= 80", "e.kline_score >= 80"),
+        ("綜合分 >= 75", "e.composite_score >= 75"),
+        ("綜合分 >= 80", "e.composite_score >= 80"),
+        ("綜合分 >= 85", "e.composite_score >= 85"),
+        ("綜合分 >= 88", "e.composite_score >= 88"),
+        ("K線 >= 75 且綜合分 >= 80", "e.kline_score >= 75 AND e.composite_score >= 80"),
+        ("K線 >= 78 且綜合分 >= 88", "e.kline_score >= 78 AND e.composite_score >= 88"),
+    ]
+    for label, where_sql in threshold_defs:
+        rows = conn.execute(
+            f"""
+            SELECT o.horizon, COUNT(*) AS sample_count,
+                   ROUND(AVG(CASE WHEN o.return_close_pct > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) AS win_rate,
+                   ROUND(AVG(o.return_close_pct), 2) AS avg_return,
+                   ROUND(AVG(o.max_gain_pct), 2) AS avg_max_gain,
+                   ROUND(AVG(o.max_drawdown_pct), 2) AS avg_max_drawdown
+            FROM event_outcomes o
+            JOIN signal_events e ON e.event_id = o.event_id
+            WHERE {where_sql}
+            GROUP BY o.horizon
+            ORDER BY o.horizon
+            """
+        ).fetchall()
+        for r in rows:
+            item = dict(r)
+            item["rule"] = label
+            threshold_stats.append(item)
     watch = [dict(r) for r in conn.execute(
         """
         SELECT status, confirm_type, COUNT(*) AS count
@@ -530,4 +562,11 @@ def export_stats_payload(db_path=DB_PATH):
         """
     ).fetchall()]
     conn.close()
-    return {"ready": True, "counts": counts, "summary": summary, "recent": recent, "watch": watch}
+    return {
+        "ready": True,
+        "counts": counts,
+        "summary": summary,
+        "recent": recent,
+        "threshold_stats": threshold_stats,
+        "watch": watch,
+    }
