@@ -753,26 +753,54 @@ function toggleLegend(){{
   else{{b.classList.add('open');a.textContent='▼';schedResize();}}
 }}
 
-// 初始化滑桿漸層
-['slK','slC'].forEach(id=>{{
-  const el=document.getElementById(id);
-  el.style.setProperty('--pct',(el.value/el.max*100)+'%');
-}});
+function initApp() {
+  try {
+    // 1. 強制重置拉條數值，打敗瀏覽器的 Form Auto-restore 快取
+    ['slK', 'slC'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.value = 0; // 強制將真實數值歸零
+        el.style.setProperty('--pct', '0%');
+      }
+    });
+    // 強制重置旁邊顯示的數字
+    document.getElementById('kvK').textContent = '0';
+    document.getElementById('kvC').textContent = '0';
 
-// 預設 K線分降序
-document.querySelector('th[data-k="kline"]').classList.add('desc');
+    // 2. 設定預設排序
+    const thKline = document.querySelector('th[data-k="kline"]');
+    if (thKline) thKline.classList.add('desc');
 
-// 初始化統計頁滑桿漸層（renderStats 動態生成後再初始化）
-function initStatsSliders(){{
-  ['statsK','statsC'].forEach(id=>{{
-    const el=document.getElementById(id);
-    if(el) el.style.setProperty('--pct','0%');
-  }});
-}}
+    // 3. 獨立執行統計面板 (加入 try-catch，避免資料庫為空時拖垮整個首頁)
+    try { 
+      renderStats(); 
+    } catch(e) { 
+      console.error("統計面板初始化略過:", e); 
+    }
 
-renderStats();
-initStatsSliders();
-applyFilter();
+    // 4. 初始化統計面板的滑桿
+    ['statsK', 'statsC'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.setProperty('--pct', '0%');
+    });
+
+    // 5. 執行最終過濾與渲染
+    applyFilter();
+    
+  } catch (err) {
+    console.error("首頁初始化錯誤:", err);
+    // 就算發生極端錯誤，也強制解除「載入中…」狀態避免畫面死當
+    const statLine = document.getElementById('statLine');
+    if (statLine) statLine.innerHTML = '載入完成，若無資料請重新調整拉條。';
+  }
+}
+
+// 確保 DOM 與 Streamlit iframe 完全就緒後再啟動
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
 
 // ResizeObserver
 let raf=0;
