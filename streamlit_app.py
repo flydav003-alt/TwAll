@@ -145,48 +145,61 @@ def main():
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
-  --bg:      #141b2d;
-  --bg2:     #1a2340;
-  --bg3:     #1e2848;
-  --row-odd: #161d30;
-  --row-evn: #131929;
-  --hov:     #1f2d4a;
-  --bdr:     rgba(120,130,200,0.18);
-  --bdr2:    rgba(130,110,230,0.35);
-  --txt:     #d0d8f0;
-  --dim:     #3d4d6e;
-  --mid:     #5c6a8a;
-  --hd:      #6a7aaa;
-  --acc:     #826edd;
-  --red:     #f07070;
-  --grn:     #3fb950;
-  --orn:     #d4a843;
-  --yel:     #a99ef0;
+  --bg:      #080e1a;
+  --bg2:     #0d1525;
+  --bg3:     #111d30;
+  --row-odd: #0b1220;
+  --row-evn: #09101c;
+  --hov:     #152035;
+  --bdr:     rgba(30,200,180,0.10);
+  --bdr2:    rgba(30,200,180,0.28);
+  --txt:     #c8e8e2;
+  --dim:     #2a4a44;
+  --mid:     #4a7a72;
+  --hd:      #5fada0;
+  --acc:     #00d4b4;
+  --red:     #ff6b7a;
+  --grn:     #00e87a;
+  --orn:     #ffb830;
+  --yel:     #ffe066;
   --sans:    'Inter','Noto Sans TC',sans-serif;
 }}
-body{{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13px;}}
+body{{
+  background:var(--bg);
+  background-image:
+    radial-gradient(ellipse 80% 40% at 50% -10%, rgba(0,180,150,0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 60% at 90% 50%, rgba(0,100,200,0.05) 0%, transparent 60%);
+  color:var(--txt);font-family:var(--sans);font-size:13px;
+}}
 
 /* ── HEADER ── */
 .hd{{
   display:flex;align-items:baseline;gap:14px;
   padding:16px 28px 12px;
   border-bottom:1px solid var(--bdr);
+  background:linear-gradient(90deg, rgba(0,212,180,0.05) 0%, transparent 60%);
 }}
-.hd-t{{font-size:18px;font-weight:700;color:#ddeeff;letter-spacing:.04em;}}
-.hd-m{{font-size:11px;color:var(--dim);}}
+.hd-t{{
+  font-size:18px;font-weight:700;
+  color:var(--acc);
+  letter-spacing:.06em;
+  text-shadow:0 0 24px rgba(0,212,180,0.35);
+}}
+.hd-m{{font-size:11px;color:var(--mid);}}
 
 /* ── MARKET BAR ── */
 .mkt{{
   display:flex;border-bottom:1px solid var(--bdr);
   background:var(--bg2);
+  border-top:1px solid rgba(0,212,180,0.08);
 }}
 .mi{{
   padding:10px 24px;border-right:1px solid var(--bdr);
   display:flex;flex-direction:column;gap:3px;
 }}
 .mi:last-child{{border-right:none;}}
-.mi-l{{font-size:9.5px;color:var(--dim);letter-spacing:.10em;text-transform:uppercase;}}
-.mi-v{{font-size:17px;font-weight:700;}}
+.mi-l{{font-size:9.5px;color:var(--mid);letter-spacing:.12em;text-transform:uppercase;}}
+.mi-v{{font-size:17px;font-weight:700;color:#e0f8f4;}}
 .pos{{color:var(--red)}} .neg{{color:var(--grn)}} .neu{{color:var(--mid)}}
 
 /* ── FILTER BAR ── */
@@ -198,42 +211,42 @@ body{{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13
 .srch{{
   position:relative;display:flex;align-items:center;
 }}
-.srch-ico{{position:absolute;left:11px;color:var(--dim);font-size:14px;pointer-events:none;}}
+.srch-ico{{position:absolute;left:11px;color:var(--mid);font-size:14px;pointer-events:none;}}
 .srch input{{
   background:var(--bg3);border:1px solid var(--bdr2);color:var(--txt);
   border-radius:7px;padding:8px 12px 8px 32px;
   font-size:13px;font-family:var(--sans);width:210px;outline:none;
   transition:border .15s,box-shadow .15s;
 }}
-.srch input:focus{{border-color:var(--acc);box-shadow:0 0 0 2px rgba(47,125,232,.18);}}
+.srch input:focus{{border-color:var(--acc);box-shadow:0 0 0 3px rgba(0,212,180,0.12);}}
 .srch input::placeholder{{color:var(--dim);}}
 
 /* 滑桿群組 */
 .sl-grp{{display:flex;align-items:center;gap:10px;}}
-.sl-lbl{{font-size:12px;color:var(--mid);white-space:nowrap;font-weight:500;}}
+.sl-lbl{{font-size:12px;color:var(--hd);white-space:nowrap;font-weight:500;}}
 /* 粗滑桿 */
 input[type=range]{{
   -webkit-appearance:none;width:140px;height:7px;
-  background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), rgba(48,105,185,0.25) var(--pct,0%), rgba(48,105,185,0.25) 100%);
+  background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), rgba(0,180,140,0.18) var(--pct,0%), rgba(0,180,140,0.18) 100%);
   border-radius:4px;outline:none;cursor:pointer;border:none;
 }}
 input[type=range]::-webkit-slider-thumb{{
   -webkit-appearance:none;width:18px;height:18px;
-  border-radius:50%;background:#2f7de8;
-  border:2px solid #c4d8f2;cursor:pointer;
-  box-shadow:0 0 8px rgba(47,125,232,.6);
+  border-radius:50%;background:var(--acc);
+  border:2px solid #c4f8f0;cursor:pointer;
+  box-shadow:0 0 10px rgba(0,212,180,.55);
   transition:box-shadow .15s;
 }}
-input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 12px rgba(47,125,232,.9);}}
+input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 16px rgba(0,212,180,.85);}}
 .sl-val{{
-  font-size:14px;font-weight:700;color:#ddeeff;
+  font-size:14px;font-weight:700;color:var(--acc);
   min-width:26px;text-align:center;
   background:var(--bg3);border:1px solid var(--bdr2);
   border-radius:5px;padding:3px 7px;
 }}
 
 /* ── STAT LINE ── */
-.stat{{padding:7px 28px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--bdr);}}
+.stat{{padding:7px 28px;font-size:11px;color:var(--mid);border-bottom:1px solid var(--bdr);}}
 .stat b{{color:var(--acc);font-weight:600;}}
 
 /* ── TABLE ── */
@@ -243,12 +256,12 @@ thead th{{
   background:var(--bg2);color:var(--hd);
   font-size:10px;font-weight:600;letter-spacing:.10em;text-transform:uppercase;
   padding:9px 14px;text-align:left;
-  border-bottom:1px solid var(--bdr2);
+  border-bottom:2px solid rgba(0,212,180,0.22);
   white-space:nowrap;user-select:none;
   position:sticky;top:0;z-index:5;
 }}
 thead th.sortable{{cursor:pointer;}}
-thead th.sortable:hover{{color:var(--txt);background:var(--hov);}}
+thead th.sortable:hover{{color:var(--acc);background:var(--hov);}}
 .arr{{margin-left:4px;font-size:9px;opacity:.35;}}
 th.asc  .arr{{opacity:1;color:var(--acc);}}
 th.desc .arr{{opacity:1;color:var(--acc);}}
@@ -258,25 +271,25 @@ th:not(.asc):not(.desc) .arr::after{{content:'⇅'}}
 
 tbody tr:nth-child(odd) {{background:var(--row-odd);}}
 tbody tr:nth-child(even){{background:var(--row-evn);}}
-tbody tr:hover{{background:var(--hov)!important;}}
+tbody tr:hover{{background:var(--hov)!important;transition:background .12s;}}
 tbody td{{padding:8px 14px;vertical-align:middle;white-space:nowrap;}}
 
 /* cells */
-.tk{{color:#4a9cff;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:.03em;}}
-.tk:hover{{color:#90c8ff;text-decoration:underline;}}
-.nm{{color:var(--mid);font-size:12px;}}
-.pv{{font-weight:600;color:#ddeeff;font-size:13px;}}
+.tk{{color:var(--acc);font-weight:700;font-size:13px;text-decoration:none;letter-spacing:.03em;}}
+.tk:hover{{color:#80ffe8;text-decoration:underline;}}
+.nm{{color:var(--hd);font-size:12px;}}
+.pv{{font-weight:600;color:#e0f8f4;font-size:13px;}}
 
 /* mini bar */
 .bc{{display:flex;align-items:center;gap:8px;}}
-.bb{{width:50px;height:4px;background:rgba(255,255,255,.07);border-radius:2px;flex-shrink:0;}}
+.bb{{width:50px;height:4px;background:rgba(0,212,180,.08);border-radius:2px;flex-shrink:0;}}
 .bf{{height:4px;border-radius:2px;}}
 .bn{{font-size:12.5px;font-weight:700;min-width:24px;}}
 
 /* vol badge */
 .vb{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;}}
-.vf{{background:rgba(239,59,82,.14);color:#ef3b52;border:1px solid rgba(239,59,82,.28);}}
-.vw{{background:rgba(224,116,24,.14);color:#e07418;border:1px solid rgba(224,116,24,.28);}}
+.vf{{background:rgba(255,107,122,.12);color:#ff6b7a;border:1px solid rgba(255,107,122,.28);}}
+.vw{{background:rgba(255,184,48,.12);color:#ffb830;border:1px solid rgba(255,184,48,.28);}}
 .vd{{color:var(--dim);font-size:12px;}}
 
 /* rsi */
@@ -287,23 +300,23 @@ tbody td{{padding:8px 14px;vertical-align:middle;white-space:nowrap;}}
 
 /* inst */
 .isb{{color:var(--red);font-weight:800;}}
-.ib {{color:#ee7060;font-weight:600;}}
+.ib {{color:#ff9090;font-weight:600;}}
 .iss{{color:var(--grn);font-weight:800;}}
-.is {{color:#44b07a;font-weight:600;}}
+.is {{color:#44e890;font-weight:600;}}
 .iz {{color:var(--dim);}}
 
 /* signal */
 .sg{{display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;white-space:nowrap;font-weight:500;}}
-.s1{{background:rgba(239,59,82,.13);color:#f06070;border:1px solid rgba(239,59,82,.28);}}
-.s2{{background:rgba(224,116,24,.13);color:#efa040;border:1px solid rgba(224,116,24,.28);}}
-.s3{{background:rgba(0,187,106,.11);color:#30d880;border:1px solid rgba(0,187,106,.28);}}
-.s4{{background:rgba(48,80,120,.22);color:#5888b0;border:1px solid rgba(48,80,120,.40);}}
+.s1{{background:rgba(255,107,122,.12);color:#ff8090;border:1px solid rgba(255,107,122,.28);}}
+.s2{{background:rgba(255,184,48,.11);color:#ffc040;border:1px solid rgba(255,184,48,.28);}}
+.s3{{background:rgba(0,232,122,.10);color:#00e87a;border:1px solid rgba(0,232,122,.28);}}
+.s4{{background:rgba(0,180,160,.10);color:#40c8b8;border:1px solid rgba(0,180,160,.25);}}
 
 /* pattern */
 .pt{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:3px;font-weight:500;}}
-.pa{{background:rgba(224,116,24,.13);color:#efa040;border:1px solid rgba(224,116,24,.28);}}
-.pb{{background:rgba(47,125,232,.13);color:#70b4ff;border:1px solid rgba(47,125,232,.28);}}
-.pc{{background:rgba(155,100,240,.13);color:#c08af8;border:1px solid rgba(155,100,240,.28);}}
+.pa{{background:rgba(255,184,48,.11);color:#ffc040;border:1px solid rgba(255,184,48,.28);}}
+.pb{{background:rgba(0,212,180,.11);color:#00d4b4;border:1px solid rgba(0,212,180,.28);}}
+.pc{{background:rgba(100,200,255,.11);color:#80d8ff;border:1px solid rgba(100,200,255,.28);}}
 
 /* ── 說明欄 ── */
 .legend{{
@@ -317,7 +330,7 @@ tbody td{{padding:8px 14px;vertical-align:middle;white-space:nowrap;}}
   letter-spacing:.08em;cursor:pointer;
   display:flex;justify-content:space-between;align-items:center;
 }}
-.legend-hd:hover{{background:var(--hov);}}
+.legend-hd:hover{{background:var(--hov);color:var(--acc);}}
 .legend-body{{display:none;padding:14px 16px;}}
 .legend-body.open{{display:block;}}
 .legend-body table{{margin-top:0;}}
@@ -418,17 +431,17 @@ const SC={{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3
 const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
 function kc(v){{
-  if(v==null)return'#364f6e';
-  if(v>=75)return'#ef3b52';if(v>=62)return'#e07418';
-  if(v>=50)return'#d4b030';return'#00bb6a';
+  if(v==null)return'#1a3030';
+  if(v>=75)return'#ff6b7a';if(v>=62)return'#ffb830';
+  if(v>=50)return'#ffe066';return'#00e87a';
 }}
 function cc(v){{
-  if(v==null)return'#364f6e';
-  if(v>=60)return'#ef3b52';if(v>=40)return'#e07418';
-  if(v>=25)return'#d4b030';return'#364f6e';
+  if(v==null)return'#1a3030';
+  if(v>=60)return'#ff6b7a';if(v>=40)return'#ffb830';
+  if(v>=25)return'#ffe066';return'#1a3030';
 }}
 function bar(val,cfn,link){{
-  if(val==null)return'<span style="color:#364f6e">—</span>';
+  if(val==null)return'<span style="color:#1a3030">—</span>';
   const pct=Math.min(Math.max(val,0),100),c=cfn(val);
   const inner=`<div class="bc"><div class="bb"><div class="bf" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bn" style="color:${{c}}">${{Math.round(val)}}</span></div>`;
   return link?`<a href="${{link}}" target="_blank" style="text-decoration:none">${{inner}}</a>`:inner;
@@ -469,7 +482,7 @@ function fPat(arr){{
   return arr.map(([n,c])=>`<span class="pt ${{PC[c]||'pb'}}">${{n}}</span>`).join('');
 }}
 function fChg(v){{
-  if(v==null)return'<span style="color:#364f6e">—</span>';
+  if(v==null)return'<span style="color:#1a3030">—</span>';
   if(v>0)return`<span class="pos">+${{v.toFixed(2)}}%</span>`;
   if(v<0)return`<span class="neg">${{v.toFixed(2)}}%</span>`;
   return'<span class="iz">0.00%</span>';
@@ -484,7 +497,7 @@ function updSlider(el,vidId){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#364f6e;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#2a4a44;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   tb.innerHTML=data.map(r=>`<tr>
