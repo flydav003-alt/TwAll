@@ -179,6 +179,17 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .stat{{padding:4px 24px 10px;font-size:12px;color:var(--mid);border-bottom:none;}}
 .stat b{{color:var(--txt);font-weight:500;}}
 
+.tabs{{display:flex;gap:8px;padding:0 24px 14px;}}
+.tab-btn{{
+  border:1px solid var(--bdr);background:transparent;color:var(--mid);
+  border-radius:6px;padding:8px 14px;font-family:var(--sans);font-size:13px;
+  cursor:pointer;font-weight:500;
+}}
+.tab-btn:hover{{color:var(--txt);border-color:var(--acc);}}
+.tab-btn.active{{background:var(--acc);border-color:var(--acc);color:#fff;}}
+.tab-panel{{display:none;}}
+.tab-panel.active{{display:block;}}
+
 /* ── STATS ── */
 .stats-wrap{{margin:0 24px 16px;border:1px solid var(--bdr);border-radius:8px;background:var(--bg2);overflow:hidden;}}
 .stats-head{{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--bdr);gap:12px;}}
@@ -193,6 +204,8 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .stats-table th{{color:var(--mid);font-weight:500;background:rgba(15,23,42,.35);}}
 .stats-table td{{color:var(--txt);}}
 .stats-empty{{padding:16px;color:var(--mid);font-size:13px;}}
+.stats-section-title{{padding:14px 14px 6px;font-size:13px;font-weight:700;color:var(--txt);}}
+.stats-scroll{{overflow-x:auto;}}
 @media(max-width:900px){{.stats-grid{{grid-template-columns:repeat(2,minmax(0,1fr));}}.stats-head{{align-items:flex-start;flex-direction:column;}}}}
 
 /* ── TABLE ── */
@@ -302,6 +315,12 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <div class="mi"><span class="mi-l">MA20</span><span class="mi-v {ma_cls}">{ma_txt}</span></div>
 </div>
 
+<div class="tabs">
+  <button class="tab-btn active" type="button" data-tab="dailyPanel" onclick="switchTab('dailyPanel')">每日推薦</button>
+  <button class="tab-btn" type="button" data-tab="statsPanel" onclick="switchTab('statsPanel')">資料庫統計</button>
+</div>
+
+<div class="tab-panel" id="statsPanel">
 <div class="stats-wrap" id="statsBox">
   <div class="stats-head">
     <div class="stats-title">資料庫統計</div>
@@ -310,6 +329,9 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <div id="statsContent" class="stats-empty">統計資料載入中...</div>
 </div>
 
+</div>
+
+<div class="tab-panel active" id="dailyPanel">
 <div class="fb">
   <div class="srch">
     <span class="srch-ico">🔍</span>
@@ -377,6 +399,8 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
     </table>
     <p class="note">⚠️ 本工具僅供技術面參考，不構成投資建議。</p>
   </div>
+</div>
+
 </div>
 
 <script>
@@ -456,6 +480,11 @@ function pct(v){{
   const n=Number(v);
   return `${{n>0?'+':''}}${{n.toFixed(2)}}%`;
 }}
+function outcomePct(v){{
+  if(v==null || Number.isNaN(Number(v)))return'<span class="iz">待成熟</span>';
+  const n=Number(v), cls=n>=0?'pos':'neg';
+  return `<span class="${{cls}}">${{n>0?'+':''}}${{n.toFixed(2)}}%</span>`;
+}}
 function rate(v){{
   if(v==null || Number.isNaN(Number(v)))return'-';
   return `${{Number(v).toFixed(1)}}%`;
@@ -472,6 +501,11 @@ function labelEvent(v){{
   }};
   return m[v]||v||'-';
 }}
+function switchTab(id){{
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===id));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
+  schedResize();
+}}
 function renderStats(){{
   const box=document.getElementById('statsContent');
   if(!STATS || !STATS.ready){{
@@ -482,6 +516,21 @@ function renderStats(){{
   const t5=(STATS.summary||[]).filter(x=>x.group_name==='event_type'&&x.horizon===5)
     .sort((a,b)=>(b.sample_count||0)-(a.sample_count||0)).slice(0,8);
   const watch=(STATS.watch||[]).map(w=>`<tr><td>${{w.status||'-'}}</td><td>${{w.confirm_type||'-'}}</td><td>${{w.count}}</td></tr>`).join('');
+  const recent=(STATS.recent||[]).map(r=>`<tr>
+    <td>${{r.trade_date||'-'}}</td>
+    <td>${{r.ticker||'-'}}</td>
+    <td>${{r.name||'-'}}</td>
+    <td>${{labelEvent(r.event_type)}}</td>
+    <td>${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</td>
+    <td>${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</td>
+    <td>${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
+    <td>${{outcomePct(r.t1_return)}}</td>
+    <td>${{outcomePct(r.t3_return)}}</td>
+    <td>${{outcomePct(r.t5_return)}}</td>
+    <td>${{outcomePct(r.t7_return)}}</td>
+    <td>${{outcomePct(r.t10_return)}}</td>
+    <td>${{r.status||'-'}}</td>
+  </tr>`).join('');
   const rows=t5.map(x=>`<tr>
     <td>${{labelEvent(x.event_type)}}</td>
     <td>${{x.sample_count}}</td>
@@ -502,6 +551,13 @@ function renderStats(){{
       <thead><tr><th>T+5 策略</th><th>樣本</th><th>勝率</th><th>平均報酬</th><th>平均最高</th><th>平均回撤</th></tr></thead>
       <tbody>${{rows || '<tr><td colspan="6">T+5 樣本尚未成熟，累積幾個交易日後會自動出現。</td></tr>'}}</tbody>
     </table>
+    <div class="stats-section-title">近期訊號與 T+1 / T+3 / T+5 / T+7 / T+10</div>
+    <div class="stats-scroll">
+    <table class="stats-table">
+      <thead><tr><th>日期</th><th>代號</th><th>名稱</th><th>訊號</th><th>K線分</th><th>綜合分</th><th>買進日收盤</th><th>T+1</th><th>T+3</th><th>T+5</th><th>T+7</th><th>T+10</th><th>狀態</th></tr></thead>
+      <tbody>${{recent || '<tr><td colspan="13">尚無近期訊號資料。</td></tr>'}}</tbody>
+    </table>
+    </div>
     <table class="stats-table">
       <thead><tr><th>觀察狀態</th><th>確認類型</th><th>數量</th></tr></thead>
       <tbody>${{watch || '<tr><td colspan="3">尚無觀察池資料。</td></tr>'}}</tbody>
