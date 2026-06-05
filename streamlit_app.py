@@ -87,7 +87,7 @@ def main():
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght=400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
@@ -160,10 +160,9 @@ input[type=range]{{
   -webkit-appearance:none;width:140px;height:6px;
   background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), var(--bdr) var(--pct,0%), var(--bdr) 100%);
   border-radius:3px;outline:none;cursor:pointer;border:none;
-  padding:0;margin:0;
 }}
 input[type=range]::-webkit-slider-thumb{{
-  -webkit-appearance:none;width:16px;height:16px;
+  -webkit-appearance:none;width:18px;height:18px;
   border-radius:50%;background:var(--acc);
   border:2px solid #c7d2fe;cursor:pointer;
   box-shadow:none;transition:box-shadow .15s;
@@ -250,8 +249,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 /* cells */
 .tk{{color:var(--acc);font-weight:600;font-size:13px;text-decoration:none;}}
 .tk:hover{{text-decoration:underline;}}
-.nm{{color:var(--txt);font-size:13px;text-decoration:none;}}
-.nm:hover{{text-decoration:underline;color:var(--acc);}}
+.nm{{color:var(--txt);font-size:13px;}}
 .pv{{font-weight:400;color:var(--txt);font-size:13px;}}
 
 /* mini bar — 對標原版 score-bar-wrap */
@@ -425,7 +423,6 @@ let statsSortKey='trade_date', statsSortAsc=false;
 const SC={{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3","📉量縮整理":"s4"}};
 const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
-// K線分階級色：78+ 鮮紅 / 70~77 橙 / 60~69 金黃 / 59- 灰
 function kc(v){{
   if(v==null)return'#334155';
   if(v>=78)return'#FF3B3B';
@@ -433,7 +430,6 @@ function kc(v){{
   if(v>=60)return'#F5C518';
   return'#6b7280';
 }}
-// 綜合分階級色：88+ 鮮紅 / 75~87 橙 / 60~74 金黃 / 59- 灰
 function cc(v){{
   if(v==null)return'#334155';
   if(v>=88)return'#FF3B3B';
@@ -530,7 +526,6 @@ function switchTab(id){{
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
   schedResize();
 }}
-// 🛠️ 已修正：將 statsK 和 statsC 的 max 屬性從 99 改為 100
 function renderThresholdStats(){{
   const rows=(STATS.threshold_stats||[]).map(x=>`<tr>
     <td>${{x.rule||'-'}}</td>
@@ -683,10 +678,9 @@ function renderRows(data){{
     tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#64748b;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
-  // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
   tb.innerHTML=data.map(r=>`<tr>
-    <td><a class="tk" href="${{r.kline_url}}" target="_blank">${{r.ticker}}</a></td>
-    <td><a class="nm" href="${{r.yahoo_url}}" target="_blank">${{r.name}}</a></td>
+    <td><a class="tk" href="${{r.yahoo_url}}" target="_blank">${{r.ticker}}</a></td>
+    <td><span class="nm">${{r.name}}</span></td>
     <td><span class="pv">${{r.price!=null?r.price.toFixed(1):'—'}}</span></td>
     <td>${{fChg(r.chg)}}</td>
     <td>${{bar(r.kline,kc,r.kline_url)}}</td>
@@ -712,7 +706,7 @@ function applyFilter(){{
     return true;
   }});
   data=[...data].sort((a,b)=>{{
-    const av=a[sortKey],bv=b[sortKey];
+    const av=a[sortKey],bv=b[toggleSortKey ?? sortKey];
     const na=av==null,nb=bv==null;
     if(na&&nb)return 0;if(na)return 1;if(nb)return-1;
     return sortAsc?av-bv:bv-av;
@@ -741,54 +735,31 @@ function toggleLegend(){{
   else{{b.classList.add('open');a.textContent='▼';schedResize();}}
 }}
 
-// ── 強化版應用程式初始化模組 ──
-function initApp() {{
-  try {{
-    // 1. 強制重置拉條數值，清除瀏覽器的 Form Auto-restore 快取
-    ['slK', 'slC'].forEach(id => {{
-      const el = document.getElementById(id);
-      if (el) {{
-        el.value = 0; // 強制將真實數值歸零
-        el.style.setProperty('--pct', '0%');
-      }}
-    }});
-    // 強制重置旁邊顯示的數字
-    document.getElementById('kvK').textContent = '0';
-    document.getElementById('kvC').textContent = '0';
+// 初始化滑桿漸層與數值
+function initSliders(){{
+  ['slK','slC'].forEach(id=>{{
+    const el=document.getElementById(id);
+    if(el) el.style.setProperty('--pct',(el.value/el.max*100)+'%');
+  }});
+}}
 
-    // 2. 設定預設排序
-    const thKline = document.querySelector('th[data-k="kline"]');
-    if (thKline) thKline.classList.add('desc');
-
-    // 3. 獨立執行統計面板
-    try {{ 
-      renderStats(); 
-    }} catch(e) {{ 
-      console.error("統計面板初始化略過:", e); 
+function initStatsSliders(){{
+  ['statsK','statsC'].forEach(id=>{{
+    const el=document.getElementById(id);
+    if(el) {{
+      el.value = 0; // 強制歸零，避免抓到髒資料或最大值
+      el.style.setProperty('--pct','0%');
     }}
-
-    // 4. 初始化統計面板的滑桿漸層百分比
-    ['statsK', 'statsC'].forEach(id => {{
-      const el = document.getElementById(id);
-      if (el) el.style.setProperty('--pct', '0%');
-    }});
-
-    // 5. 執行最終過濾與渲染
-    applyFilter();
-    
-  }} catch (err) {{
-    console.error("首頁初始化錯誤:", err);
-    const statLine = document.getElementById('statLine');
-    if (statLine) statLine.innerHTML = '載入完成，若無資料請重新調整拉條。';
-  }}
+  }});
 }}
 
-// 確保 DOM 與 Streamlit iframe 完全就緒後再啟動
-if (document.readyState === 'loading') {{
-  document.addEventListener('DOMContentLoaded', initApp);
-}} else {{
-  initApp();
-}}
+// 預設 K線分降序
+document.querySelector('th[data-k="kline"]').classList.add('desc');
+
+renderStats();
+initSliders();
+initStatsSliders();
+applyFilter();
 
 // ResizeObserver
 let raf=0;
