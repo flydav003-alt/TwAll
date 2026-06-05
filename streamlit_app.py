@@ -145,30 +145,31 @@ def main():
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
-  --bg:      #090b0f;
-  --bg2:     #10141c;
-  --bg3:     #141922;
-  --row-odd: #0c1018;
-  --row-evn: #090d15;
-  --hov:     #1a1e28;
-  --bdr:     rgba(232,184,75,0.12);
-  --bdr2:    rgba(232,184,75,0.30);
-  --txt:     #e8dfc4;
-  --dim:     #4a4230;
-  --mid:     #7a6a44;
-  --hd:      #a08840;
-  --acc:     #e8b84b;
-  --red:     #ff6060;
-  --grn:     #40c060;
-  --orn:     #ffb830;
-  --yel:     #ffe066;
+  --bg:      #F2F0E8;
+  --bg2:     #EAE7DC;
+  --bg3:     #E2DED2;
+  --row-odd: #F0EDE4;
+  --row-evn: #EAE7DC;
+  --hov:     #E4DFCF;
+  --bdr:     rgba(26,24,16,0.10);
+  --bdr2:    rgba(255,46,106,0.30);
+  --txt:     #1A1810;
+  --dim:     #9A9888;
+  --mid:     #6A6858;
+  --hd:      #4A4840;
+  --acc:     #FF2E6A;
+  --red:     #FF2E6A;
+  --grn:     #1A8A3A;
+  --orn:     #FF6B1A;
+  --yel:     #6B3FFF;
   --sans:    'Inter','Noto Sans TC',sans-serif;
 }}
 body{{
   background:var(--bg);
   background-image:
-    radial-gradient(ellipse 70% 35% at 50% -5%, rgba(232,184,75,0.05) 0%, transparent 65%),
-    radial-gradient(ellipse 40% 50% at 95% 60%, rgba(180,120,20,0.04) 0%, transparent 55%);
+    radial-gradient(ellipse 70% 45% at 50% -5%, rgba(255,208,0,0.13) 0%, transparent 65%),
+    radial-gradient(ellipse 35% 50% at 95% 40%, rgba(107,63,255,0.07) 0%, transparent 55%),
+    radial-gradient(ellipse 28px 28px at 0 0, transparent 1px, transparent 1px);
   color:var(--txt);font-family:var(--sans);font-size:13px;
 }}
 
@@ -176,30 +177,30 @@ body{{
 .hd{{
   display:flex;align-items:baseline;gap:14px;
   padding:16px 28px 12px;
-  border-bottom:1px solid var(--bdr);
-  background:linear-gradient(90deg, rgba(232,184,75,0.06) 0%, transparent 60%);
+  border-bottom:3px solid var(--acc);
+  background:var(--bg);
+  position:relative;
 }}
-.hd-t{{
-  font-size:18px;font-weight:700;
-  color:var(--acc);
-  letter-spacing:.06em;
-  text-shadow:0 0 24px rgba(232,184,75,0.30);
+.hd::after{{
+  content:'';position:absolute;bottom:-3px;left:0;
+  width:80px;height:3px;background:#6B3FFF;
 }}
-.hd-m{{font-size:11px;color:var(--mid);}}
+.hd-t{{font-size:18px;font-weight:700;color:var(--txt);letter-spacing:-.02em;}}
+.hd-t span{{color:var(--acc);}}
+.hd-m{{font-size:11px;color:var(--dim);}}
 
 /* ── MARKET BAR ── */
 .mkt{{
   display:flex;border-bottom:1px solid var(--bdr);
   background:var(--bg2);
-  border-top:1px solid rgba(232,184,75,0.08);
 }}
 .mi{{
   padding:10px 24px;border-right:1px solid var(--bdr);
   display:flex;flex-direction:column;gap:3px;
 }}
 .mi:last-child{{border-right:none;}}
-.mi-l{{font-size:9.5px;color:var(--mid);letter-spacing:.12em;text-transform:uppercase;}}
-.mi-v{{font-size:17px;font-weight:700;color:#e0f8f4;}}
+.mi-l{{font-size:9.5px;color:var(--dim);letter-spacing:.10em;text-transform:uppercase;font-weight:600;}}
+.mi-v{{font-size:17px;font-weight:700;color:var(--txt);}}
 .pos{{color:var(--red)}} .neg{{color:var(--grn)}} .neu{{color:var(--mid)}}
 
 /* ── FILTER BAR ── */
@@ -211,52 +212,52 @@ body{{
 .srch{{
   position:relative;display:flex;align-items:center;
 }}
-.srch-ico{{position:absolute;left:11px;color:var(--mid);font-size:14px;pointer-events:none;}}
+.srch-ico{{position:absolute;left:11px;color:var(--dim);font-size:14px;pointer-events:none;}}
 .srch input{{
-  background:var(--bg3);border:1px solid var(--bdr2);color:var(--txt);
+  background:var(--bg);border:1px solid rgba(26,24,16,0.20);color:var(--txt);
   border-radius:7px;padding:8px 12px 8px 32px;
   font-size:13px;font-family:var(--sans);width:210px;outline:none;
   transition:border .15s,box-shadow .15s;
 }}
-.srch input:focus{{border-color:var(--acc);box-shadow:0 0 0 3px rgba(232,184,75,0.12);}}
+.srch input:focus{{border-color:var(--acc);box-shadow:0 0 0 3px rgba(255,46,106,0.12);}}
 .srch input::placeholder{{color:var(--dim);}}
 
 /* 滑桿群組 */
 .sl-grp{{display:flex;align-items:center;gap:10px;}}
-.sl-lbl{{font-size:12px;color:var(--hd);white-space:nowrap;font-weight:500;}}
+.sl-lbl{{font-size:12px;color:var(--mid);white-space:nowrap;font-weight:600;}}
 /* 粗滑桿 */
 input[type=range]{{
   -webkit-appearance:none;width:140px;height:7px;
-  background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), rgba(180,130,20,0.18) var(--pct,0%), rgba(180,130,20,0.18) 100%);
+  background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), rgba(26,24,16,0.12) var(--pct,0%), rgba(26,24,16,0.12) 100%);
   border-radius:4px;outline:none;cursor:pointer;border:none;
 }}
 input[type=range]::-webkit-slider-thumb{{
   -webkit-appearance:none;width:18px;height:18px;
   border-radius:50%;background:var(--acc);
-  border:2px solid #f8e8b0;cursor:pointer;
-  box-shadow:0 0 10px rgba(232,184,75,.45);
+  border:2px solid #fff;cursor:pointer;
+  box-shadow:0 2px 8px rgba(255,46,106,0.40);
   transition:box-shadow .15s;
 }}
-input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 16px rgba(232,184,75,.75);}}
+input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 2px 14px rgba(255,46,106,0.65);}}
 .sl-val{{
   font-size:14px;font-weight:700;color:var(--acc);
   min-width:26px;text-align:center;
-  background:var(--bg3);border:1px solid var(--bdr2);
+  background:var(--bg);border:1px solid rgba(255,46,106,0.25);
   border-radius:5px;padding:3px 7px;
 }}
 
 /* ── STAT LINE ── */
-.stat{{padding:7px 28px;font-size:11px;color:var(--mid);border-bottom:1px solid var(--bdr);}}
-.stat b{{color:var(--acc);font-weight:600;}}
+.stat{{padding:7px 28px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--bdr);background:var(--bg);}}
+.stat b{{color:var(--acc);font-weight:700;}}
 
 /* ── TABLE ── */
 .tbl-wrap{{padding:0 28px 28px;}}
 table{{width:100%;border-collapse:collapse;margin-top:4px;}}
 thead th{{
   background:var(--bg2);color:var(--hd);
-  font-size:10px;font-weight:600;letter-spacing:.10em;text-transform:uppercase;
+  font-size:10px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;
   padding:9px 14px;text-align:left;
-  border-bottom:2px solid rgba(232,184,75,0.22);
+  border-bottom:2px solid rgba(255,46,106,0.35);
   white-space:nowrap;user-select:none;
   position:sticky;top:0;z-index:5;
 }}
@@ -271,52 +272,52 @@ th:not(.asc):not(.desc) .arr::after{{content:'⇅'}}
 
 tbody tr:nth-child(odd) {{background:var(--row-odd);}}
 tbody tr:nth-child(even){{background:var(--row-evn);}}
-tbody tr:hover{{background:var(--hov)!important;transition:background .12s;}}
-tbody td{{padding:8px 14px;vertical-align:middle;white-space:nowrap;}}
+tbody tr:hover{{background:var(--hov)!important;transition:background .1s;}}
+tbody td{{padding:8px 14px;vertical-align:middle;white-space:nowrap;border-bottom:1px solid rgba(26,24,16,0.05);}}
 
 /* cells */
-.tk{{color:var(--acc);font-weight:700;font-size:13px;text-decoration:none;letter-spacing:.03em;}}
-.tk:hover{{color:#f8e090;text-decoration:underline;}}
-.nm{{color:var(--hd);font-size:12px;}}
-.pv{{font-weight:600;color:#f0e4c0;font-size:13px;}}
+.tk{{color:var(--acc);font-weight:700;font-size:13px;text-decoration:none;letter-spacing:-.01em;}}
+.tk:hover{{color:#CC1A50;text-decoration:underline;}}
+.nm{{color:var(--mid);font-size:12px;}}
+.pv{{font-weight:700;color:var(--txt);font-size:13px;}}
 
 /* mini bar */
 .bc{{display:flex;align-items:center;gap:8px;}}
-.bb{{width:50px;height:4px;background:rgba(232,184,75,.08);border-radius:2px;flex-shrink:0;}}
+.bb{{width:50px;height:4px;background:rgba(26,24,16,0.10);border-radius:2px;flex-shrink:0;}}
 .bf{{height:4px;border-radius:2px;}}
 .bn{{font-size:12.5px;font-weight:700;min-width:24px;}}
 
 /* vol badge */
 .vb{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;}}
-.vf{{background:rgba(255,107,122,.12);color:#ff6b7a;border:1px solid rgba(255,107,122,.28);}}
-.vw{{background:rgba(255,184,48,.12);color:#ffb830;border:1px solid rgba(255,184,48,.28);}}
+.vf{{background:rgba(255,46,106,.12);color:#CC1A50;border:1px solid rgba(255,46,106,.30);}}
+.vw{{background:rgba(255,107,26,.12);color:#CC4A00;border:1px solid rgba(255,107,26,.28);}}
 .vd{{color:var(--dim);font-size:12px;}}
 
 /* rsi */
-.rh{{color:var(--red);font-weight:600;}}
-.rm{{color:var(--yel);}}
-.rl{{color:var(--grn);font-weight:600;}}
+.rh{{color:var(--acc);font-weight:700;}}
+.rm{{color:#6B3FFF;font-weight:600;}}
+.rl{{color:var(--grn);font-weight:700;}}
 .rn{{color:var(--mid);}}
 
 /* inst */
-.isb{{color:var(--red);font-weight:800;}}
-.ib {{color:#ff9090;font-weight:600;}}
-.iss{{color:var(--grn);font-weight:800;}}
-.is {{color:#44e890;font-weight:600;}}
+.isb{{color:#CC1A50;font-weight:800;}}
+.ib {{color:var(--acc);font-weight:600;}}
+.iss{{color:#0A6B28;font-weight:800;}}
+.is {{color:var(--grn);font-weight:600;}}
 .iz {{color:var(--dim);}}
 
 /* signal */
-.sg{{display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;white-space:nowrap;font-weight:500;}}
-.s1{{background:rgba(255,107,122,.12);color:#ff8090;border:1px solid rgba(255,107,122,.28);}}
-.s2{{background:rgba(255,184,48,.11);color:#ffc040;border:1px solid rgba(255,184,48,.28);}}
-.s3{{background:rgba(0,232,122,.10);color:#00e87a;border:1px solid rgba(0,232,122,.28);}}
-.s4{{background:rgba(0,180,160,.10);color:#40c8b8;border:1px solid rgba(0,180,160,.25);}}
+.sg{{display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;white-space:nowrap;font-weight:600;}}
+.s1{{background:rgba(255,46,106,.10);color:#CC1A50;border:1px solid rgba(255,46,106,.28);}}
+.s2{{background:rgba(255,107,26,.10);color:#AA4000;border:1px solid rgba(255,107,26,.28);}}
+.s3{{background:rgba(26,138,58,.10);color:#0A6B28;border:1px solid rgba(26,138,58,.28);}}
+.s4{{background:rgba(107,63,255,.09);color:#4A20CC;border:1px solid rgba(107,63,255,.22);}}
 
 /* pattern */
-.pt{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:3px;font-weight:500;}}
-.pa{{background:rgba(255,184,48,.11);color:#ffc040;border:1px solid rgba(255,184,48,.28);}}
-.pb{{background:rgba(232,184,75,.11);color:#e8b84b;border:1px solid rgba(232,184,75,.28);}}
-.pc{{background:rgba(100,200,255,.11);color:#80d8ff;border:1px solid rgba(100,200,255,.28);}}
+.pt{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:3px;font-weight:600;}}
+.pa{{background:rgba(255,208,0,.18);color:#7A6000;border:1px solid rgba(255,208,0,.40);}}
+.pb{{background:rgba(107,63,255,.10);color:#4A20CC;border:1px solid rgba(107,63,255,.25);}}
+.pc{{background:rgba(0,153,204,.10);color:#005A88;border:1px solid rgba(0,153,204,.25);}}
 
 /* ── 說明欄 ── */
 .legend{{
@@ -326,26 +327,27 @@ tbody td{{padding:8px 14px;vertical-align:middle;white-space:nowrap;}}
 }}
 .legend-hd{{
   padding:10px 16px;background:var(--bg2);
-  font-size:11px;font-weight:600;color:var(--hd);
+  font-size:11px;font-weight:700;color:var(--hd);
   letter-spacing:.08em;cursor:pointer;
   display:flex;justify-content:space-between;align-items:center;
+  border-left:3px solid var(--acc);
 }}
 .legend-hd:hover{{background:var(--hov);color:var(--acc);}}
-.legend-body{{display:none;padding:14px 16px;}}
+.legend-body{{display:none;padding:14px 16px;background:var(--bg);}}
 .legend-body.open{{display:block;}}
 .legend-body table{{margin-top:0;}}
 .legend-body thead th{{
   background:transparent;padding:6px 10px;font-size:10px;
-  border-bottom:1px solid var(--bdr);position:static;
+  border-bottom:1px solid var(--bdr);position:static;color:var(--hd);
 }}
-.legend-body tbody td{{padding:6px 10px;font-size:12px;border-bottom:1px solid var(--bdr);}}
+.legend-body tbody td{{padding:6px 10px;font-size:12px;border-bottom:1px solid var(--bdr);color:var(--txt);}}
 .legend-body tbody tr:last-child td{{border-bottom:none;}}
 .note{{color:var(--dim);font-size:11px;margin-top:10px;}}
 </style>
 </head><body>
 
 <div class="hd">
-  <span class="hd-t">🇹🇼 台股半導體 Screener</span>
+  <span class="hd-t">🇹🇼 <span>台股</span>半導體 Screener</span>
   <span class="hd-m">更新：{gen_at} &nbsp;·&nbsp; {total} 檔</span>
 </div>
 
@@ -431,17 +433,17 @@ const SC={{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3
 const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
 function kc(v){{
-  if(v==null)return'#2a2010';
-  if(v>=75)return'#ff6060';if(v>=62)return'#e8b84b';
-  if(v>=50)return'#ffe066';return'#40c060';
+  if(v==null)return'rgba(26,24,16,0.12)';
+  if(v>=75)return'#FF2E6A';if(v>=62)return'#FF6B1A';
+  if(v>=50)return'#6B3FFF';return'#1A8A3A';
 }}
 function cc(v){{
-  if(v==null)return'#2a2010';
-  if(v>=60)return'#ff6060';if(v>=40)return'#e8b84b';
-  if(v>=25)return'#ffe066';return'#2a2010';
+  if(v==null)return'rgba(26,24,16,0.12)';
+  if(v>=60)return'#FF2E6A';if(v>=40)return'#FF6B1A';
+  if(v>=25)return'#6B3FFF';return'rgba(26,24,16,0.12)';
 }}
 function bar(val,cfn,link){{
-  if(val==null)return'<span style="color:#2a2010">—</span>';
+  if(val==null)return'<span style="color:#9A9888">—</span>';
   const pct=Math.min(Math.max(val,0),100),c=cfn(val);
   const inner=`<div class="bc"><div class="bb"><div class="bf" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bn" style="color:${{c}}">${{Math.round(val)}}</span></div>`;
   return link?`<a href="${{link}}" target="_blank" style="text-decoration:none">${{inner}}</a>`:inner;
@@ -482,7 +484,7 @@ function fPat(arr){{
   return arr.map(([n,c])=>`<span class="pt ${{PC[c]||'pb'}}">${{n}}</span>`).join('');
 }}
 function fChg(v){{
-  if(v==null)return'<span style="color:#2a2010">—</span>';
+  if(v==null)return'<span style="color:#9A9888">—</span>';
   if(v>0)return`<span class="pos">+${{v.toFixed(2)}}%</span>`;
   if(v<0)return`<span class="neg">${{v.toFixed(2)}}%</span>`;
   return'<span class="iz">0.00%</span>';
@@ -497,7 +499,7 @@ function updSlider(el,vidId){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#2a2010;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#9A9888;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   tb.innerHTML=data.map(r=>`<tr>
