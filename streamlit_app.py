@@ -272,8 +272,8 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 
 /* vol badge — 對標原版 badge */
 .vb{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap;}}
-.vf{{background:#5c1a1a;color:#ff8c8c;}}
-.vw{{background:#422006;color:#fde68a;}}
+.vf{{background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.35);}}
+.vw{{background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.30);}}
 .vd{{color:var(--mid);font-size:13px;}}
 
 /* rsi */
