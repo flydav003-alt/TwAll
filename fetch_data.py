@@ -311,14 +311,14 @@ def main():
 
     # 只將 K線≥70 且 綜合分≥75 的股票存入統計資料庫
     # 低分股票不具備進場條件，不應計入績效統計，也節省資料庫空間
-    DB_KLINE_MIN = 70
-    DB_COMP_MIN  = 75
+    DB_KLINE_MIN = 75
+    DB_COMP_MIN  = 80
     qualified = [
         s for s in results
         if (s.get("kline_score") or 0) >= DB_KLINE_MIN
-        and (s.get("composite") or 0) >= DB_COMP_MIN
+        or (s.get("composite") or 0) >= DB_COMP_MIN
     ]
-    print(f"[INFO] 符合資料庫下線（K線≥{DB_KLINE_MIN} 且 綜合分≥{DB_COMP_MIN}）：{len(qualified)} 檔")
+    print(f"[INFO] 符合資料庫下線（K線≥{DB_KLINE_MIN} 或 綜合分≥{DB_COMP_MIN}）：{len(qualified)} 檔")
     save_daily_run(qualified, generated_at=ts)
     print(f"[INFO] 已更新統計資料庫 → {os.path.join(DATA_DIR, 'stats.db')}")
 
