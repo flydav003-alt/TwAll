@@ -1,7 +1,7 @@
 """
 streamlit_app.py — 台股半導體 Screener
-架構：components.html() + JS 排序，scrolling=False + ResizeObserver 撐高
-配色：深海藍黑（參考圖片風格）
+架構：components.html() + JS 排序/篩選，scrolling=False + ResizeObserver
+配色：對標圖1深藍黑風格
 """
 import json, os, requests, streamlit as st
 import streamlit.components.v1 as components
@@ -9,25 +9,18 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tw_screener_core import calc_composite_tw, detect_patterns_tw, yahoo_tw_url
 
-# ── 頁面設定 ─────────────────────────────────────────────────
-st.set_page_config(
-    page_title="台股半導體 Screener",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="台股半導體 Screener", page_icon="📈",
+                   layout="wide", initial_sidebar_state="collapsed")
 st.markdown("""<style>
   [data-testid="stHeader"],[data-testid="stToolbar"],
-  [data-testid="stDecoration"],#MainMenu,footer { display:none!important; }
-  [data-testid="stAppViewContainer"]{padding:0!important;}
+  [data-testid="stDecoration"],#MainMenu,footer{display:none!important;}
+  .block-container{padding:0!important;max-width:100%!important;}
   [data-testid="stVerticalBlock"]{gap:0!important;padding:0!important;}
   [data-testid="element-container"]{padding:0!important;margin:0!important;}
-  .block-container{padding:0!important;max-width:100%!important;}
   html,body{overflow:auto!important;height:auto!important;}
   .stApp{overflow:visible!important;height:auto!important;}
   iframe{display:block!important;border:none!important;margin:0!important;}
 </style>""", unsafe_allow_html=True)
-
 
 # ── FinMind 2h 快取 ───────────────────────────────────────────
 def _get_token():
@@ -73,8 +66,6 @@ def _fetch_all_finmind(tickers, token):
             except: res[sid]=0
     return res
 
-
-# ── 讀資料 ───────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_stocks():
     p=os.path.join("data","screener_data.json")
@@ -88,17 +79,13 @@ def _load_market():
     if not os.path.exists(p): return {}
     with open(p,encoding="utf-8") as f: return json.load(f)
 
-
-# ── 主程式 ───────────────────────────────────────────────────
 def main():
     stocks, generated_at = _load_stocks()
     mkt = _load_market()
-
     if stocks is None:
         st.error("⚠️ 找不到 data/screener_data.json，請先執行 GitHub Actions。")
         st.stop()
 
-    # FinMind
     token = _get_token()
     if token:
         with st.spinner("📡 抓取法人資料（2h 快取）…"):
@@ -116,425 +103,474 @@ def main():
         s["patterns"]      = detect_patterns_tw(s)
         price = s.get("price")
         prev  = s.get("prev_close")
-        chg   = round((price-prev)/prev*100, 2) if price and prev and prev!=0 else None
+        chg   = round((price-prev)/prev*100,2) if price and prev and prev!=0 else None
         pat_r = max((PAT_RANK.get(c,0) for _,c in s.get("patterns",[])), default=0)
         rows.append({
-            "ticker":    s["ticker"],
-            "name":      s.get("name", s["ticker"]),
-            "market":    s.get("market","TW"),
-            "price":     price,
-            "prev":      prev,
-            "chg":       chg,
-            "kline":     s.get("kline_score"),
-            "comp":      s.get("composite"),
-            "vol":       s.get("volume_ratio"),
-            "rsi":       s.get("rsi14"),
-            "rs5d":      s.get("rs5d"),
-            "inst":      s.get("inst_buy_days",0) or 0,
-            "signal":    s.get("entry_signal",""),
-            "sig_rank":  SIG_RANK.get(s.get("entry_signal",""),0),
-            "patterns":  [[n,c] for n,c in s.get("patterns",[])],
-            "pat_rank":  pat_r,
-            "yahoo_url": yahoo_tw_url(s["ticker"], s.get("market","TW")),
-            "kline_url": f"https://flydav003-alt.github.io/k-line/?stock={s['ticker']}",
+            "ticker":   s["ticker"],
+            "name":     s.get("name", s["ticker"]),
+            "price":    price,
+            "chg":      chg,
+            "kline":    s.get("kline_score"),
+            "comp":     s.get("composite"),
+            "vol":      s.get("volume_ratio"),
+            "rsi":      s.get("rsi14"),
+            "rs5d":     s.get("rs5d"),
+            "inst":     s.get("inst_buy_days",0) or 0,
+            "signal":   s.get("entry_signal",""),
+            "sig_rank": SIG_RANK.get(s.get("entry_signal",""),0),
+            "patterns": [[n,c] for n,c in s.get("patterns",[])],
+            "pat_rank": pat_r,
+            "yahoo_url":yahoo_tw_url(s["ticker"], s.get("market","TW")),
+            "kline_url":f"https://flydav003-alt.github.io/k-line/?stock={s['ticker']}",
         })
 
-    # 大盤資料
     mkt_px  = mkt.get("price",0) or 0
     mkt_r5  = mkt.get("ret5d",0) or 0
     mkt_rsi = mkt.get("rsi")
     mkt_ma  = not mkt.get("below_ma20", False)
-
     rows_json = json.dumps(rows, ensure_ascii=False, default=str)
     total     = len(rows)
     gen_at    = generated_at or "N/A"
+    r5cls     = "pos" if mkt_r5>0 else ("neg" if mkt_r5<0 else "neu")
+    ma_cls    = "pos" if mkt_ma else "neg"
+    ma_txt    = "站上 ✓" if mkt_ma else "跌破 ✗"
+    rsi_txt   = f"{mkt_rsi:.0f}" if mkt_rsi else "N/A"
 
-    # ── 組 HTML ──────────────────────────────────────────────
-    html_page = f"""<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
+    page = f"""<!DOCTYPE html>
+<html lang="zh-TW"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-*{{box-sizing:border-box;margin:0;padding:0;}}
+*{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
-  --bg:         #070e1c;
-  --bg2:        #0a1628;
-  --bg3:        #0d1e35;
-  --bg-row:     #0b1a2e;
-  --bg-row-alt: #091525;
-  --bg-hov:     #112040;
-  --border:     rgba(40,90,160,0.28);
-  --border2:    rgba(50,110,190,0.45);
-  --text:       #c8dcf4;
-  --text-dim:   #3a5878;
-  --text-mid:   #6888aa;
-  --text-hd:    #4a78a8;
-  --accent:     #3a7fff;
-  --red:        #f03a52;
-  --green:      #00c070;
-  --orange:     #e87820;
-  --yellow:     #d8b830;
-  --sans:       'Inter','Noto Sans TC',sans-serif;
+  --bg:      #060d1b;
+  --bg2:     #091424;
+  --bg3:     #0c1a2e;
+  --row-odd: #081220;
+  --row-evn: #060f1c;
+  --hov:     #0f1e38;
+  --bdr:     rgba(38,85,155,0.30);
+  --bdr2:    rgba(48,105,185,0.50);
+  --txt:     #c4d8f2;
+  --dim:     #364f6e;
+  --mid:     #5a7fa4;
+  --hd:      #446a96;
+  --acc:     #2f7de8;
+  --red:     #ef3b52;
+  --grn:     #00bb6a;
+  --orn:     #e07418;
+  --yel:     #d4b030;
+  --sans:    'Inter','Noto Sans TC',sans-serif;
 }}
-body{{
-  background:var(--bg);color:var(--text);
-  font-family:var(--sans);font-size:13px;
-  min-height:100vh;
-}}
+body{{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13px;}}
 
-/* ── Header ── */
+/* ── HEADER ── */
 .hd{{
-  display:flex;align-items:baseline;gap:12px;
-  padding:14px 20px 10px;
-  border-bottom:1px solid var(--border);
+  display:flex;align-items:baseline;gap:14px;
+  padding:16px 28px 12px;
+  border-bottom:1px solid var(--bdr);
 }}
-.hd-title{{font-size:17px;font-weight:700;color:#ddeeff;letter-spacing:.04em;}}
-.hd-meta{{font-size:11px;color:var(--text-dim);letter-spacing:.04em;}}
+.hd-t{{font-size:18px;font-weight:700;color:#ddeeff;letter-spacing:.04em;}}
+.hd-m{{font-size:11px;color:var(--dim);}}
 
-/* ── 大盤 ── */
+/* ── MARKET BAR ── */
 .mkt{{
-  display:flex;align-items:stretch;
-  background:var(--bg2);border-bottom:1px solid var(--border);
-  padding:0 20px;
-}}
-.mkt-item{{
-  display:flex;flex-direction:column;justify-content:center;
-  padding:10px 20px 10px 0;margin-right:20px;
-  border-right:1px solid var(--border);
-}}
-.mkt-item:last-child{{border-right:none;}}
-.mkt-lbl{{font-size:9.5px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:2px;}}
-.mkt-val{{font-size:16px;font-weight:700;}}
-.pos{{color:var(--red);}} .neg{{color:var(--green);}} .neu{{color:var(--text-mid);}}
-
-/* ── 篩選列 ── */
-.filter-bar{{
-  display:flex;align-items:center;gap:16px;
-  padding:10px 20px;
+  display:flex;border-bottom:1px solid var(--bdr);
   background:var(--bg2);
-  border-bottom:1px solid var(--border);
-  flex-wrap:nowrap;
 }}
-.filter-bar input[type=text]{{
-  background:rgba(10,25,55,0.9);
-  border:1px solid var(--border2);
-  color:var(--text);border-radius:5px;
-  padding:6px 12px;font-size:13px;
-  font-family:var(--sans);width:200px;
-  outline:none;transition:border .15s;
+.mi{{
+  padding:10px 24px;border-right:1px solid var(--bdr);
+  display:flex;flex-direction:column;gap:3px;
 }}
-.filter-bar input[type=text]:focus{{border-color:var(--accent);}}
-.filter-bar input[type=text]::placeholder{{color:var(--text-dim);}}
-.sl-wrap{{display:flex;align-items:center;gap:8px;}}
-.sl-lbl{{font-size:11px;color:var(--text-mid);white-space:nowrap;}}
-.sl-val{{font-size:12px;font-weight:600;color:var(--accent);min-width:22px;}}
+.mi:last-child{{border-right:none;}}
+.mi-l{{font-size:9.5px;color:var(--dim);letter-spacing:.10em;text-transform:uppercase;}}
+.mi-v{{font-size:17px;font-weight:700;}}
+.pos{{color:var(--red)}} .neg{{color:var(--grn)}} .neu{{color:var(--mid)}}
+
+/* ── FILTER BAR ── */
+.fb{{
+  display:flex;align-items:center;gap:20px;flex-wrap:nowrap;
+  padding:12px 28px;background:var(--bg2);border-bottom:1px solid var(--bdr);
+}}
+/* 搜尋框 */
+.srch{{
+  position:relative;display:flex;align-items:center;
+}}
+.srch-ico{{position:absolute;left:11px;color:var(--dim);font-size:14px;pointer-events:none;}}
+.srch input{{
+  background:var(--bg3);border:1px solid var(--bdr2);color:var(--txt);
+  border-radius:7px;padding:8px 12px 8px 32px;
+  font-size:13px;font-family:var(--sans);width:210px;outline:none;
+  transition:border .15s,box-shadow .15s;
+}}
+.srch input:focus{{border-color:var(--acc);box-shadow:0 0 0 2px rgba(47,125,232,.18);}}
+.srch input::placeholder{{color:var(--dim);}}
+
+/* 滑桿群組 */
+.sl-grp{{display:flex;align-items:center;gap:10px;}}
+.sl-lbl{{font-size:12px;color:var(--mid);white-space:nowrap;font-weight:500;}}
+/* 粗滑桿 */
 input[type=range]{{
-  -webkit-appearance:none;width:110px;height:3px;
-  background:var(--border2);border-radius:2px;outline:none;cursor:pointer;
+  -webkit-appearance:none;width:140px;height:7px;
+  background:linear-gradient(to right, var(--acc) 0%, var(--acc) var(--pct,0%), rgba(48,105,185,0.25) var(--pct,0%), rgba(48,105,185,0.25) 100%);
+  border-radius:4px;outline:none;cursor:pointer;border:none;
 }}
 input[type=range]::-webkit-slider-thumb{{
-  -webkit-appearance:none;width:14px;height:14px;
-  border-radius:50%;background:var(--accent);
-  border:2px solid #ddeeff;cursor:pointer;
-  box-shadow:0 0 6px rgba(58,127,255,.5);
+  -webkit-appearance:none;width:18px;height:18px;
+  border-radius:50%;background:#2f7de8;
+  border:2px solid #c4d8f2;cursor:pointer;
+  box-shadow:0 0 8px rgba(47,125,232,.6);
+  transition:box-shadow .15s;
 }}
-.stat-line{{
-  padding:6px 20px;font-size:11px;color:var(--text-dim);
-  border-bottom:1px solid var(--border);
+input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 12px rgba(47,125,232,.9);}}
+.sl-val{{
+  font-size:14px;font-weight:700;color:#ddeeff;
+  min-width:26px;text-align:center;
+  background:var(--bg3);border:1px solid var(--bdr2);
+  border-radius:5px;padding:3px 7px;
 }}
-.stat-line b{{color:var(--accent);}}
 
-/* ── 表格 ── */
-table{{width:100%;border-collapse:collapse;}}
+/* ── STAT LINE ── */
+.stat{{padding:7px 28px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--bdr);}}
+.stat b{{color:var(--acc);font-weight:600;}}
+
+/* ── TABLE ── */
+.tbl-wrap{{padding:0 28px 28px;}}
+table{{width:100%;border-collapse:collapse;margin-top:4px;}}
 thead th{{
-  background:var(--bg2);color:var(--text-hd);
-  font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
-  padding:8px 12px;text-align:left;
-  border-bottom:1px solid var(--border2);
-  white-space:nowrap;cursor:pointer;user-select:none;
+  background:var(--bg2);color:var(--hd);
+  font-size:10px;font-weight:600;letter-spacing:.10em;text-transform:uppercase;
+  padding:9px 14px;text-align:left;
+  border-bottom:1px solid var(--bdr2);
+  white-space:nowrap;user-select:none;
   position:sticky;top:0;z-index:5;
 }}
-thead th:hover{{color:var(--text);background:var(--bg3);}}
-thead th .arr{{margin-left:4px;font-size:9px;opacity:.4;}}
-thead th.asc .arr{{opacity:1;color:var(--accent);}}
-thead th.asc .arr::after{{content:'▲';}}
-thead th.desc .arr{{opacity:1;color:var(--accent);}}
-thead th.desc .arr::after{{content:'▼';}}
-thead th:not(.asc):not(.desc) .arr::after{{content:'⇅';}}
+thead th.sortable{{cursor:pointer;}}
+thead th.sortable:hover{{color:var(--txt);background:var(--hov);}}
+.arr{{margin-left:4px;font-size:9px;opacity:.35;}}
+th.asc  .arr{{opacity:1;color:var(--acc);}}
+th.desc .arr{{opacity:1;color:var(--acc);}}
+th.asc  .arr::after{{content:'▲'}}
+th.desc .arr::after{{content:'▼'}}
+th:not(.asc):not(.desc) .arr::after{{content:'⇅'}}
 
-tbody tr:nth-child(odd)  {{background:var(--bg-row);}}
-tbody tr:nth-child(even) {{background:var(--bg-row-alt);}}
-tbody tr:hover{{background:var(--bg-hov)!important;}}
-tbody td{{padding:7px 12px;vertical-align:middle;white-space:nowrap;}}
+tbody tr:nth-child(odd) {{background:var(--row-odd);}}
+tbody tr:nth-child(even){{background:var(--row-evn);}}
+tbody tr:hover{{background:var(--hov)!important;}}
+tbody td{{padding:8px 14px;vertical-align:middle;white-space:nowrap;}}
 
-/* ── 欄位樣式 ── */
-.tk{{color:#4a9fff;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:.03em;}}
-.tk:hover{{color:#90c8ff;}}
-.nm{{color:var(--text-mid);font-size:12px;}}
-.pv{{font-weight:600;color:#ddeeff;}}
+/* cells */
+.tk{{color:#4a9cff;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:.03em;}}
+.tk:hover{{color:#90c8ff;text-decoration:underline;}}
+.nm{{color:var(--mid);font-size:12px;}}
+.pv{{font-weight:600;color:#ddeeff;font-size:13px;}}
 
-/* bar */
-.bar-cell{{display:flex;align-items:center;gap:7px;}}
-.bar-bg{{width:44px;height:3px;background:rgba(255,255,255,.07);border-radius:2px;flex-shrink:0;}}
-.bar-fg{{height:3px;border-radius:2px;}}
-.bar-num{{font-size:12px;font-weight:700;min-width:22px;}}
+/* mini bar */
+.bc{{display:flex;align-items:center;gap:8px;}}
+.bb{{width:50px;height:4px;background:rgba(255,255,255,.07);border-radius:2px;flex-shrink:0;}}
+.bf{{height:4px;border-radius:2px;}}
+.bn{{font-size:12.5px;font-weight:700;min-width:24px;}}
 
-/* vol */
-.vb{{display:inline-block;padding:1px 7px;border-radius:3px;font-size:11px;font-weight:700;}}
-.v-fire{{background:rgba(240,58,82,.14);color:#f03a52;border:1px solid rgba(240,58,82,.3);}}
-.v-warn{{background:rgba(232,120,32,.14);color:#e87820;border:1px solid rgba(232,120,32,.3);}}
-.v-dim{{color:var(--text-dim);font-size:12px;}}
+/* vol badge */
+.vb{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;}}
+.vf{{background:rgba(239,59,82,.14);color:#ef3b52;border:1px solid rgba(239,59,82,.28);}}
+.vw{{background:rgba(224,116,24,.14);color:#e07418;border:1px solid rgba(224,116,24,.28);}}
+.vd{{color:var(--dim);font-size:12px;}}
 
 /* rsi */
-.rh{{color:var(--red);font-weight:600;}} .rm{{color:var(--yellow);}} .rl{{color:var(--green);font-weight:600;}} .rn{{color:var(--text-mid);}}
+.rh{{color:var(--red);font-weight:600;}}
+.rm{{color:var(--yel);}}
+.rl{{color:var(--grn);font-weight:600;}}
+.rn{{color:var(--mid);}}
 
 /* inst */
-.isb{{color:var(--red);font-weight:800;}} .ib{{color:#f07060;font-weight:600;}}
-.iss{{color:var(--green);font-weight:800;}} .is{{color:#50b888;font-weight:600;}}
-.iz{{color:var(--text-dim);}}
+.isb{{color:var(--red);font-weight:800;}}
+.ib {{color:#ee7060;font-weight:600;}}
+.iss{{color:var(--grn);font-weight:800;}}
+.is {{color:#44b07a;font-weight:600;}}
+.iz {{color:var(--dim);}}
 
 /* signal */
-.sig{{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;white-space:nowrap;}}
-.s1{{background:rgba(240,58,82,.12);color:#f06070;border:1px solid rgba(240,58,82,.25);}}
-.s2{{background:rgba(232,120,32,.12);color:#f0a040;border:1px solid rgba(232,120,32,.25);}}
-.s3{{background:rgba(0,192,112,.10);color:#30d890;border:1px solid rgba(0,192,112,.25);}}
-.s4{{background:rgba(50,80,120,.20);color:#6090b8;border:1px solid rgba(50,80,120,.4);}}
+.sg{{display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;white-space:nowrap;font-weight:500;}}
+.s1{{background:rgba(239,59,82,.13);color:#f06070;border:1px solid rgba(239,59,82,.28);}}
+.s2{{background:rgba(224,116,24,.13);color:#efa040;border:1px solid rgba(224,116,24,.28);}}
+.s3{{background:rgba(0,187,106,.11);color:#30d880;border:1px solid rgba(0,187,106,.28);}}
+.s4{{background:rgba(48,80,120,.22);color:#5888b0;border:1px solid rgba(48,80,120,.40);}}
 
 /* pattern */
-.pt{{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10.5px;margin-right:3px;}}
-.pa{{background:rgba(232,120,32,.14);color:#f0a040;border:1px solid rgba(232,120,32,.3);}}
-.pb{{background:rgba(42,127,255,.12);color:#70b0ff;border:1px solid rgba(42,127,255,.3);}}
-.pc{{background:rgba(160,100,240,.12);color:#c090f8;border:1px solid rgba(160,100,240,.3);}}
+.pt{{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:3px;font-weight:500;}}
+.pa{{background:rgba(224,116,24,.13);color:#efa040;border:1px solid rgba(224,116,24,.28);}}
+.pb{{background:rgba(47,125,232,.13);color:#70b4ff;border:1px solid rgba(47,125,232,.28);}}
+.pc{{background:rgba(155,100,240,.13);color:#c08af8;border:1px solid rgba(155,100,240,.28);}}
+
+/* ── 說明欄 ── */
+.legend{{
+  margin:0 28px 28px;
+  border:1px solid var(--bdr);border-radius:8px;
+  overflow:hidden;
+}}
+.legend-hd{{
+  padding:10px 16px;background:var(--bg2);
+  font-size:11px;font-weight:600;color:var(--hd);
+  letter-spacing:.08em;cursor:pointer;
+  display:flex;justify-content:space-between;align-items:center;
+}}
+.legend-hd:hover{{background:var(--hov);}}
+.legend-body{{display:none;padding:14px 16px;}}
+.legend-body.open{{display:block;}}
+.legend-body table{{margin-top:0;}}
+.legend-body thead th{{
+  background:transparent;padding:6px 10px;font-size:10px;
+  border-bottom:1px solid var(--bdr);position:static;
+}}
+.legend-body tbody td{{padding:6px 10px;font-size:12px;border-bottom:1px solid var(--bdr);}}
+.legend-body tbody tr:last-child td{{border-bottom:none;}}
+.note{{color:var(--dim);font-size:11px;margin-top:10px;}}
 </style>
-</head>
-<body>
+</head><body>
 
-<!-- Header -->
 <div class="hd">
-  <span class="hd-title">🇹🇼 台股半導體 Screener</span>
-  <span class="hd-meta">更新：{gen_at} &nbsp;·&nbsp; {total} 檔</span>
+  <span class="hd-t">🇹🇼 台股半導體 Screener</span>
+  <span class="hd-m">更新：{gen_at} &nbsp;·&nbsp; {total} 檔</span>
 </div>
 
-<!-- 大盤 -->
-<div class="mkt" id="mktBar">
-  <div class="mkt-item">
-    <div class="mkt-lbl">加權指數</div>
-    <div class="mkt-val">{mkt_px:,.0f}</div>
-  </div>
-  <div class="mkt-item">
-    <div class="mkt-lbl">近5日</div>
-    <div class="mkt-val {'pos' if mkt_r5>0 else 'neg' if mkt_r5<0 else 'neu'}">{mkt_r5:+.1f}%</div>
-  </div>
-  <div class="mkt-item">
-    <div class="mkt-lbl">RSI(14)</div>
-    <div class="mkt-val neu">{f'{mkt_rsi:.0f}' if mkt_rsi else 'N/A'}</div>
-  </div>
-  <div class="mkt-item">
-    <div class="mkt-lbl">MA20</div>
-    <div class="mkt-val {'pos' if mkt_ma else 'neg'}">{'站上 ✓' if mkt_ma else '跌破 ✗'}</div>
-  </div>
+<div class="mkt">
+  <div class="mi"><span class="mi-l">加權指數</span><span class="mi-v">{mkt_px:,.0f}</span></div>
+  <div class="mi"><span class="mi-l">近5日</span><span class="mi-v {r5cls}">{mkt_r5:+.1f}%</span></div>
+  <div class="mi"><span class="mi-l">RSI(14)</span><span class="mi-v neu">{rsi_txt}</span></div>
+  <div class="mi"><span class="mi-l">MA20</span><span class="mi-v {ma_cls}">{ma_txt}</span></div>
 </div>
 
-<!-- 篩選列 -->
-<div class="filter-bar">
-  <input type="text" id="searchQ" placeholder="🔍  代號 / 名稱" oninput="applyFilter()">
-  <div class="sl-wrap">
+<div class="fb">
+  <div class="srch">
+    <span class="srch-ico">🔍</span>
+    <input type="text" id="searchQ" placeholder="代號 / 名稱" oninput="applyFilter()">
+  </div>
+  <div class="sl-grp">
     <span class="sl-lbl">K線分 ≥</span>
-    <input type="range" id="slKline" min="0" max="100" step="5" value="0" oninput="applyFilter();document.getElementById('kvKline').textContent=this.value">
-    <span class="sl-val" id="kvKline">0</span>
+    <input type="range" id="slK" min="0" max="100" step="5" value="0"
+      oninput="updSlider(this,'kvK');applyFilter()">
+    <span class="sl-val" id="kvK">0</span>
   </div>
-  <div class="sl-wrap">
+  <div class="sl-grp">
     <span class="sl-lbl">綜合分 ≥</span>
-    <input type="range" id="slComp" min="0" max="100" step="5" value="0" oninput="applyFilter();document.getElementById('kvComp').textContent=this.value">
-    <span class="sl-val" id="kvComp">0</span>
+    <input type="range" id="slC" min="0" max="100" step="5" value="0"
+      oninput="updSlider(this,'kvC');applyFilter()">
+    <span class="sl-val" id="kvC">0</span>
   </div>
 </div>
 
-<div class="stat-line" id="statLine">載入中…</div>
+<div class="stat" id="statLine">載入中…</div>
 
-<!-- 表格 -->
-<div id="tableWrap">
-<table id="mainTbl">
-<thead>
-<tr>
-  <th data-key="ticker" class="no-sort">代號</th>
-  <th data-key="name"   class="no-sort">名稱</th>
-  <th data-key="price"  class="no-sort">現價</th>
-  <th data-key="chg">漲跌%<span class="arr"></span></th>
-  <th data-key="kline">K線分<span class="arr"></span></th>
-  <th data-key="comp">綜合分<span class="arr"></span></th>
-  <th data-key="vol">爆量<span class="arr"></span></th>
-  <th data-key="rsi">RSI<span class="arr"></span></th>
-  <th data-key="rs5d">RS(5日)<span class="arr"></span></th>
-  <th data-key="inst">法人<span class="arr"></span></th>
-  <th data-key="sig_rank">今日訊號<span class="arr"></span></th>
-  <th data-key="pat_rank">型態<span class="arr"></span></th>
-</tr>
-</thead>
+<div class="tbl-wrap">
+<table>
+<thead><tr>
+  <th>代號</th>
+  <th>名稱</th>
+  <th>現價</th>
+  <th class="sortable" data-k="chg">漲跌%<span class="arr"></span></th>
+  <th class="sortable" data-k="kline">K線分<span class="arr"></span></th>
+  <th class="sortable" data-k="comp">綜合分<span class="arr"></span></th>
+  <th class="sortable" data-k="vol">爆量<span class="arr"></span></th>
+  <th class="sortable" data-k="rsi">RSI<span class="arr"></span></th>
+  <th class="sortable" data-k="rs5d">RS(5日)<span class="arr"></span></th>
+  <th class="sortable" data-k="inst">法人<span class="arr"></span></th>
+  <th class="sortable" data-k="sig_rank">今日訊號<span class="arr"></span></th>
+  <th class="sortable" data-k="pat_rank">型態<span class="arr"></span></th>
+</tr></thead>
 <tbody id="tBody"></tbody>
 </table>
 </div>
 
+<!-- 說明 -->
+<div class="legend">
+  <div class="legend-hd" onclick="toggleLegend()">
+    <span>📖 指標說明</span><span id="legArr">▶</span>
+  </div>
+  <div class="legend-body" id="legBody">
+    <table>
+      <thead><tr><th>指標</th><th>說明</th></tr></thead>
+      <tbody>
+        <tr><td>K線分 ≥ 75</td><td>技術面強勢；62~74 偏多；50~61 中性；&lt; 50 偏弱</td></tr>
+        <tr><td>💥 突破放量</td><td>爆量創5日新高 — 最強進場訊號</td></tr>
+        <tr><td>🚀 主力進場</td><td>大量紅K收高位</td></tr>
+        <tr><td>✅ 洗盤結束</td><td>量縮後放量紅K</td></tr>
+        <tr><td>📉 量縮整理</td><td>量縮蓄勢中</td></tr>
+        <tr><td>爆量</td><td>1.5x 橘色警示；2.0x+ 紅色強訊號</td></tr>
+        <tr><td>RSI</td><td>≥70 紅（過熱）；50~70 黃（偏強）；≤30 綠（超賣）</td></tr>
+        <tr><td>法人</td><td>+3以上深紅強買；-3以下深綠強賣</td></tr>
+        <tr><td>RS(5日)</td><td>個股5日漲跌 − 加權指數5日漲跌（超額報酬）</td></tr>
+        <tr><td>A 法人爆量</td><td>法人連買≥3天 且 爆量≥1.5倍</td></tr>
+        <tr><td>B 回踩MA60</td><td>股價在MA60附近、RSI 32~55、MA20上升中</td></tr>
+        <tr><td>C 底背離</td><td>RSI 底背離（技術反轉訊號）</td></tr>
+      </tbody>
+    </table>
+    <p class="note">⚠️ 本工具僅供技術面參考，不構成投資建議。</p>
+  </div>
+</div>
+
 <script>
 const RAW = {rows_json};
-let sortKey = 'kline', sortAsc = false;
-
-const SIG_CSS = {{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3","📉量縮整理":"s4"}};
-const PAT_CSS = {{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
+let sortKey='kline', sortAsc=false;
+const SC={{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3","📉量縮整理":"s4"}};
+const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
 function kc(v){{
-  if(v===null||v===undefined) return '#3a5878';
-  if(v>=75) return '#f03a52'; if(v>=62) return '#e87820';
-  if(v>=50) return '#d8b830'; return '#00c070';
+  if(v==null)return'#364f6e';
+  if(v>=75)return'#ef3b52';if(v>=62)return'#e07418';
+  if(v>=50)return'#d4b030';return'#00bb6a';
 }}
 function cc(v){{
-  if(v===null||v===undefined) return '#3a5878';
-  if(v>=60) return '#f03a52'; if(v>=40) return '#e87820';
-  if(v>=25) return '#d8b830'; return '#3a5878';
+  if(v==null)return'#364f6e';
+  if(v>=60)return'#ef3b52';if(v>=40)return'#e07418';
+  if(v>=25)return'#d4b030';return'#364f6e';
 }}
 function bar(val,cfn,link){{
-  if(val===null||val===undefined) return '<span style="color:#3a5878">—</span>';
-  const pct=Math.min(Math.max(val,0),100), c=cfn(val);
-  const inner=`<div class="bar-cell"><div class="bar-bg"><div class="bar-fg" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bar-num" style="color:${{c}}">${{Math.round(val)}}</span></div>`;
-  return link ? `<a href="${{link}}" target="_blank" style="text-decoration:none">${{inner}}</a>` : inner;
+  if(val==null)return'<span style="color:#364f6e">—</span>';
+  const pct=Math.min(Math.max(val,0),100),c=cfn(val);
+  const inner=`<div class="bc"><div class="bb"><div class="bf" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bn" style="color:${{c}}">${{Math.round(val)}}</span></div>`;
+  return link?`<a href="${{link}}" target="_blank" style="text-decoration:none">${{inner}}</a>`:inner;
 }}
-function vol(v){{
-  if(v===null||v===undefined) return '<span class="v-dim">—</span>';
-  if(v>=2.0) return `<span class="vb v-fire">${{v.toFixed(1)}}x</span>`;
-  if(v>=1.5) return `<span class="vb v-warn">${{v.toFixed(1)}}x</span>`;
-  return `<span class="v-dim">${{v.toFixed(1)}}x</span>`;
+function fVol(v){{
+  if(v==null)return'<span class="vd">—</span>';
+  if(v>=2.0)return`<span class="vb vf">${{v.toFixed(1)}}x</span>`;
+  if(v>=1.5)return`<span class="vb vw">${{v.toFixed(1)}}x</span>`;
+  return`<span class="vd">${{v.toFixed(1)}}x</span>`;
 }}
-function rsi(v){{
-  if(v===null||v===undefined) return '<span class="rn">—</span>';
-  if(v>=70) return `<span class="rh">${{Math.round(v)}}</span>`;
-  if(v>=50) return `<span class="rm">${{Math.round(v)}}</span>`;
-  if(v<=30) return `<span class="rl">${{Math.round(v)}}</span>`;
-  return `<span class="rn">${{Math.round(v)}}</span>`;
+function fRsi(v){{
+  if(v==null)return'<span class="rn">—</span>';
+  if(v>=70)return`<span class="rh">${{Math.round(v)}}</span>`;
+  if(v>=50)return`<span class="rm">${{Math.round(v)}}</span>`;
+  if(v<=30)return`<span class="rl">${{Math.round(v)}}</span>`;
+  return`<span class="rn">${{Math.round(v)}}</span>`;
 }}
-function rs(v){{
-  if(v===null||v===undefined) return '<span class="iz">—</span>';
-  if(v>0) return `<span class="pos">+${{v.toFixed(1)}}%</span>`;
-  if(v<0) return `<span class="neg">${{v.toFixed(1)}}%</span>`;
-  return '<span class="iz">0.0%</span>';
+function fRs(v){{
+  if(v==null)return'<span class="iz">—</span>';
+  if(v>0)return`<span class="pos">+${{v.toFixed(1)}}%</span>`;
+  if(v<0)return`<span class="neg">${{v.toFixed(1)}}%</span>`;
+  return'<span class="iz">0.0%</span>';
 }}
-function inst(v){{
+function fInst(v){{
   v=v||0;
-  if(v>=3) return `<span class="isb">+${{v}}</span>`;
-  if(v>=1) return `<span class="ib">+${{v}}</span>`;
-  if(v<=-3) return `<span class="iss">${{v}}</span>`;
-  if(v<0)   return `<span class="is">${{v}}</span>`;
-  return '<span class="iz">0</span>';
+  if(v>=3)return`<span class="isb">+${{v}}</span>`;
+  if(v>=1)return`<span class="ib">+${{v}}</span>`;
+  if(v<=-3)return`<span class="iss">${{v}}</span>`;
+  if(v<0)return`<span class="is">${{v}}</span>`;
+  return'<span class="iz">0</span>';
 }}
-function sig(s){{
-  if(!s) return '';
-  return `<span class="sig ${{SIG_CSS[s]||'s4'}}">${{s}}</span>`;
+function fSig(s){{
+  if(!s)return'';
+  return`<span class="sg ${{SC[s]||'s4'}}">${{s}}</span>`;
 }}
-function pats(arr){{
-  if(!arr||!arr.length) return '';
-  return arr.map(([n,c])=>`<span class="pt ${{PAT_CSS[c]||'pb'}}">${{n}}</span>`).join('');
+function fPat(arr){{
+  if(!arr||!arr.length)return'';
+  return arr.map(([n,c])=>`<span class="pt ${{PC[c]||'pb'}}">${{n}}</span>`).join('');
 }}
-function chgHtml(v){{
-  if(v===null||v===undefined) return '<span style="color:#3a5878">—</span>';
-  if(v>0) return `<span class="pos">+${{v.toFixed(2)}}%</span>`;
-  if(v<0) return `<span class="neg">${{v.toFixed(2)}}%</span>`;
-  return '<span class="iz">0.00%</span>';
+function fChg(v){{
+  if(v==null)return'<span style="color:#364f6e">—</span>';
+  if(v>0)return`<span class="pos">+${{v.toFixed(2)}}%</span>`;
+  if(v<0)return`<span class="neg">${{v.toFixed(2)}}%</span>`;
+  return'<span class="iz">0.00%</span>';
+}}
+
+function updSlider(el,vidId){{
+  const pct=(el.value/el.max)*100;
+  el.style.setProperty('--pct',pct+'%');
+  document.getElementById(vidId).textContent=el.value;
 }}
 
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:40px;color:#3a5878">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#364f6e;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   tb.innerHTML=data.map(r=>`<tr>
     <td><a class="tk" href="${{r.yahoo_url}}" target="_blank">${{r.ticker}}</a></td>
     <td><span class="nm">${{r.name}}</span></td>
-    <td><span class="pv">${{r.price!==null?r.price.toFixed(1):'—'}}</span></td>
-    <td>${{chgHtml(r.chg)}}</td>
+    <td><span class="pv">${{r.price!=null?r.price.toFixed(1):'—'}}</span></td>
+    <td>${{fChg(r.chg)}}</td>
     <td>${{bar(r.kline,kc,r.kline_url)}}</td>
     <td>${{bar(r.comp,cc)}}</td>
-    <td>${{vol(r.vol)}}</td>
-    <td>${{rsi(r.rsi)}}</td>
-    <td>${{rs(r.rs5d)}}</td>
-    <td>${{inst(r.inst)}}</td>
-    <td>${{sig(r.signal)}}</td>
-    <td>${{pats(r.patterns)}}</td>
+    <td>${{fVol(r.vol)}}</td>
+    <td>${{fRsi(r.rsi)}}</td>
+    <td>${{fRs(r.rs5d)}}</td>
+    <td>${{fInst(r.inst)}}</td>
+    <td>${{fSig(r.signal)}}</td>
+    <td>${{fPat(r.patterns)}}</td>
   </tr>`).join('');
 }}
 
 function applyFilter(){{
   const q=(document.getElementById('searchQ').value||'').toLowerCase();
-  const kMin=+document.getElementById('slKline').value;
-  const cMin=+document.getElementById('slComp').value;
+  const kMin=+document.getElementById('slK').value;
+  const cMin=+document.getElementById('slC').value;
   let data=RAW.filter(r=>{{
-    if((r.kline===null&&r.vol===null)) return false;
-    if((r.kline||0)<kMin) return false;
-    if((r.comp||0)<cMin)  return false;
-    if(q && !r.ticker.toLowerCase().includes(q) && !r.name.toLowerCase().includes(q)) return false;
+    if(r.kline==null&&r.vol==null)return false;
+    if((r.kline||0)<kMin)return false;
+    if((r.comp||0)<cMin)return false;
+    if(q&&!r.ticker.toLowerCase().includes(q)&&!r.name.toLowerCase().includes(q))return false;
     return true;
   }});
-  data=sortData(data);
+  data=[...data].sort((a,b)=>{{
+    const av=a[sortKey],bv=b[sortKey];
+    const na=av==null,nb=bv==null;
+    if(na&&nb)return 0;if(na)return 1;if(nb)return-1;
+    return sortAsc?av-bv:bv-av;
+  }});
   document.getElementById('statLine').innerHTML=`顯示 <b>${{data.length}}</b> / {total} 檔`;
   renderRows(data);
-  scheduleResize();
+  schedResize();
 }}
 
-function sortData(data){{
-  return [...data].sort((a,b)=>{{
-    let av=a[sortKey], bv=b[sortKey];
-    const na=av===null||av===undefined;
-    const nb=bv===null||bv===undefined;
-    if(na&&nb) return 0;
-    if(na) return 1; if(nb) return -1;
-    return sortAsc ? av-bv : bv-av;
-  }});
-}}
-
-// 標頭排序
-document.querySelectorAll('thead th[data-key]').forEach(th=>{{
-  if(th.classList.contains('no-sort')) return;
+// 表頭排序
+document.querySelectorAll('thead th.sortable').forEach(th=>{{
   th.addEventListener('click',()=>{{
-    const k=th.dataset.key;
-    if(sortKey===k) sortAsc=!sortAsc;
-    else{{ sortKey=k; sortAsc=false; }}
+    const k=th.dataset.k;
+    if(sortKey===k)sortAsc=!sortAsc;
+    else{{sortKey=k;sortAsc=false;}}
     document.querySelectorAll('thead th').forEach(t=>t.classList.remove('asc','desc'));
     th.classList.add(sortAsc?'asc':'desc');
     applyFilter();
   }});
 }});
 
+function toggleLegend(){{
+  const b=document.getElementById('legBody');
+  const a=document.getElementById('legArr');
+  if(b.classList.contains('open')){{b.classList.remove('open');a.textContent='▶';}}
+  else{{b.classList.add('open');a.textContent='▼';schedResize();}}
+}}
+
+// 初始化滑桿漸層
+['slK','slC'].forEach(id=>{{
+  const el=document.getElementById(id);
+  el.style.setProperty('--pct','0%');
+}});
+
 // 預設 K線分降序
-document.querySelector('th[data-key="kline"]').classList.add('desc');
+document.querySelector('th[data-k="kline"]').classList.add('desc');
 applyFilter();
 
-// ResizeObserver 撐高 iframe
+// ResizeObserver
 let raf=0;
-function contentH(){{
-  return Math.ceil(Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))+4;
+function schedResize(){{
+  if(raf)cancelAnimationFrame(raf);
+  raf=requestAnimationFrame(()=>{{
+    const h=Math.ceil(Math.max(document.body.scrollHeight,document.documentElement.scrollHeight))+4;
+    window.parent.postMessage({{isStreamlitMessage:true,type:'streamlit:setFrameHeight',height:h}},'*');
+  }});
 }}
-function reportH(){{
-  window.parent.postMessage({{isStreamlitMessage:true,type:'streamlit:setFrameHeight',height:contentH()}},'*');
-}}
-function scheduleResize(){{
-  if(raf) cancelAnimationFrame(raf);
-  raf=requestAnimationFrame(reportH);
-}}
-if(window.ResizeObserver){{
-  new ResizeObserver(scheduleResize).observe(document.body);
-}}
-window.addEventListener('load',scheduleResize);
-setTimeout(scheduleResize,100);
-setTimeout(scheduleResize,600);
+if(window.ResizeObserver)new ResizeObserver(schedResize).observe(document.body);
+window.addEventListener('load',schedResize);
+setTimeout(schedResize,150);setTimeout(schedResize,700);
 </script>
-</body>
-</html>"""
+</body></html>"""
 
-    est_height = 300 + len(rows) * 38
-    components.html(html_page, height=est_height, scrolling=False)
+    est = 520 + len(rows)*40
+    components.html(page, height=est, scrolling=False)
 
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
