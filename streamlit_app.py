@@ -350,15 +350,15 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">K線分 ≥</span>
-    <input type="range" id="slK" min="0" max="100" step="5" value="70"
+    <input type="range" id="slK" min="0" max="100" step="5" value="0"
       oninput="updSlider(this,'kvK');applyFilter()">
-    <span class="sl-val" id="kvK">70</span>
+    <span class="sl-val" id="kvK">0</span>
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">綜合分 ≥</span>
-    <input type="range" id="slC" min="0" max="100" step="5" value="75"
+    <input type="range" id="slC" min="0" max="100" step="5" value="0"
       oninput="updSlider(this,'kvC');applyFilter()">
-    <span class="sl-val" id="kvC">75</span>
+    <span class="sl-val" id="kvC">0</span>
   </div>
 </div>
 
