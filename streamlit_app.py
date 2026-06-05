@@ -215,6 +215,8 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .stats-tools input[type=number]{{width:86px;}}
 .stats-tools input:focus{{border-color:var(--acc);}}
 .stats-tools label{{display:flex;align-items:center;gap:6px;color:var(--mid);font-size:12px;}}
+.stats-sl-grp{{display:flex;align-items:center;gap:8px;}}
+.stats-sl-lbl{{font-size:12px;color:var(--mid);white-space:nowrap;}}
 .stats-table th.stats-sort{{cursor:pointer;}}
 .stats-table th.stats-sort:hover{{color:var(--acc);}}
 @media(max-width:900px){{.stats-grid{{grid-template-columns:repeat(2,minmax(0,1fr));}}.stats-head{{align-items:flex-start;flex-direction:column;}}}}
@@ -350,13 +352,13 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">K線分 ≥</span>
-    <input type="range" id="slK" min="0" max="100" step="5" value="0"
+    <input type="range" id="slK" min="0" max="100" step="1" value="0"
       oninput="updSlider(this,'kvK');applyFilter()">
     <span class="sl-val" id="kvK">0</span>
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">綜合分 ≥</span>
-    <input type="range" id="slC" min="0" max="100" step="5" value="0"
+    <input type="range" id="slC" min="0" max="100" step="1" value="0"
       oninput="updSlider(this,'kvC');applyFilter()">
     <span class="sl-val" id="kvC">0</span>
   </div>
@@ -633,8 +635,18 @@ function renderStats(){{
     <div class="stats-section-title">近期訊號與 T+1 / T+3 / T+5 / T+7 / T+10</div>
     <div class="stats-tools">
       <input type="text" id="statsQ" placeholder="代號 / 名稱" oninput="renderRecentStats()">
-      <label>K線 >= <input type="number" id="statsK" value="0" min="0" max="100" step="1" oninput="renderRecentStats()"></label>
-      <label>綜合分 >= <input type="number" id="statsC" value="0" min="0" max="100" step="1" oninput="renderRecentStats()"></label>
+      <div class="stats-sl-grp">
+        <span class="stats-sl-lbl">K線 ≥</span>
+        <input type="range" id="statsK" min="0" max="99" step="1" value="0"
+          oninput="updSlider(this,'statsKv');renderRecentStats()" style="width:120px;">
+        <span class="sl-val" id="statsKv">0</span>
+      </div>
+      <div class="stats-sl-grp">
+        <span class="stats-sl-lbl">綜合分 ≥</span>
+        <input type="range" id="statsC" min="0" max="99" step="1" value="0"
+          oninput="updSlider(this,'statsCv');renderRecentStats()" style="width:120px;">
+        <span class="sl-val" id="statsCv">0</span>
+      </div>
       <span class="stats-note">顯示 <b id="recentStatsCount">0</b> 筆</span>
     </div>
     <div class="stats-scroll">
@@ -749,7 +761,17 @@ function toggleLegend(){{
 
 // 預設 K線分降序
 document.querySelector('th[data-k="kline"]').classList.add('desc');
+
+// 初始化統計頁滑桿漸層（renderStats 動態生成後再初始化）
+function initStatsSliders(){{
+  ['statsK','statsC'].forEach(id=>{{
+    const el=document.getElementById(id);
+    if(el) el.style.setProperty('--pct','0%');
+  }});
+}}
+
 renderStats();
+initStatsSliders();
 applyFilter();
 
 // ResizeObserver
@@ -763,7 +785,7 @@ function schedResize(){{
 }}
 if(window.ResizeObserver)new ResizeObserver(schedResize).observe(document.body);
 window.addEventListener('load',schedResize);
-setTimeout(schedResize,150);setTimeout(schedResize,700);
+setTimeout(schedResize,150);setTimeout(schedResize,700);setTimeout(schedResize,1500);setTimeout(schedResize,3000);
 </script>
 </body></html>"""
 
