@@ -57,7 +57,7 @@ def fetch_finmind_inst_days(stock_id: str, token: str, days: int = 10) -> int:
         daily = {}
         for rec in d.get("data", []):
             name = rec.get("name", "")
-            if name in ("Foreign_Investor", "Investment_Trust", "外資", "投信"):
+            if name in ("外資", "外資自營商", "Foreign_Investor", "投信", "Investment_Trust"):
                 daily.setdefault(rec["date"], 0)
                 daily[rec["date"]] += rec.get("buy", 0) - rec.get("sell", 0)
         dates = sorted(daily, reverse=True)[:days]
@@ -133,7 +133,7 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         price_vs_ma20_pct=None,
         price_vs_ma60_pct=None,
         week52_high=None, week52_pct=None, rsi14=None,
-        inst_buy_days=0,   # 待 Streamlit 填入
+        inst_buy_days=0,   # GitHub Actions with FINMIND_TOKEN fills this before saving.
         kline_score=None, kline_strat=None,
         ret5d=None, ma20_rising=None,
         entry_signal="", signal_rank=0,
@@ -241,7 +241,7 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
                 rsi_vals.append(100 - 100 / (1 + (g_sum/cnt) / (l_sum/cnt)))
         base["rsi_div"] = _detect_rsi_divergence(ohlcv, rsi_vals)
 
-    # 先用 inst_buy_days=0 計算一次 composite（Streamlit 抓到 FinMind 後會重算）
+    # Initial score before FinMind. GitHub Actions recalculates after inst_buy_days is filled.
     base["composite"] = calc_composite_tw(base)
     base["patterns"]  = detect_patterns_tw(base)
 

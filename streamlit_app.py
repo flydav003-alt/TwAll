@@ -3,11 +3,9 @@ streamlit_app.py — 台股半導體 Screener
 架構：components.html() + JS 排序/篩選，scrolling=False + ResizeObserver
 配色：對標圖1深藍黑風格
 """
-import json, os, requests, streamlit as st
+import json, os, streamlit as st
 import streamlit.components.v1 as components
-from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tw_screener_core import calc_composite_tw, detect_patterns_tw, yahoo_tw_url
+from tw_screener_core import yahoo_tw_url
 from stats_db import export_stats_payload
 
 st.set_page_config(page_title="台股半導體 Screener", page_icon="📈",
@@ -22,50 +20,6 @@ st.markdown("""<style>
   .stApp{overflow:visible!important;height:auto!important;}
   iframe{display:block!important;border:none!important;margin:0!important;}
 </style>""", unsafe_allow_html=True)
-
-# ── FinMind 2h 快取 ───────────────────────────────────────────
-def _get_token():
-    try: return st.secrets["FINMIND_TOKEN"]
-    except: return ""
-
-@st.cache_data(ttl=7200, show_spinner=False)
-def _finmind_inst(stock_id, token, days=10):
-    if not token: return 0
-    end   = datetime.now().strftime("%Y-%m-%d")
-    start = (datetime.now()-timedelta(days=days+10)).strftime("%Y-%m-%d")
-    try:
-        r = requests.get(
-            "https://api.finmindtrade.com/api/v4/data",
-            params=dict(dataset="TaiwanStockInstitutionalInvestorsBuySell",
-                        data_id=stock_id, start_date=start, end_date=end, token=token),
-            timeout=10)
-        d = r.json()
-        if d.get("status")!=200: return 0
-        daily={}
-        for rec in d.get("data",[]):
-            nm=rec.get("name","")
-            if nm in ("外資","外資自營商","Foreign_Investor","投信","Investment_Trust"):
-                daily.setdefault(rec["date"],0)
-                daily[rec["date"]]+=rec.get("buy",0)-rec.get("sell",0)
-        dates=sorted(daily,reverse=True)[:days]
-        if not dates: return 0
-        sign=1 if daily[dates[0]]>=0 else -1
-        cnt=0
-        for dt in dates:
-            if (1 if daily[dt]>=0 else -1)==sign: cnt+=1
-            else: break
-        return sign*cnt
-    except: return 0
-
-def _fetch_all_finmind(tickers, token):
-    res={}
-    with ThreadPoolExecutor(max_workers=8) as ex:
-        futs={ex.submit(_finmind_inst,sid,token):sid for sid in tickers}
-        for f in as_completed(futs):
-            sid=futs[f]
-            try: res[sid]=f.result()
-            except: res[sid]=0
-    return res
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _load_stocks():
@@ -87,21 +41,11 @@ def main():
         st.error("⚠️ 找不到 data/screener_data.json，請先執行 GitHub Actions。")
         st.stop()
 
-    token = _get_token()
-    if token:
-        with st.spinner("📡 抓取法人資料（2h 快取）…"):
-            inst_map = _fetch_all_finmind([s["ticker"] for s in stocks], token)
-    else:
-        inst_map = {}
-
     SIG_RANK = {"💥突破放量":4,"🚀主力進場":3,"✅洗盤結束":2,"📉量縮整理":1,"":0}
     PAT_RANK = {"pat-a":3,"pat-b":2,"pat-c":1}
 
     rows = []
     for s in stocks:
-        s["inst_buy_days"] = inst_map.get(s["ticker"], s.get("inst_buy_days",0))
-        s["composite"]     = calc_composite_tw(s)
-        s["patterns"]      = detect_patterns_tw(s)
         price = s.get("price")
         prev  = s.get("prev_close")
         chg   = round((price-prev)/prev*100,2) if price and prev and prev!=0 else None
