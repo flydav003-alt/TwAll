@@ -145,23 +145,23 @@ def main():
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
-  --bg:      #060d1b;
-  --bg2:     #091424;
-  --bg3:     #0c1a2e;
-  --row-odd: #081220;
-  --row-evn: #060f1c;
-  --hov:     #0f1e38;
-  --bdr:     rgba(38,85,155,0.30);
-  --bdr2:    rgba(48,105,185,0.50);
-  --txt:     #c4d8f2;
-  --dim:     #364f6e;
-  --mid:     #5a7fa4;
-  --hd:      #446a96;
-  --acc:     #2f7de8;
-  --red:     #ef3b52;
-  --grn:     #00bb6a;
-  --orn:     #e07418;
-  --yel:     #d4b030;
+  --bg:      #141b2d;
+  --bg2:     #1a2340;
+  --bg3:     #1e2848;
+  --row-odd: #161d30;
+  --row-evn: #131929;
+  --hov:     #1f2d4a;
+  --bdr:     rgba(120,130,200,0.18);
+  --bdr2:    rgba(130,110,230,0.35);
+  --txt:     #d0d8f0;
+  --dim:     #3d4d6e;
+  --mid:     #5c6a8a;
+  --hd:      #6a7aaa;
+  --acc:     #826edd;
+  --red:     #f07070;
+  --grn:     #3fb950;
+  --orn:     #d4a843;
+  --yel:     #a99ef0;
   --sans:    'Inter','Noto Sans TC',sans-serif;
 }}
 body{{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13px;}}
