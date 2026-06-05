@@ -390,7 +390,8 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
     <table>
       <thead><tr><th>指標</th><th>說明</th></tr></thead>
       <tbody>
-        <tr><td>K線分 ≥ 75</td><td>技術面強勢；62~74 偏多；50~61 中性；&lt; 50 偏弱</td></tr>
+        <tr><td>K線分 ≥ 78</td><td>頂級強勢🔴；70~77 強勢🟠；60~69 偏多🟡；&lt; 60 偏弱</td></tr>
+        <tr><td>綜合分 ≥ 88</td><td>極致狙擊🔴；75~87 高勝率🟠；60~74 觀察🟡；&lt; 60 偏弱</td></tr>
         <tr><td>💥 突破放量</td><td>爆量創5日新高 — 最強進場訊號</td></tr>
         <tr><td>🚀 主力進場</td><td>大量紅K收高位</td></tr>
         <tr><td>✅ 洗盤結束</td><td>量縮後放量紅K</td></tr>
@@ -414,18 +415,27 @@ let sortKey='kline', sortAsc=false;
 const SC={{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3","📉量縮整理":"s4"}};
 const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
+// K線分階級色：78+ 鮮紅 / 70~77 橙 / 60~69 金黃 / 59- 灰
 function kc(v){{
   if(v==null)return'#334155';
-  return'#6366f1';
+  if(v>=78)return'#FF3B3B';
+  if(v>=70)return'#FF8C42';
+  if(v>=60)return'#F5C518';
+  return'#6b7280';
 }}
+// 綜合分階級色：88+ 鮮紅 / 75~87 橙 / 60~74 金黃 / 59- 灰
 function cc(v){{
   if(v==null)return'#334155';
-  return'#f59e0b';
+  if(v>=88)return'#FF3B3B';
+  if(v>=75)return'#FF8C42';
+  if(v>=60)return'#F5C518';
+  return'#6b7280';
 }}
 function bar(val,cfn,link){{
   if(val==null)return'<span style="color:#64748b">—</span>';
   const pct=Math.min(Math.max(val,0),100),c=cfn(val);
-  const inner=`<div class="bc"><div class="bb"><div class="bf" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bn" style="color:${{c}}">${{Math.round(val)}}</span></div>`;
+  const fw=val>=78||val>=88?700:600;
+  const inner=`<div class="bc"><div class="bb"><div class="bf" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bn" style="color:${{c}};font-weight:${{fw}}">${{Math.round(val)}}</span></div>`;
   return link?`<a href="${{link}}" target="_blank" style="text-decoration:none">${{inner}}</a>`:inner;
 }}
 function fVol(v){{
