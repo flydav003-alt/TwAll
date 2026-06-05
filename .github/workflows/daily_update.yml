@@ -1,0 +1,51 @@
+name: 每日自動更新資料（台灣時間 17:00）
+
+on:
+  # 台灣時間下午4:35點 = UTC 08:35
+  # 只在週一到週五執行（配合台股交易日）
+  schedule:
+    - cron: '35 8 * * 1-5'
+
+  # 允許手動從 GitHub → Actions 頁面觸發
+  workflow_dispatch:
+
+jobs:
+  fetch-and-update:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # 允許 push 回 repo
+
+    steps:
+      # 1. 取出最新程式碼
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 設定 Python 環境
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 3. 安裝相依套件（只有 yfinance 這裡需要，不需要 FinMind Token）
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas numpy openpyxl requests
+
+      # 4. 執行資料抓取腳本
+      - name: Fetch stock data
+        run: python fetch_data.py
+
+      # 5. 把產生的 JSON 檔案 commit 並 push 回 repo
+      #    → Streamlit Cloud 偵測到新 commit 會自動重新部署
+      - name: Commit and push updated data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name  "github-actions[bot]"
+          git add data/screener_data.json data/market_data.json
+          # 若沒有變動則不 commit（避免無意義的 commit）
+          git diff --staged --quiet || \
+            git commit -m "chore: auto-update screener data $(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M %Z')"
+          git push
