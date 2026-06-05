@@ -1,28 +1,18 @@
 """
-streamlit_app.py
-================
-台股半導體 Screener — Streamlit 網頁版（重設計版）
-- 讀取 GitHub Actions 預先抓好的 data/screener_data.json
-- FinMind 三大法人資料：從 Streamlit Secrets 取得 Token，快取 2 小時
-- 漲跌% = (現價 - 昨收) / 昨收，由 JSON 存的 prev_close 計算
+streamlit_app.py  ── 台股半導體 Screener（深海藍黑重設計版）
+- 無內嵌捲軸，全部交給瀏覽器
+- 欄位標頭可點擊排序
+- 篩選列：搜尋框 + K線分滑桿 + 綜合分滑桿，單橫排
+- 法人快取 2 小時
 """
 
 import streamlit as st
-import json
-import os
-import requests
-import pandas as pd
+import json, os, requests
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tw_screener_core import calc_composite_tw, detect_patterns_tw, yahoo_tw_url
 
-from tw_screener_core import (
-    calc_composite_tw, detect_patterns_tw,
-    yahoo_tw_url, SORT_MODES,
-)
-
-# ──────────────────────────────────────────────────────────────
-# 頁面設定
-# ──────────────────────────────────────────────────────────────
+# ── 頁面設定 ─────────────────────────────────────────────────
 st.set_page_config(
     page_title="台股半導體 Screener",
     page_icon="📈",
@@ -30,526 +20,475 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ──────────────────────────────────────────────────────────────
-# 全域 CSS
-# ──────────────────────────────────────────────────────────────
+# ── CSS ───────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
 
 :root {
-  --bg:        #090e1a;
-  --bg2:       #0d1525;
-  --bg3:       #111d30;
-  --border:    #1e2d45;
-  --text:      #c8d8f0;
-  --text-dim:  #4a6080;
-  --text-mid:  #7a9bbf;
-  --accent:    #1e6fff;
-  --red:       #ff3d5a;
-  --green:     #00c97a;
-  --orange:    #ff8c00;
-  --yellow:    #f5c518;
-  --mono:      'IBM Plex Mono', monospace;
-  --sans:      'Noto Sans TC', sans-serif;
+  --bg:         #050d1a;
+  --bg-card:    #071326;
+  --bg-row-alt: #081628;
+  --bg-hover:   #0c1f3a;
+  --border:     rgba(30,80,140,0.35);
+  --border-hd:  rgba(40,100,180,0.5);
+  --text:       #ccdcf4;
+  --text-dim:   #3d5a7a;
+  --text-mid:   #6a8fb0;
+  --text-hd:    #4a7aaa;
+  --accent:     #2a7fff;
+  --red:        #f23a54;
+  --red-soft:   #c0304a;
+  --green:      #00bf72;
+  --green-soft: #008f55;
+  --orange:     #f08020;
+  --yellow:     #e8c040;
+  --purple:     #a070f0;
+  --sans:       'Inter', 'Noto Sans TC', sans-serif;
 }
 
-html, body, [data-testid="stAppViewContainer"] {
+/* ── 全域 ── */
+html, body,
+[data-testid="stAppViewContainer"],
+[data-testid="stApp"] {
   background: var(--bg) !important;
   color: var(--text);
   font-family: var(--sans);
 }
-
 [data-testid="stHeader"],
 [data-testid="stToolbar"],
+[data-testid="stDecoration"],
 footer { display: none !important; }
+[data-testid="stSidebar"] { background: var(--bg-card) !important; }
 
-[data-testid="stSidebar"] { background: var(--bg2) !important; }
-
-/* 隱藏 streamlit 預設間距 */
-.block-container { padding-top: 1.5rem !important; padding-bottom: 2rem !important; }
+/* 去掉 Streamlit 預設 padding，讓內容填滿 */
+.block-container {
+  padding: 1.2rem 2rem 3rem 2rem !important;
+  max-width: 100% !important;
+}
 
 /* ── Header ── */
-.screener-header {
+.sc-header {
   display: flex;
   align-items: baseline;
-  gap: 16px;
-  margin-bottom: 4px;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
 }
-.screener-title {
-  font-family: var(--mono);
-  font-size: 22px;
-  font-weight: 600;
-  color: #e8f0ff;
-  letter-spacing: 0.04em;
+.sc-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ddeeff;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
-.screener-meta {
-  font-family: var(--mono);
+.sc-meta {
   font-size: 11px;
   color: var(--text-dim);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 
 /* ── 大盤 bar ── */
-.market-bar {
+.mkt-bar {
   display: flex;
   align-items: center;
-  gap: 28px;
-  background: var(--bg2);
+  gap: 0;
+  background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 20px;
-  margin-bottom: 16px;
-  font-family: var(--mono);
-  font-size: 13px;
-}
-.market-bar .label { color: var(--text-dim); font-size: 11px; margin-right: 6px; }
-.market-bar .val   { color: var(--text); font-weight: 600; }
-.market-bar .pos   { color: var(--red); }
-.market-bar .neg   { color: var(--green); }
-.market-bar .neutral { color: var(--text-mid); }
-.market-sep { color: var(--border); }
-
-/* ── 篩選列 ── */
-.filter-row {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
+  border-radius: 6px;
+  padding: 0;
   margin-bottom: 14px;
+  overflow: hidden;
+}
+.mkt-item {
+  padding: 9px 20px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mkt-item:last-child { border-right: none; }
+.mkt-label { font-size: 9.5px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; }
+.mkt-val   { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: 0.02em; }
+.mkt-pos   { color: var(--red); }
+.mkt-neg   { color: var(--green); }
+.mkt-neu   { color: var(--text-mid); }
+
+/* ── 篩選區 ── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 16px;
+  margin-bottom: 10px;
+  flex-wrap: nowrap;
+}
+.filter-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Streamlit widget 美化 */
+[data-baseweb="input"] input {
+  background: rgba(10,30,60,0.8) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+  font-family: var(--sans) !important;
+  padding: 5px 10px !important;
+  height: 34px !important;
+}
+[data-baseweb="input"] input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px rgba(42,127,255,0.15) !important;
+}
+/* slider 顏色 */
+[data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+div[data-testid="stSlider"] > div > div > div { background: var(--accent) !important; }
+label[data-testid="stWidgetLabel"] p {
+  color: var(--text-mid) !important;
+  font-size: 11px !important;
+  letter-spacing: 0.04em;
 }
 
 /* ── 結果統計 ── */
 .result-stat {
-  font-family: var(--mono);
   font-size: 11px;
   color: var(--text-dim);
-  margin-bottom: 10px;
-  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  letter-spacing: 0.04em;
 }
-.result-stat span { color: var(--accent); }
+.result-stat b { color: var(--accent); font-weight: 600; }
 
 /* ── 主表格 ── */
-.screener-table {
+.sc-table {
   width: 100%;
   border-collapse: collapse;
-  font-family: var(--mono);
-  font-size: 12.5px;
+  font-family: var(--sans);
+  font-size: 13px;
+  table-layout: auto;
 }
-.screener-table thead th {
-  background: var(--bg2);
-  color: var(--text-dim);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+.sc-table thead th {
+  background: var(--bg-card);
+  color: var(--text-hd);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 8px 10px;
+  padding: 9px 12px;
   text-align: left;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-hd);
   white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 5;
 }
-.screener-table tbody tr {
-  border-bottom: 1px solid rgba(30,45,69,0.6);
-  transition: background 0.1s;
-}
-.screener-table tbody tr:hover { background: var(--bg3); }
-.screener-table tbody td {
-  padding: 7px 10px;
+.sc-table thead th:hover { color: var(--text); background: var(--bg-hover); }
+.sc-table thead th .sort-arrow { margin-left: 4px; opacity: 0.4; font-size: 9px; }
+.sc-table thead th.sorted-asc .sort-arrow::after  { content: ' ▲'; opacity: 1; color: var(--accent); }
+.sc-table thead th.sorted-desc .sort-arrow::after { content: ' ▼'; opacity: 1; color: var(--accent); }
+.sc-table thead th:not(.sorted-asc):not(.sorted-desc) .sort-arrow::after { content: ' ⇅'; }
+
+.sc-table tbody tr { border-bottom: 1px solid var(--border); }
+.sc-table tbody tr:nth-child(even) { background: var(--bg-row-alt); }
+.sc-table tbody tr:nth-child(odd)  { background: transparent; }
+.sc-table tbody tr:hover { background: var(--bg-hover) !important; }
+
+.sc-table tbody td {
+  padding: 7px 12px;
   vertical-align: middle;
   white-space: nowrap;
   color: var(--text);
 }
 
-/* ── 欄位樣式 ── */
-.ticker-link {
-  color: #5ba3ff;
+/* ── 欄位 ── */
+.tk-link {
+  color: #4a9fff;
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 13px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
-.ticker-link:hover { color: #a0c4ff; text-decoration: underline; }
+.tk-link:hover { color: #90c8ff; }
+.stk-name { color: var(--text-mid); font-size: 12px; }
+.price-v  { font-weight: 600; color: #ddeeff; }
 
-.stock-name {
-  color: var(--text-mid);
-  font-family: var(--sans);
-  font-size: 12px;
-}
-
-.price-val {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text);
-}
-
-.chg-pos { color: var(--red); font-weight: 600; }
-.chg-neg { color: var(--green); font-weight: 600; }
+.chg-pos  { color: var(--red);   font-weight: 600; }
+.chg-neg  { color: var(--green); font-weight: 600; }
 .chg-zero { color: var(--text-dim); }
 
-/* K線 / 綜合 mini bar */
-.score-cell {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+/* mini score bar */
+.sc-bar-wrap { display:flex; align-items:center; gap:8px; }
+.sc-bar-bg {
+  width: 48px; height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px; overflow: hidden; flex-shrink: 0;
 }
-.score-bar-wrap {
-  width: 52px;
-  height: 5px;
-  background: rgba(255,255,255,0.07);
-  border-radius: 3px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.score-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-}
-.score-num {
-  font-size: 12px;
-  font-weight: 600;
-  min-width: 22px;
-  text-align: right;
-}
+.sc-bar-fill { height:100%; border-radius:2px; }
+.sc-bar-num  { font-size:12.5px; font-weight:700; min-width:24px; }
 
-/* 爆量 */
-.vol-badge {
-  display: inline-block;
-  padding: 1px 7px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
+/* 爆量 badge */
+.vol-b {
+  display:inline-block; padding:2px 8px;
+  border-radius:3px; font-size:11px; font-weight:700;
 }
-.vol-hot2  { background: rgba(255,61,90,0.2);  color: #ff3d5a; border: 1px solid rgba(255,61,90,0.35); }
-.vol-hot15 { background: rgba(255,140,0,0.18); color: #ff8c00; border: 1px solid rgba(255,140,0,0.35); }
-.vol-norm  { color: var(--text-dim); }
+.vol-fire { background:rgba(242,58,84,0.15); color:#f23a54; border:1px solid rgba(242,58,84,0.3); }
+.vol-warn { background:rgba(240,128,32,0.15); color:#f08020; border:1px solid rgba(240,128,32,0.3); }
+.vol-dim  { color: var(--text-dim); font-size:12px; }
 
 /* RSI */
-.rsi-high   { color: var(--red); }
-.rsi-mid    { color: var(--yellow); }
-.rsi-low    { color: var(--green); }
-.rsi-normal { color: var(--text-mid); }
+.rsi-h { color: var(--red);    font-weight: 600; }
+.rsi-m { color: var(--yellow); }
+.rsi-l { color: var(--green);  font-weight: 600; }
+.rsi-n { color: var(--text-mid); }
 
-/* RS5日 */
-.rs-pos { color: var(--red); }
-.rs-neg { color: var(--green); }
-.rs-zero { color: var(--text-dim); }
+/* RS */
+.rs-p { color: var(--red);   font-weight:600; }
+.rs-n { color: var(--green); font-weight:600; }
+.rs-z { color: var(--text-dim); }
 
 /* 法人 */
-.inst-strong-buy  { color: var(--red); font-weight: 700; }
-.inst-buy         { color: #ff8060; }
-.inst-strong-sell { color: var(--green); font-weight: 700; }
-.inst-sell        { color: #60c090; }
-.inst-zero        { color: var(--text-dim); }
+.inst-sb { color: var(--red);        font-weight:800; }
+.inst-b  { color: #f07060; font-weight:600; }
+.inst-ss { color: var(--green);      font-weight:800; }
+.inst-s  { color: #50b888; font-weight:600; }
+.inst-z  { color: var(--text-dim); }
 
-/* 今日訊號 */
-.signal-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-family: var(--sans);
-  white-space: nowrap;
+/* 訊號 badge */
+.sig-b {
+  display:inline-block; padding:2px 8px;
+  border-radius:3px; font-size:11px; white-space:nowrap;
 }
-.sig-breakthrough { background: rgba(255,61,90,0.15);  color: #ff6070; border: 1px solid rgba(255,61,90,0.3); }
-.sig-main         { background: rgba(255,140,0,0.15);  color: #ffaa30; border: 1px solid rgba(255,140,0,0.3); }
-.sig-wash         { background: rgba(0,201,122,0.12);  color: #30d898; border: 1px solid rgba(0,201,122,0.3); }
-.sig-shrink       { background: rgba(74,96,128,0.2);   color: #7090b0; border: 1px solid rgba(74,96,128,0.4); }
+.sig-1 { background:rgba(242,58,84,0.12);  color:#f26070; border:1px solid rgba(242,58,84,0.25); }
+.sig-2 { background:rgba(240,128,32,0.12); color:#f0a040; border:1px solid rgba(240,128,32,0.25); }
+.sig-3 { background:rgba(0,191,114,0.10);  color:#30d890; border:1px solid rgba(0,191,114,0.25); }
+.sig-4 { background:rgba(60,90,130,0.2);   color:#6090b8; border:1px solid rgba(60,90,130,0.4); }
 
-/* 型態標籤 */
-.pat-tag {
-  display: inline-block;
-  padding: 1px 7px;
-  border-radius: 3px;
-  font-size: 10.5px;
-  font-family: var(--sans);
-  margin-right: 3px;
+/* 型態 badge */
+.pat-t {
+  display:inline-block; padding:2px 7px;
+  border-radius:3px; font-size:10.5px; margin-right:3px;
 }
-.pat-a { background: rgba(255,140,0,0.18); color: #ffaa30; border: 1px solid rgba(255,140,0,0.3); }
-.pat-b { background: rgba(91,163,255,0.15); color: #80b8ff; border: 1px solid rgba(91,163,255,0.3); }
-.pat-c { background: rgba(160,100,255,0.15); color: #c090ff; border: 1px solid rgba(160,100,255,0.3); }
+.pat-a { background:rgba(240,128,32,0.14); color:#f0a040; border:1px solid rgba(240,128,32,0.3); }
+.pat-b { background:rgba(42,127,255,0.12); color:#70b0ff; border:1px solid rgba(42,127,255,0.3); }
+.pat-c { background:rgba(160,112,240,0.12);color:#c090f8; border:1px solid rgba(160,112,240,0.3); }
 
-/* 表格容器 */
-.table-wrap {
-  overflow-x: auto;
-  overflow-y: auto;
-  max-height: 72vh;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-}
-
-/* Streamlit widget 覆蓋 */
-[data-baseweb="input"] input,
-[data-baseweb="select"] * {
-  background: var(--bg2) !important;
-  color: var(--text) !important;
-  border-color: var(--border) !important;
-  font-family: var(--mono) !important;
-}
-label[data-testid="stWidgetLabel"] p { color: var(--text-dim) !important; font-size: 11px !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ──────────────────────────────────────────────────────────────
-# FinMind（快取 2 小時）
-# ──────────────────────────────────────────────────────────────
-def _get_finmind_token() -> str:
-    try:
-        return st.secrets["FINMIND_TOKEN"]
-    except Exception:
-        return ""
+# ── FinMind（2 小時快取）────────────────────────────────────
+def _get_token():
+    try: return st.secrets["FINMIND_TOKEN"]
+    except: return ""
 
-
-@st.cache_data(ttl=7200, show_spinner=False)   # ← 改為 2 小時快取
-def fetch_finmind_inst_cached(stock_id: str, token: str, days: int = 10):
-    if not token:
-        return 0
-    end_date   = datetime.now().strftime("%Y-%m-%d")
-    start_date = (datetime.now() - timedelta(days=days + 10)).strftime("%Y-%m-%d")
-    url = "https://api.finmindtrade.com/api/v4/data"
-    params = dict(
-        dataset="TaiwanStockInstitutionalInvestorsBuySell",
-        data_id=stock_id, start_date=start_date,
-        end_date=end_date, token=token,
-    )
+@st.cache_data(ttl=7200, show_spinner=False)
+def _finmind_inst(stock_id, token, days=10):
+    if not token: return 0
+    end   = datetime.now().strftime("%Y-%m-%d")
+    start = (datetime.now() - timedelta(days=days+10)).strftime("%Y-%m-%d")
     try:
-        resp = requests.get(url, params=params, timeout=10)
-        data = resp.json()
-        if data.get("status") != 200:
-            return 0
-        records = data.get("data", [])
-        if not records:
-            return 0
+        r = requests.get(
+            "https://api.finmindtrade.com/api/v4/data",
+            params=dict(dataset="TaiwanStockInstitutionalInvestorsBuySell",
+                        data_id=stock_id, start_date=start, end_date=end, token=token),
+            timeout=10)
+        d = r.json()
+        if d.get("status") != 200: return 0
         daily = {}
-        for rec in records:
-            date = rec["date"]
-            name = rec.get("name", "")
-            net  = rec.get("buy", 0) - rec.get("sell", 0)
-            if name in ("外資", "外資自營商", "Foreign_Investor", "投信", "Investment_Trust"):
-                daily.setdefault(date, 0)
-                daily[date] += net
-        sorted_dates = sorted(daily.keys(), reverse=True)[:days]
-        if not sorted_dates:
-            return 0
-        latest_sign = 1 if daily[sorted_dates[0]] >= 0 else -1
-        count = 0
-        for date in sorted_dates:
-            if (1 if daily[date] >= 0 else -1) == latest_sign:
-                count += 1
-            else:
-                break
-        return latest_sign * count
-    except Exception:
-        return 0
+        for rec in d.get("data", []):
+            nm = rec.get("name","")
+            if nm in ("外資","外資自營商","Foreign_Investor","投信","Investment_Trust"):
+                daily.setdefault(rec["date"], 0)
+                daily[rec["date"]] += rec.get("buy",0) - rec.get("sell",0)
+        dates = sorted(daily, reverse=True)[:days]
+        if not dates: return 0
+        sign = 1 if daily[dates[0]] >= 0 else -1
+        cnt = sum(1 for _ in (d for d in dates if (1 if daily[d]>=0 else -1)==sign)
+                  if True) # walk
+        # proper walk
+        cnt = 0
+        for dt in dates:
+            if (1 if daily[dt]>=0 else -1) == sign: cnt += 1
+            else: break
+        return sign * cnt
+    except: return 0
+
+def _fetch_all_finmind(tickers, token):
+    res = {}
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = {ex.submit(_finmind_inst, sid, token): sid for sid in tickers}
+        for f in as_completed(futs):
+            sid = futs[f]
+            try: res[sid] = f.result()
+            except: res[sid] = 0
+    return res
 
 
-def fetch_all_finmind(tickers: list, token: str, max_workers: int = 8):
-    result = {}
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = {ex.submit(fetch_finmind_inst_cached, sid, token): sid for sid in tickers}
-        for fut in as_completed(futures):
-            sid = futures[fut]
-            try:
-                result[sid] = fut.result()
-            except Exception:
-                result[sid] = 0
-    return result
-
-
-# ──────────────────────────────────────────────────────────────
-# 讀取資料
-# ──────────────────────────────────────────────────────────────
+# ── 讀資料 ───────────────────────────────────────────────────
 @st.cache_data(ttl=300, show_spinner=False)
-def load_screener_data():
-    path = os.path.join("data", "screener_data.json")
-    if not os.path.exists(path):
-        return None, None
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    return raw.get("stocks", []), raw.get("generated_at", "")
-
+def _load_stocks():
+    p = os.path.join("data","screener_data.json")
+    if not os.path.exists(p): return None, None
+    with open(p, encoding="utf-8") as f: raw = json.load(f)
+    return raw.get("stocks",[]), raw.get("generated_at","")
 
 @st.cache_data(ttl=300, show_spinner=False)
-def load_market_data():
-    path = os.path.join("data", "market_data.json")
-    if not os.path.exists(path):
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def _load_market():
+    p = os.path.join("data","market_data.json")
+    if not os.path.exists(p): return {}
+    with open(p, encoding="utf-8") as f: return json.load(f)
 
 
-# ──────────────────────────────────────────────────────────────
-# 渲染函式
-# ──────────────────────────────────────────────────────────────
-def _kline_color(v):
-    if v is None: return "#4a6080"
-    if v >= 75:   return "#ff3d5a"
-    if v >= 62:   return "#ff8c00"
-    if v >= 50:   return "#f5c518"
-    return "#22c55e"
+# ── 渲染輔助 ─────────────────────────────────────────────────
+def _kc(v):
+    if v is None: return "#3d5a7a"
+    if v>=75: return "#f23a54"
+    if v>=62: return "#f08020"
+    if v>=50: return "#e8c040"
+    return "#00bf72"
 
-def _comp_color(v):
-    if v is None: return "#4a6080"
-    if v >= 60:   return "#ff3d5a"
-    if v >= 40:   return "#ff8c00"
-    if v >= 25:   return "#f5c518"
-    return "#4a6080"
+def _cc(v):
+    if v is None: return "#3d5a7a"
+    if v>=60: return "#f23a54"
+    if v>=40: return "#f08020"
+    if v>=25: return "#e8c040"
+    return "#3d5a7a"
 
-def render_score_bar(val, color_fn):
-    if val is None:
-        return '<span style="color:#4a6080">—</span>'
-    pct = min(max(val, 0), 100)
-    color = color_fn(val)
-    return f'''<div class="score-cell">
-  <div class="score-bar-wrap">
-    <div class="score-bar-fill" style="width:{pct}%;background:{color}"></div>
-  </div>
-  <span class="score-num" style="color:{color}">{int(val)}</span>
+def _bar(val, cfn, link=None):
+    if val is None: return '<span style="color:#3d5a7a">—</span>'
+    pct = min(max(val,0),100); c = cfn(val)
+    inner = f'''<div class="sc-bar-wrap">
+  <div class="sc-bar-bg"><div class="sc-bar-fill" style="width:{pct}%;background:{c}"></div></div>
+  <span class="sc-bar-num" style="color:{c}">{int(val)}</span>
 </div>'''
+    if link: return f'<a href="{link}" target="_blank" style="text-decoration:none">{inner}</a>'
+    return inner
 
-def render_vol(v):
-    if v is None:
-        return '<span class="vol-norm">—</span>'
-    if v >= 2.0:
-        return f'<span class="vol-badge vol-hot2">{v:.1f}x</span>'
-    if v >= 1.5:
-        return f'<span class="vol-badge vol-hot15">{v:.1f}x</span>'
-    return f'<span class="vol-norm">{v:.1f}x</span>'
+def _vol(v):
+    if v is None: return '<span class="vol-dim">—</span>'
+    if v>=2.0: return f'<span class="vol-b vol-fire">{v:.1f}x</span>'
+    if v>=1.5: return f'<span class="vol-b vol-warn">{v:.1f}x</span>'
+    return f'<span class="vol-dim">{v:.1f}x</span>'
 
-def render_rsi(v):
-    if v is None:
-        return '<span class="rsi-normal">—</span>'
-    if v >= 70:
-        return f'<span class="rsi-high">{v:.0f}</span>'
-    if v >= 50:
-        return f'<span class="rsi-mid">{v:.0f}</span>'
-    if v <= 30:
-        return f'<span class="rsi-low">{v:.0f}</span>'
-    return f'<span class="rsi-normal">{v:.0f}</span>'
+def _rsi(v):
+    if v is None: return '<span class="rsi-n">—</span>'
+    if v>=70: return f'<span class="rsi-h">{v:.0f}</span>'
+    if v>=50: return f'<span class="rsi-m">{v:.0f}</span>'
+    if v<=30: return f'<span class="rsi-l">{v:.0f}</span>'
+    return f'<span class="rsi-n">{v:.0f}</span>'
 
-def render_rs(v):
-    if v is None:
-        return '<span class="rs-zero">—</span>'
-    if v > 0:
-        return f'<span class="rs-pos">+{v:.1f}%</span>'
-    if v < 0:
-        return f'<span class="rs-neg">{v:.1f}%</span>'
-    return f'<span class="rs-zero">0.0%</span>'
+def _rs(v):
+    if v is None: return '<span class="rs-z">—</span>'
+    if v>0:  return f'<span class="rs-p">+{v:.1f}%</span>'
+    if v<0:  return f'<span class="rs-n">{v:.1f}%</span>'
+    return '<span class="rs-z">0.0%</span>'
 
-def render_inst(v):
+def _inst(v):
     v = v or 0
-    if v >= 3:
-        return f'<span class="inst-strong-buy">+{v}</span>'
-    if v >= 1:
-        return f'<span class="inst-buy">+{v}</span>'
-    if v <= -3:
-        return f'<span class="inst-strong-sell">{v}</span>'
-    if v < 0:
-        return f'<span class="inst-sell">{v}</span>'
-    return '<span class="inst-zero">0</span>'
+    if v>=3:  return f'<span class="inst-sb">+{v}</span>'
+    if v>=1:  return f'<span class="inst-b">+{v}</span>'
+    if v<=-3: return f'<span class="inst-ss">{v}</span>'
+    if v<0:   return f'<span class="inst-s">{v}</span>'
+    return '<span class="inst-z">0</span>'
 
-def render_signal(s):
-    if not s:
-        return ''
-    cls_map = {
-        "💥突破放量": "sig-breakthrough",
-        "🚀主力進場": "sig-main",
-        "✅洗盤結束": "sig-wash",
-        "📉量縮整理": "sig-shrink",
-    }
-    cls = cls_map.get(s, "sig-shrink")
-    return f'<span class="signal-badge {cls}">{s}</span>'
+def _sig(s):
+    if not s: return ''
+    m = {"💥突破放量":"sig-1","🚀主力進場":"sig-2","✅洗盤結束":"sig-3","📉量縮整理":"sig-4"}
+    return f'<span class="sig-b {m.get(s,"sig-4")}">{s}</span>'
 
-def render_patterns(pats):
-    if not pats:
-        return ''
-    html = ''
-    for name, cls in pats:
-        html += f'<span class="pat-tag {cls}">{name}</span>'
-    return html
+def _pat(pats):
+    if not pats: return ''
+    return ''.join(f'<span class="pat-t {c}">{n}</span>' for n,c in pats)
 
-def render_chg(price, prev_close):
-    if price is None or prev_close is None or prev_close == 0:
-        return '<span class="chg-zero">—</span>'
-    pct = (price - prev_close) / prev_close * 100
-    if pct > 0:
-        return f'<span class="chg-pos">+{pct:.2f}%</span>'
-    if pct < 0:
-        return f'<span class="chg-neg">{pct:.2f}%</span>'
-    return f'<span class="chg-zero">0.00%</span>'
+def _chg(price, prev):
+    if price is None or not prev or prev==0:
+        return '<span class="chg-zero">—</span>', 0.0
+    p = (price-prev)/prev*100
+    if p>0: return f'<span class="chg-pos">+{p:.2f}%</span>', p
+    if p<0: return f'<span class="chg-neg">{p:.2f}%</span>', p
+    return '<span class="chg-zero">0.00%</span>', 0.0
+
+# 訊號排序權重
+SIG_RANK = {"💥突破放量":4,"🚀主力進場":3,"✅洗盤結束":2,"📉量縮整理":1,"":0}
+PAT_RANK_MAP = {"pat-a":3,"pat-b":2,"pat-c":1}
+
+def _pat_rank(pats):
+    if not pats: return 0
+    return max(PAT_RANK_MAP.get(c,0) for _,c in pats)
 
 
-# ──────────────────────────────────────────────────────────────
-# 主程式
-# ──────────────────────────────────────────────────────────────
+# ── 主程式 ───────────────────────────────────────────────────
 def main():
-    stocks, generated_at = load_screener_data()
-    market_info = load_market_data()
+    stocks, generated_at = _load_stocks()
+    mkt = _load_market()
 
     if stocks is None:
-        st.error("⚠️ 找不到 `data/screener_data.json`，請確認 GitHub Actions 已執行過至少一次。")
+        st.error("⚠️ 找不到 data/screener_data.json，請先執行 GitHub Actions。")
         st.stop()
 
-    # ── Header ──
-    count_total = len(stocks)
+    total = len(stocks)
+
+    # Header
     st.markdown(f"""
-    <div class="screener-header">
-      <span class="screener-title">🇹🇼 台股半導體 SCREENER</span>
-      <span class="screener-meta">更新：{generated_at or 'N/A'} &nbsp;|&nbsp; 共 {count_total} 檔</span>
-    </div>
-    """, unsafe_allow_html=True)
+<div class="sc-header">
+  <span class="sc-title">🇹🇼 台股半導體 Screener</span>
+  <span class="sc-meta">更新：{generated_at or 'N/A'} &nbsp;·&nbsp; {total} 檔</span>
+</div>""", unsafe_allow_html=True)
 
-    # ── 大盤 bar ──
-    if market_info:
-        price = market_info.get('price', 0) or 0
-        ret5d = market_info.get('ret5d', 0) or 0
-        rsi   = market_info.get('rsi')
-        ma20_ok = not market_info.get('below_ma20', False)
-        ret5d_cls  = "pos" if ret5d > 0 else ("neg" if ret5d < 0 else "neutral")
-        rsi_str    = f"{rsi:.0f}" if rsi else "N/A"
-        ma20_str   = "站上 MA20 ✓" if ma20_ok else "跌破 MA20 ✗"
-        ma20_cls   = "pos" if ma20_ok else "neg"
+    # 大盤
+    if mkt:
+        px   = mkt.get('price',0) or 0
+        r5   = mkt.get('ret5d',0) or 0
+        rsi  = mkt.get('rsi')
+        ma_ok= not mkt.get('below_ma20', False)
+        r5c  = "mkt-pos" if r5>0 else ("mkt-neg" if r5<0 else "mkt-neu")
         st.markdown(f"""
-        <div class="market-bar">
-          <div><span class="label">加權指數</span><span class="val">{price:,.0f}</span></div>
-          <span class="market-sep">|</span>
-          <div><span class="label">近5日</span><span class="{ret5d_cls}">{ret5d:+.1f}%</span></div>
-          <span class="market-sep">|</span>
-          <div><span class="label">RSI</span><span class="neutral">{rsi_str}</span></div>
-          <span class="market-sep">|</span>
-          <div><span class="{ma20_cls}">{ma20_str}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
+<div class="mkt-bar">
+  <div class="mkt-item"><span class="mkt-label">加權指數</span><span class="mkt-val">{px:,.0f}</span></div>
+  <div class="mkt-item"><span class="mkt-label">近5日</span><span class="mkt-val {r5c}">{r5:+.1f}%</span></div>
+  <div class="mkt-item"><span class="mkt-label">RSI(14)</span><span class="mkt-val mkt-neu">{f'{rsi:.0f}' if rsi else 'N/A'}</span></div>
+  <div class="mkt-item"><span class="mkt-label">MA20</span><span class="mkt-val {'mkt-pos' if ma_ok else 'mkt-neg'}">{'站上 ✓' if ma_ok else '跌破 ✗'}</span></div>
+</div>""", unsafe_allow_html=True)
 
-    # ── FinMind ──
-    token = _get_finmind_token()
+    # FinMind
+    token = _get_token()
     if token:
-        with st.spinner("📡 抓取法人資料（2小時快取）..."):
-            tickers  = [s["ticker"] for s in stocks]
-            inst_map = fetch_all_finmind(tickers, token)
+        with st.spinner("📡 抓取法人資料（2h 快取）…"):
+            inst_map = _fetch_all_finmind([s["ticker"] for s in stocks], token)
     else:
         inst_map = {}
 
-    # 更新法人 & 重算
     for s in stocks:
-        s["inst_buy_days"] = inst_map.get(s["ticker"], s.get("inst_buy_days", 0))
+        s["inst_buy_days"] = inst_map.get(s["ticker"], s.get("inst_buy_days",0))
         s["composite"]     = calc_composite_tw(s)
         s["patterns"]      = detect_patterns_tw(s)
+        prev = s.get("prev_close")
+        p    = s.get("price")
+        s["_chg_pct"] = (p-prev)/prev*100 if p and prev and prev!=0 else None
 
-    # ── 篩選列（上方一排）──
-    col1, col2, col3, _pad = st.columns([2, 1.2, 1.2, 3])
-    with col1:
-        search_q  = st.text_input("🔍 代號 / 名稱", placeholder="輸入代號或名稱…", label_visibility="collapsed")
-    with col2:
-        kline_min = st.number_input("K線分 ≥", min_value=0, max_value=100, value=0, step=5)
-    with col3:
-        comp_min  = st.number_input("綜合分 ≥", min_value=0, max_value=100, value=0, step=5)
+    # ── 篩選列（單橫排）──
+    c1, c2, c3 = st.columns([2.2, 3.5, 3.5])
+    with c1:
+        search_q = st.text_input("", placeholder="🔍  代號 / 名稱", label_visibility="collapsed")
+    with c2:
+        kline_min = st.slider("K線分 ≥", 0, 100, 0, 5)
+    with c3:
+        comp_min  = st.slider("綜合分 ≥", 0, 100, 0, 5)
 
-    # ── 套用篩選 ──
+    # 篩選
     filtered = [
         s for s in stocks
         if (s.get("kline_score") is not None or s.get("volume_ratio") is not None)
@@ -560,80 +499,116 @@ def main():
              search_q.lower() in (s.get("name") or "").lower())
     ]
 
-    # 預設按 kline_score 降序
-    filtered.sort(key=lambda x: (x.get("kline_score") is None, -(x.get("kline_score") or 0)))
+    st.markdown(
+        f'<div class="result-stat">顯示 <b>{len(filtered)}</b> / {total} 檔 &nbsp;·&nbsp; 點欄位標頭排序</div>',
+        unsafe_allow_html=True)
 
-    st.markdown(f'<div class="result-stat">篩選結果 <span>{len(filtered)}</span> / {count_total} 檔</div>',
-                unsafe_allow_html=True)
+    # ── 建表格資料列 ──
+    COLS = ["代號","名稱","現價","漲跌%","K線分","綜合分","爆量","RSI","RS(5日)","法人","今日訊號","型態"]
+    # sort_key：對應到 s dict 的數值欄位（None = 不排序）
+    SORT_KEYS = {
+        "漲跌%":  "_chg_pct",
+        "K線分":  "kline_score",
+        "綜合分": "composite",
+        "爆量":   "volume_ratio",
+        "RSI":    "rsi14",
+        "RS(5日)":"rs5d",
+        "法人":   "inst_buy_days",
+        "今日訊號":"signal_rank",
+        "型態":   "_pat_rank",
+    }
 
-    # ── 建構 HTML 表格 ──
+    # 排序 state
+    if "sort_col" not in st.session_state:
+        st.session_state.sort_col = "K線分"
+        st.session_state.sort_asc = False
+
+    # 預先計算 _pat_rank / signal_rank
+    for s in filtered:
+        s["_pat_rank"]   = _pat_rank(s.get("patterns",[]))
+        s["signal_rank"] = SIG_RANK.get(s.get("entry_signal",""), 0)
+
+    sk = SORT_KEYS.get(st.session_state.sort_col)
+    if sk:
+        asc = st.session_state.sort_asc
+        filtered.sort(key=lambda x: (x.get(sk) is None, x.get(sk,0) if asc else -(x.get(sk) or 0)))
+
+    # 建 HTML 列
     rows_html = ""
     for s in filtered:
-        ticker  = s["ticker"]
-        name    = s.get("name", ticker)
-        market  = s.get("market", "TW")
-        url     = yahoo_tw_url(ticker, market)
-        kline_url = f"https://flydav003-alt.github.io/k-line/?stock={ticker}"
-
-        price      = s.get("price")
-        prev_close = s.get("prev_close")          # fetch_data.py 需存此欄（見下方說明）
-        price_str  = f"{price:.1f}" if price is not None else "—"
-
-        chg_html   = render_chg(price, prev_close)
-        kline_html = f'<a href="{kline_url}" target="_blank" style="text-decoration:none">{render_score_bar(s.get("kline_score"), _kline_color)}</a>'
-        comp_html  = render_score_bar(s.get("composite"), _comp_color)
-        vol_html   = render_vol(s.get("volume_ratio"))
-        rsi_html   = render_rsi(s.get("rsi14"))
-        rs_html    = render_rs(s.get("rs5d"))
-        inst_html  = render_inst(s.get("inst_buy_days"))
-        sig_html   = render_signal(s.get("entry_signal", ""))
-        pat_html   = render_patterns(s.get("patterns", []))
-
-        rows_html += f"""
-<tr>
-  <td><a class="ticker-link" href="{url}" target="_blank">{ticker}</a></td>
-  <td><span class="stock-name">{name}</span></td>
-  <td><span class="price-val">{price_str}</span></td>
-  <td>{chg_html}</td>
-  <td>{kline_html}</td>
-  <td>{comp_html}</td>
-  <td>{vol_html}</td>
-  <td>{rsi_html}</td>
-  <td>{rs_html}</td>
-  <td>{inst_html}</td>
-  <td>{sig_html}</td>
-  <td>{pat_html}</td>
+        ticker = s["ticker"]
+        mkt_s  = s.get("market","TW")
+        url    = yahoo_tw_url(ticker, mkt_s)
+        kurl   = f"https://flydav003-alt.github.io/k-line/?stock={ticker}"
+        price  = s.get("price")
+        chg_h, _ = _chg(price, s.get("prev_close"))
+        rows_html += f"""<tr>
+  <td><a class="tk-link" href="{url}" target="_blank">{ticker}</a></td>
+  <td><span class="stk-name">{s.get('name',ticker)}</span></td>
+  <td><span class="price-v">{f'{price:.1f}' if price is not None else '—'}</span></td>
+  <td>{chg_h}</td>
+  <td>{_bar(s.get('kline_score'), _kc, kurl)}</td>
+  <td>{_bar(s.get('composite'),   _cc)}</td>
+  <td>{_vol(s.get('volume_ratio'))}</td>
+  <td>{_rsi(s.get('rsi14'))}</td>
+  <td>{_rs(s.get('rs5d'))}</td>
+  <td>{_inst(s.get('inst_buy_days'))}</td>
+  <td>{_sig(s.get('entry_signal',''))}</td>
+  <td>{_pat(s.get('patterns',[]))}</td>
 </tr>"""
 
+    # 表頭（含排序箭頭）
+    sc = st.session_state.sort_col
+    asc_flag = st.session_state.sort_asc
+    ths = ""
+    for col in COLS:
+        cls = ""
+        if col in SORT_KEYS:
+            if col == sc:
+                cls = "sorted-asc" if asc_flag else "sorted-desc"
+            # 用 JS onclick 寄送
+            ths += f'<th class="{cls}" onclick="sortCol(\'{col}\')">{col}<span class="sort-arrow"></span></th>'
+        else:
+            ths += f'<th>{col}</th>'
+
     table_html = f"""
-<div class="table-wrap">
-<table class="screener-table">
-<thead>
-<tr>
-  <th>代號</th>
-  <th>名稱</th>
-  <th>現價</th>
-  <th>漲跌%</th>
-  <th>K線分 ↗</th>
-  <th>綜合分</th>
-  <th>爆量</th>
-  <th>RSI</th>
-  <th>RS(5日)</th>
-  <th>法人</th>
-  <th>今日訊號</th>
-  <th>型態</th>
-</tr>
-</thead>
+<script>
+function sortCol(col) {{
+  // 透過隱藏按鈕觸發 streamlit rerun
+  const btn = document.getElementById('sort_btn_' + col);
+  if (btn) btn.click();
+}}
+</script>
+<table class="sc-table">
+<thead><tr>{ths}</tr></thead>
 <tbody>
-{rows_html if rows_html else '<tr><td colspan="12" style="text-align:center;padding:40px;color:#4a6080">沒有符合篩選條件的股票</td></tr>'}
+{rows_html or '<tr><td colspan="12" style="text-align:center;padding:40px;color:#3d5a7a">沒有符合條件的股票</td></tr>'}
 </tbody>
-</table>
-</div>"""
+</table>"""
 
     st.markdown(table_html, unsafe_allow_html=True)
 
-    # ── 說明 & 下載 ──
+    # 隱藏的排序按鈕（Streamlit 無法從 JS 直接改 session_state，用 st.button 代替）
+    # 改用下拉選單排序取代 JS（Streamlit 限制）
     st.markdown("<br>", unsafe_allow_html=True)
+    sort_cols_opts = ["K線分","綜合分","漲跌%","爆量","RSI","RS(5日)","法人","今日訊號","型態"]
+    col_s1, col_s2, col_s3 = st.columns([2, 2, 6])
+    with col_s1:
+        new_sort = st.selectbox("排序欄位", sort_cols_opts,
+                                index=sort_cols_opts.index(st.session_state.sort_col)
+                                if st.session_state.sort_col in sort_cols_opts else 0,
+                                label_visibility="visible")
+    with col_s2:
+        new_asc = st.radio("方向", ["↓ 高→低", "↑ 低→高"],
+                           index=0 if not st.session_state.sort_asc else 1,
+                           horizontal=True, label_visibility="visible")
+
+    if new_sort != st.session_state.sort_col or (new_asc=="↑ 低→高") != st.session_state.sort_asc:
+        st.session_state.sort_col = new_sort
+        st.session_state.sort_asc = (new_asc == "↑ 低→高")
+        st.rerun()
+
+    # 說明
     with st.expander("📖 指標說明", expanded=False):
         st.markdown("""
 | 指標 | 說明 |
@@ -644,30 +619,14 @@ def main():
 | **✅洗盤結束** | 量縮後放量紅K |
 | **📉量縮整理** | 量縮蓄勢中 |
 | **爆量** | 1.5x 橘色警示；2.0x+ 紅色強訊號 |
-| **RSI** | ≥70 紅（過熱）；50-70 黃（偏強）；≤30 綠（超賣） |
-| **法人** | +3以上深紅強買；+1至+2橘買；-1至-2淺綠賣；-3以下深綠強賣 |
-| **RS(5日)** | 個股5日漲跌 - 加權指數5日漲跌（超額報酬）|
+| **RSI** | ≥70 紅（過熱）；50~70 黃（偏強）；≤30 綠（超賣） |
+| **法人** | +3以上深紅強買；-3以下深綠強賣 |
+| **RS(5日)** | 個股5日漲跌 − 加權指數5日漲跌 |
 | **A法人爆量** | 法人連買≥3天 且 爆量≥1.5倍 |
 | **B回踩MA60** | 股價在MA60附近、RSI 32~55、MA20上升中 |
 | **C底背離** | RSI 底背離（技術反轉訊號）|
 > ⚠️ 本工具僅供技術面參考，不構成投資建議。
         """)
-
-    # ── 漲跌% 欄位說明 ──
-    with st.expander("⚠️ 關於漲跌% 欄位", expanded=False):
-        st.markdown("""
-漲跌% 需要 `prev_close`（昨日收盤價）欄位。
-請在 `fetch_data.py` 的 `fetch_tw_ticker` 函式中加入以下程式碼：
-
-```python
-# 在 OHLCV 區塊，hist 取得後加入：
-if len(closes) >= 2:
-    base["prev_close"] = round(float(closes.iloc[-2]), 2)
-```
-
-加入後重新執行 GitHub Actions，漲跌% 即可正確顯示。
-        """)
-
 
 if __name__ == "__main__":
     main()
