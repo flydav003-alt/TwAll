@@ -485,35 +485,53 @@ def calc_entry_signal(ohlcv):
 def calc_composite_tw(r):
     score = 0.0
 
+    # K線分 (40分)
     ks_raw = r.get("kline_score")
     if ks_raw is not None:
         score += min(ks_raw / 100 * 40, 40)
 
+    # RSI (20分) — 55~65 蓄力偏強為最佳，極端值遞減
     rsi = r.get("rsi14")
     if rsi is not None:
-        if rsi <= 30:     score += 20
-        elif rsi <= 40:   score += 17
-        elif rsi <= 55:   score += 13
-        elif rsi <= 65:   score +=  7
-        else:             score +=  0
+        if   55 <= rsi <= 65: score += 20
+        elif 66 <= rsi <= 75: score += 13
+        elif 45 <= rsi <= 54: score += 13
+        elif 36 <= rsi <= 44: score += 8
+        elif 76 <= rsi <= 85: score += 8
+        elif rsi >= 86:       score += 4
+        elif rsi < 35:        score += 4
 
+    # 爆量 (15分) — 1.0~1.5x 主力溫和推進為最佳買點
     vr = r.get("volume_ratio")
     if vr is not None:
-        if vr >= 3.0:   score += 15
-        elif vr >= 2.0: score += 11
-        elif vr >= 1.5: score +=  7
-        elif vr >= 1.0: score +=  3
+        if   1.0 <= vr <= 1.5: score += 15
+        elif 0.6 <= vr <  1.0: score += 11
+        elif 1.6 <= vr <= 2.0: score += 11
+        elif 0.3 <= vr <  0.6: score += 6
+        elif 2.1 <= vr <= 2.5: score += 6
+        elif vr > 2.5:         score += 3
+        elif vr < 0.3:         score += 3
 
+    # 法人連買 (15分) — 剛啟動 2~3 天為黃金期，過長遞減
     inst_days = r.get("inst_buy_days", 0) or 0
-    if inst_days >= 5:   score += 15
-    elif inst_days >= 3: score += 10
-    elif inst_days >= 1: score +=  5
-    elif inst_days <= -3: score -= 5
+    if   inst_days in (2, 3):  score += 15
+    elif inst_days == 1:        score += 8
+    elif 4 <= inst_days <= 6:   score += 5
+    elif inst_days >= 7:        score += 2
+    elif inst_days <= -3:       score -= 8
+
+    # MA60 / MA20 各自算，取高分，避免錯殺 (15分)
+    # 站上均線 0~8% 為最佳買點，跌破或過熱均遞減
+    def _ma_score(pct):
+        if pct is None:       return 0
+        if 0 <= pct <= 8:     return 15
+        if 8 < pct <= 15:     return 8
+        if 15 < pct <= 20:    return 4
+        return 0  # 跌破(<0) 或 超過 20% 皆給 0
 
     ma60_pct = r.get("price_vs_ma60_pct")
-    if ma60_pct is not None:
-        if -15 <= ma60_pct <= -2: score += 10
-        elif ma60_pct > -2:       score +=  6
+    ma20_pct = r.get("price_vs_ma20_pct")
+    score += max(_ma_score(ma60_pct), _ma_score(ma20_pct))
 
     return round(min(score, 100), 1)
 
@@ -523,14 +541,30 @@ def calc_composite_tw(r):
 # ──────────────────────────────────────────────────────────────
 def detect_patterns_tw(r):
     out = []
-    if (r.get("inst_buy_days", 0) or 0) >= 3 and (r.get("volume_ratio") or 0) >= 1.5:
-        out.append(("A法人爆量", "pat-a"))
+
+    # A 法人爆量：法人剛啟動（2~3天）+ 量比正常以上
+    inst = (r.get("inst_buy_days", 0) or 0)
+    if inst in (2, 3) and (r.get("volume_ratio") or 0) >= 1.0:
+        out.append(("A法人啟動", "pat-a"))
+
+    # B 回踩MA60：站上MA60 0~8%，RSI健康，MA20向上
     ma60_pct = r.get("price_vs_ma60_pct")
     rsi = r.get("rsi14")
-    if (ma60_pct is not None and -20 <= ma60_pct <= 5
-            and rsi is not None and 32 <= rsi <= 55
+    if (ma60_pct is not None and 0 <= ma60_pct <= 8
+            and rsi is not None and 40 <= rsi <= 65
             and r.get("ma20_rising") is True):
         out.append(("B回踩MA60", "pat-b"))
+
+    # B2 回踩MA20：站上MA20 0~8%，RSI健康，MA20向上（MA60資料不足時備用）
+    ma20_pct = r.get("price_vs_ma20_pct")
+    if (ma60_pct is None or ma60_pct < 0) and (
+            ma20_pct is not None and 0 <= ma20_pct <= 8
+            and rsi is not None and 40 <= rsi <= 65
+            and r.get("ma20_rising") is True):
+        out.append(("B2回踩MA20", "pat-b2"))
+
+    # C 底背離
     if r.get("rsi_div") == "bull":
         out.append(("C底背離", "pat-c"))
+
     return out
