@@ -200,7 +200,7 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .stats-wrap{{margin:0 24px 16px;border:1px solid #2d4060;border-radius:10px;background:#0d1a2e;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.4);}}
 .stats-head{{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #2d4060;gap:12px;background:linear-gradient(90deg,#0f2040,#0d1a30);}}
 .stats-title{{font-size:15px;font-weight:700;color:#e2e8f0;letter-spacing:.5px;}}
-.stats-note{{font-size:12px;color:#64748b;}}
+.stats-note{{font-size:12px;color:#94a3b8;}}
 /* KPI cards */
 .stats-kpi-row{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#1a2e4a;border-bottom:1px solid #1a2e4a;}}
 .stat-card{{background:#0d1a2e;padding:16px 18px;position:relative;overflow:hidden;}}
@@ -209,24 +209,24 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .stat-card.sk2::before{{background:linear-gradient(90deg,#6366f1,#8b5cf6);}}
 .stat-card.sk3::before{{background:linear-gradient(90deg,#06b6d4,#0891b2);}}
 .stat-card.sk4::before{{background:linear-gradient(90deg,#22c55e,#059669);}}
-.stat-k{{font-size:10px;color:#475569;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;}}
+.stat-k{{font-size:10px;color:#94a3b8;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;}}
 .stat-v{{font-size:28px;font-weight:700;color:#e8f4ff;line-height:1;}}
-.stat-sub{{font-size:11px;color:#475569;margin-top:5px;}}
+.stat-sub{{font-size:11px;color:#94a3b8;margin-top:5px;}}
 /* inner tabs */
 .stats-inner-tabs{{display:flex;gap:0;border-bottom:1px solid #1a2e4a;background:#080f1e;}}
-.sit{{padding:10px 16px;font-size:12px;font-weight:600;color:#475569;cursor:pointer;border:none;background:none;font-family:var(--sans);border-bottom:2px solid transparent;transition:color .15s;letter-spacing:.3px;}}
+.sit{{padding:10px 16px;font-size:12px;font-weight:600;color:#94a3b8;cursor:pointer;border:none;background:none;font-family:var(--sans);border-bottom:2px solid transparent;transition:color .15s;letter-spacing:.3px;}}
 .sit:hover{{color:#7eb8e0;}}
 .sit.sa{{color:#60a5fa;border-bottom-color:#6366f1;}}
 .sp{{display:none;padding:0;}}.sp.sa{{display:block;}}
 /* stats tables */
 .stats-table{{width:100%;border-collapse:collapse;}}
 .stats-table th,.stats-table td{{padding:9px 12px;border-bottom:1px solid #0f2040;font-size:12px;white-space:nowrap;}}
-.stats-table th{{color:#475569;font-weight:600;background:#080f1e;cursor:pointer;user-select:none;}}
+.stats-table th{{color:#94a3b8;font-weight:600;background:#080f1e;cursor:pointer;user-select:none;}}
 .stats-table th:hover{{color:#7eb8e0;}}
-.stats-table td{{color:#94a3b8;}}
+.stats-table td{{color:#cbd5e1;}}
 .stats-table tbody tr:hover td{{background:rgba(59,130,246,.06)!important;}}
-.stats-empty{{padding:20px;color:#475569;font-size:13px;}}
-.stats-section-title{{padding:12px 16px 8px;font-size:11px;font-weight:700;color:#475569;letter-spacing:.8px;text-transform:uppercase;border-top:1px solid #0f2040;}}
+.stats-empty{{padding:20px;color:#94a3b8;font-size:13px;}}
+.stats-section-title{{padding:12px 16px 8px;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;border-top:1px solid #0f2040;}}
 .stats-section-title:first-of-type{{border-top:none;}}
 .stats-scroll{{overflow-x:auto;}}
 /* tools bar */
@@ -236,7 +236,7 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .stats-tools input:focus{{border-color:#3b82f6;}}
 .stats-tools select{{background:#0d1a2e;border:1px solid #1a2e4a;color:#94a3b8;border-radius:6px;padding:6px 8px;font-size:12px;font-family:var(--sans);outline:none;}}
 .stats-sl-grp{{display:flex;align-items:center;gap:6px;}}
-.stats-sl-lbl{{font-size:11px;color:#475569;white-space:nowrap;font-weight:600;}}
+.stats-sl-lbl{{font-size:11px;color:#94a3b8;white-space:nowrap;font-weight:600;}}
 .sl-val2{{font-size:12px;font-weight:600;color:#e2e8f0;min-width:26px;text-align:center;background:#0d1a2e;border:1px solid #1a2e4a;border-radius:4px;padding:3px 6px;}}
 .stats-table th.stats-sort{{cursor:pointer;}}
 .stats-table th.stats-sort:hover{{color:#7eb8e0;}}
@@ -244,11 +244,11 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .sc-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px;}}
 .sc-grid.sc-wide{{grid-template-columns:1fr;}}
 .sc-box{{background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:14px;}}
-.sc-title{{font-size:11px;font-weight:700;color:#475569;letter-spacing:.6px;text-transform:uppercase;margin-bottom:10px;}}
+.sc-title{{font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.6px;text-transform:uppercase;margin-bottom:10px;}}
 /* heatmap */
 .hm-grid{{display:grid;grid-template-columns:80px repeat(4,1fr);gap:3px;padding:14px;}}
-.hm-hdr{{font-size:10px;color:#475569;text-align:center;padding:4px 2px;}}
-.hm-row-lbl{{display:flex;align-items:center;font-size:10px;color:#475569;}}
+.hm-hdr{{font-size:10px;color:#94a3b8;text-align:center;padding:4px 2px;}}
+.hm-row-lbl{{display:flex;align-items:center;font-size:10px;color:#94a3b8;}}
 .hm-cell{{border-radius:5px;padding:10px 4px;text-align:center;font-size:11px;font-weight:700;transition:transform .1s;cursor:default;}}
 .hm-cell:hover{{transform:scale(1.08);z-index:2;position:relative;}}
 /* badges */
@@ -267,7 +267,7 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .strat-bg{{flex:1;height:5px;border-radius:3px;background:#0f2040;overflow:hidden;max-width:90px;}}
 .strat-fill{{height:5px;border-radius:3px;background:#6366f1;}}
 /* status */
-.st-open{{background:#0f2040;color:#475569;padding:2px 6px;border-radius:3px;font-size:10px;}}
+.st-open{{background:#0f2040;color:#94a3b8;padding:2px 6px;border-radius:3px;font-size:10px;}}
 .st-partial{{background:rgba(245,158,11,.1);color:#fbbf24;border:1px solid rgba(245,158,11,.2);padding:2px 6px;border-radius:3px;font-size:10px;}}
 .st-matured{{background:rgba(34,197,94,.1);color:#4ade80;border:1px solid rgba(34,197,94,.2);padding:2px 6px;border-radius:3px;font-size:10px;}}
 @media(max-width:900px){{.stats-kpi-row{{grid-template-columns:repeat(2,minmax(0,1fr));}}.sc-grid{{grid-template-columns:1fr;}}}}
@@ -476,7 +476,7 @@ const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
 // K線分階級色：78+ 鮮紅 / 70~77 橙 / 60~69 金黃 / 59- 灰
 function kc(v){{
-  if(v==null)return'#334155';
+  if(v==null)return'#475569';
   if(v>=78)return'#FF3B3B';
   if(v>=70)return'#FF8C42';
   if(v>=60)return'#F5C518';
@@ -484,14 +484,14 @@ function kc(v){{
 }}
 // 綜合分階級色：88+ 鮮紅 / 75~87 橙 / 60~74 金黃 / 59- 灰
 function cc(v){{
-  if(v==null)return'#334155';
+  if(v==null)return'#475569';
   if(v>=88)return'#FF3B3B';
   if(v>=75)return'#FF8C42';
   if(v>=60)return'#F5C518';
   return'#6b7280';
 }}
 function bar(val,cfn,link){{
-  if(val==null)return'<span style="color:#64748b">—</span>';
+  if(val==null)return'<span style="color:#94a3b8">—</span>';
   const pct=Math.min(Math.max(val,0),100),c=cfn(val);
   const fw=val>=78||val>=88?700:600;
   const inner=`<div class="bc"><div class="bb"><div class="bf" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bn" style="color:${{c}};font-weight:${{fw}}">${{Math.round(val)}}</span></div>`;
@@ -533,7 +533,7 @@ function fPat(arr){{
   return arr.map(([n,c])=>`<span class="pt ${{PC[c]||'pb'}}">${{n}}</span>`).join('');
 }}
 function fChg(v){{
-  if(v==null)return'<span style="color:#64748b">—</span>';
+  if(v==null)return'<span style="color:#94a3b8">—</span>';
   if(v>0)return`<span class="pos">+${{v.toFixed(2)}}%</span>`;
   if(v<0)return`<span class="neg">${{v.toFixed(2)}}%</span>`;
   return'<span class="iz">0.00%</span>';
@@ -583,7 +583,7 @@ function switchTab(id){{
 // Chart.js global defaults
 function _cjsDefaults(){{
   if(!window.Chart)return;
-  Chart.defaults.color='#475569';
+  Chart.defaults.color='#94a3b8';
   Chart.defaults.font.family="'Noto Sans TC',sans-serif";
   Chart.defaults.font.size=11;
 }}
@@ -596,7 +596,7 @@ function _mkChart(id,cfg){{
   _charts[id]=new Chart(el,cfg);
 }}
 const _GRID={{color:'rgba(15,32,64,.8)'}};
-const _TICK={{color:'#334155'}};
+const _TICK={{color:'#94a3b8'}};
 const _BASE_SCALE={{x:{{grid:_GRID,ticks:_TICK}},y:{{grid:_GRID,ticks:_TICK}}}};
 const _NO_LEGEND={{legend:{{display:false}}}};
 
@@ -613,18 +613,18 @@ function statCell(v){{
 }}
 function statNum(v){{if(v==null||Number.isNaN(Number(v)))return null;return Number(v);}}
 function wrBadge(wr,n){{
-  if(n==null||n<5||wr==null)return`<span style="color:#1e3a5f;font-size:10px">樣本不足</span>`;
+  if(n==null||n<5||wr==null)return`<span style="color:#94a3b8;font-size:10px">樣本不足</span>`;
   const cls=wr>=65?'wr-s':wr>=55?'wr-a':wr>=45?'wr-b':'wr-c';
   return`<span class="wr-badge ${{cls}}">${{Number(wr).toFixed(1)}}%</span>`;
 }}
-function kCol(v){{return v>=78?'#f87171':v>=70?'#fbbf24':v>=60?'#4ade80':'#475569';}}
-function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#475569';}}
+function kCol(v){{return v>=78?'#f87171':v>=70?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
+function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
 
 // ── Tab: 門檻分析 ──────────────────────────────────────────────
 function buildTabThreshold(){{
   const ts=STATS.threshold_stats||[];
   const rules=[...new Set(ts.map(x=>x.rule))];
-  if(!rules.length)return'<div style="padding:20px;color:#334155">尚無資料。</div>';
+  if(!rules.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
   const hs=[1,3,5,7,10];
 
   // Build horizontal bar chart data (T+5 win rate per rule)
@@ -640,7 +640,7 @@ function buildTabThreshold(){{
       if(!x)return'<td>—</td><td>—</td>';
       return`<td>${{wrBadge(x.win_rate,x.sample_count)}}</td><td class="${{(x.avg_return||0)>=0?'pos':'neg'}}">${{pct(x.avg_return)}}</td>`;
     }});
-    return`<tr><td style="color:#93c5fd;font-weight:600">${{r}}</td><td style="color:#334155">${{n}}</td>${{cells.join('')}}</tr>`;
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{r}}</td><td style="color:#94a3b8">${{n}}</td>${{cells.join('')}}</tr>`;
   }});
 
   return`
@@ -652,7 +652,7 @@ function buildTabThreshold(){{
   </div>
   <div class="stats-scroll" style="padding:0 14px 14px">
     <table class="stats-table"><thead>${{hdr}}</thead><tbody>${{rows.join('')}}</tbody></table>
-    <div style="padding:8px 0 4px;font-size:11px;color:#1e3a5f">樣本 &lt; 5 顯示「樣本不足」</div>
+    <div style="padding:8px 0 4px;font-size:11px;color:#64748b">樣本 &lt; 5 顯示「樣本不足」</div>
   </div>`;
 }}
 function afterThreshold(){{
@@ -662,14 +662,14 @@ function afterThreshold(){{
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
   _mkChart('chartThresh',{{type:'bar',data:{{labels:rules,datasets:[{{label:'T+5 勝率',data:t5data,backgroundColor:t5colors,borderRadius:4,borderSkipped:false}}]}},
     options:{{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.x.toFixed(1)}}%`}}}}}},
-    scales:{{x:{{..._BASE_SCALE.x,min:0,max:100,ticks:{{color:'#334155',callback:v=>v+'%'}}}},y:{{..._BASE_SCALE.y,ticks:{{color:'#64748b',font:{{size:10}}}}}}}}}}}});
+    scales:{{x:{{..._BASE_SCALE.x,min:0,max:100,ticks:{{color:'#94a3b8',callback:v=>v+'%'}}}},y:{{..._BASE_SCALE.y,ticks:{{color:'#94a3b8',font:{{size:10}}}}}}}}}}}});
 }}
 
 // ── Tab: 分數熱圖 ──────────────────────────────────────────────
 const K_BUCKETS=[{{k:'A_78UP',lbl:'K ≥78'}},{{k:'B_70_77',lbl:'K 70~77'}},{{k:'C_60_69',lbl:'K 60~69'}},{{k:'D_LT60',lbl:'K <60'}}];
 const C_BUCKETS=[{{k:'A_88UP',lbl:'綜 ≥88'}},{{k:'B_75_87',lbl:'綜 75~87'}},{{k:'C_60_74',lbl:'綜 60~74'}},{{k:'D_LT60',lbl:'綜 <60'}}];
 function hmColor(v,mode){{
-  if(v==null)return{{bg:'#06111e',txt:'#1e3a5f'}};
+  if(v==null)return{{bg:'#06111e',txt:'#64748b'}};
   if(mode==='wr'){{
     if(v>=60)return{{bg:'rgba(127,29,29,.9)',txt:'#fca5a5'}};
     if(v>=50)return{{bg:'rgba(120,53,15,.85)',txt:'#fde68a'}};
@@ -684,7 +684,7 @@ function hmColor(v,mode){{
 function buildTabMatrix(){{
   const mat=(STATS.summary||[]).filter(x=>x.group_name==='score_matrix'&&x.horizon===5);
   function mkHM(mode){{
-    let html=`<div class="hm-grid"><div class="hm-hdr" style="text-align:left;font-size:10px;color:#334155">K ↓ / 綜 →</div>${{C_BUCKETS.map(c=>`<div class="hm-hdr">${{c.lbl}}</div>`).join('')}}`;
+    let html=`<div class="hm-grid"><div class="hm-hdr" style="text-align:left;font-size:10px;color:#94a3b8">K ↓ / 綜 →</div>${{C_BUCKETS.map(c=>`<div class="hm-hdr">${{c.lbl}}</div>`).join('')}}`;
     K_BUCKETS.forEach(kb=>{{
       html+=`<div class="hm-row-lbl">${{kb.lbl}}</div>`;
       C_BUCKETS.forEach(cb=>{{
@@ -729,7 +729,7 @@ function afterMatrix(){{
   }});
   _mkChart('chartMatLine',{{type:'line',data:{{labels:['T+1','T+3','T+5','T+7','T+10'],datasets}},
     options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{labels:{{color:'#64748b',boxWidth:10,font:{{size:10}}}}}}}},
-    scales:{{x:{{..._BASE_SCALE.x}},y:{{..._BASE_SCALE.y,ticks:{{color:'#334155',callback:v=>v+'%'}},title:{{display:true,text:'勝率 %',color:'#334155',font:{{size:10}}}}}}}}}}}});
+    scales:{{x:{{..._BASE_SCALE.x}},y:{{..._BASE_SCALE.y,ticks:{{color:'#94a3b8',callback:v=>v+'%'}},title:{{display:true,text:'勝率 %',color:'#94a3b8',font:{{size:10}}}}}}}}}}}});
 }}
 
 // ── Tab: 近期訊號 ──────────────────────────────────────────────
@@ -756,7 +756,7 @@ function buildTabRecent(){{
     </select>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">K線≥</span><input type="range" id="statsK" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsKv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsKv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合≥</span><input type="range" id="statsC" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsCv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsCv">0</span></div>
-    <span style="font-size:11px;color:#334155">顯示 <b id="recentStatsCount" style="color:#64748b">0</b> 筆</span>
+    <span style="font-size:11px;color:#94a3b8">顯示 <b id="recentStatsCount" style="color:#e2e8f0">0</b> 筆</span>
   </div>
   <div class="stats-scroll">
     <table class="stats-table">
@@ -774,7 +774,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="13" style="padding:16px;color:#334155">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="13" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -786,7 +786,7 @@ function afterRecent(){{
   const bCounts=bins.slice(0,-1).map((b,i)=>all.filter(v=>v>=b&&v<bins[i+1]).length);
   const bColors=bins.slice(0,-1).map(b=>b>=0?'rgba(74,222,128,.7)':'rgba(248,113,113,.7)');
   _mkChart('chartRetDist',{{type:'bar',data:{{labels:bLabels,datasets:[{{data:bCounts,backgroundColor:bColors,borderRadius:4,borderSkipped:false}}]}},
-    options:{{responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.y}} 筆`}}}}}},scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#334155',font:{{size:9}}}}}},y:{{..._BASE_SCALE.y,ticks:{{color:'#334155'}}}}}}}}}});
+    options:{{responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.y}} 筆`}}}}}},scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#94a3b8',font:{{size:9}}}}}},y:{{..._BASE_SCALE.y,ticks:{{color:'#94a3b8'}}}}}}}}}});
 
   // Event T+5 WR bar
   const evTypes=[...new Set((STATS.summary||[]).filter(x=>x.group_name==='event_type').map(x=>x.event_type))];
@@ -794,7 +794,7 @@ function afterRecent(){{
   const evColors=evWR.map((v,i)=>ET_COLORS[i%ET_COLORS.length]);
   _mkChart('chartEvWR',{{type:'bar',data:{{labels:evTypes.map(e=>labelEvent(e)),datasets:[{{data:evWR,backgroundColor:evColors,borderRadius:4,borderSkipped:false}}]}},
     options:{{responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.y?.toFixed(1)}}%`}}}}}},
-    scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#334155',font:{{size:9}}}}}},y:{{..._BASE_SCALE.y,min:0,max:100,ticks:{{color:'#334155',callback:v=>v+'%'}}}}}}}}}});
+    scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#94a3b8',font:{{size:9}}}}}},y:{{..._BASE_SCALE.y,min:0,max:100,ticks:{{color:'#94a3b8',callback:v=>v+'%'}}}}}}}}}});
 
   renderRecentStats();
 }}
@@ -824,17 +824,17 @@ function renderRecentStats(){{
     return`<span class="${{cls}}">${{s||'-'}}</span>`;
   }};
   host.innerHTML=data.map(r=>`<tr>
-    <td style="color:#334155">${{r.trade_date||'-'}}</td>
+    <td style="color:#94a3b8">${{r.trade_date||'-'}}</td>
     <td style="color:#6366f1;font-weight:700">${{r.ticker||'-'}}</td>
     <td>${{r.name||'-'}}</td>
     <td style="color:#93c5fd;font-size:11px">${{labelEvent(r.event_type)}}</td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.kline_score||0,100)}}%;background:${{kCol(r.kline_score||0)}}"></div></div><span style="color:${{kCol(r.kline_score||0)}};font-weight:700">${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.composite_score||0,100)}}%;background:${{cCol(r.composite_score||0)}}"></div></div><span style="color:${{cCol(r.composite_score||0)}};font-weight:700">${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</span></div></td>
-    <td style="color:#64748b">${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
+    <td style="color:#94a3b8">${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="13" style="text-align:center;padding:16px;color:#1e3a5f">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="13" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
@@ -843,7 +843,7 @@ function renderRecentStats(){{
 function buildTabPeak(){{
   const sum=STATS.summary||[];
   const evTypes=[...new Set(sum.filter(x=>x.group_name==='event_type').map(x=>x.event_type))];
-  if(!evTypes.length)return'<div style="padding:20px;color:#334155">尚無資料。</div>';
+  if(!evTypes.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
   const hs=[1,3,5,7,10];
   const rows=evTypes.map((et,ei)=>{{
     const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
@@ -852,11 +852,11 @@ function buildTabPeak(){{
     const bestAr=pts.reduce((a,b)=>b.ar>a.ar?b:a);
     const wrCells=hs.map(h=>{{
       const p=pts.find(x=>x.h===h);
-      if(!p)return`<td style="text-align:center;color:#1e3a5f">—</td>`;
+      if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
       const hi=p.h===best.h;
-      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#475569'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
+      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#94a3b8'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
     }});
-    return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#334155">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
   }}).filter(Boolean);
 
   return`
@@ -866,7 +866,7 @@ function buildTabPeak(){{
       <div style="position:relative;height:200px"><canvas id="chartPeak"></canvas></div>
     </div>
   </div>
-  <div style="padding:8px 14px 4px;font-size:11px;color:#334155">🏆 = 該訊號歷史上勝率最高的持有天數</div>
+  <div style="padding:8px 14px 4px;font-size:11px;color:#94a3b8">🏆 = 該訊號歷史上勝率最高的持有天數</div>
   <div class="stats-scroll" style="padding:0 0 14px">
     <table class="stats-table"><thead><tr><th>訊號類型</th><th style="text-align:center">樣本</th>
       ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}
@@ -885,14 +885,14 @@ function afterPeak(){{
   }});
   _mkChart('chartPeak',{{type:'bar',data:{{labels:hLabels,datasets}},
     options:{{responsive:true,maintainAspectRatio:false,
-    plugins:{{legend:{{labels:{{color:'#475569',boxWidth:10,font:{{size:10}}}},position:'bottom'}},
+    plugins:{{legend:{{labels:{{color:'#94a3b8',boxWidth:10,font:{{size:10}}}},position:'bottom'}},
       tooltip:{{callbacks:{{label:ctx=>`${{ctx.dataset.label}}: ${{ctx.parsed.y?.toFixed(1)}}%`}}}}}},
-    scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#334155'}}}},y:{{..._BASE_SCALE.y,min:0,max:100,ticks:{{color:'#334155',callback:v=>v+'%'}}}}}}}}}});
+    scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#94a3b8'}}}},y:{{..._BASE_SCALE.y,min:0,max:100,ticks:{{color:'#94a3b8',callback:v=>v+'%'}}}}}}}}}});
 }}
 
 // ── Tab: 常勝標的 ──────────────────────────────────────────────
 function buildTabHot(){{
-  const recent=STATS.recent||[];if(!recent.length)return'<div style="padding:20px;color:#334155">尚無資料。</div>';
+  const recent=STATS.recent||[];if(!recent.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
   const freq={{}};
   recent.forEach(r=>{{
     const key=r.ticker+'|'+(r.name||r.ticker);
@@ -909,16 +909,16 @@ function buildTabHot(){{
     const wrCls=wr!=null&&wr>=50?'pos':'neg';
     const arCls=ar!=null&&ar>=0?'pos':'neg';
     return`<tr>
-      <td style="text-align:center;color:#334155">${{i+1}}</td>
+      <td style="text-align:center;color:#94a3b8">${{i+1}}</td>
       <td style="color:#6366f1;font-weight:700">${{x.ticker}}</td><td style="color:#94a3b8">${{x.name}}</td>
       <td><div class="strat-bar"><div class="strat-bg"><div class="strat-fill" style="width:${{Math.round(x.cnt/maxCnt*100)}}%"></div></div><span style="font-size:12px;color:#818cf8;font-weight:700">${{x.cnt}}</span></div></td>
-      <td style="color:#334155;font-size:11px">${{[...x.types].map(t=>labelEvent(t)).join(', ')}}</td>
+      <td style="color:#94a3b8;font-size:11px">${{[...x.types].map(t=>labelEvent(t)).join(', ')}}</td>
       <td class="${{wrCls}}" style="text-align:center">${{wr!=null?wr.toFixed(0)+'%':'—'}}</td>
       <td class="${{arCls}}" style="text-align:center">${{ar!=null?(ar>=0?'+':'')+ar.toFixed(2)+'%':'—'}}</td>
-      <td style="color:#334155;font-size:11px">${{x.lastDate||''}}</td>
+      <td style="color:#94a3b8;font-size:11px">${{x.lastDate||''}}</td>
     </tr>`;
   }});
-  return`<div style="padding:10px 14px 6px;font-size:11px;color:#334155">近期被系統選中最多次的標的（T+5 樣本≥3筆才顯示勝率）</div>
+  return`<div style="padding:10px 14px 6px;font-size:11px;color:#94a3b8">近期被系統選中最多次的標的（T+5 樣本≥3筆才顯示勝率）</div>
   <div class="stats-scroll">
   <table class="stats-table"><thead><tr><th style="text-align:center">#</th><th>代號</th><th>名稱</th><th>出現次數</th><th>訊號類型</th><th style="text-align:center">T+5 勝率</th><th style="text-align:center">T+5 平均報酬</th><th>最後出現</th></tr></thead>
   <tbody>${{rows.join('')}}</tbody></table></div>`;
@@ -989,7 +989,7 @@ function updSlider(el,vidId){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#64748b;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
