@@ -296,12 +296,14 @@ def main():
     print("\n[INFO] 抓取完成！")
 
     # 儲存
-    def last_trading_day():
     from datetime import date, timedelta
-    d = date.today()
-    while d.weekday() >= 5:  # 5=週六 6=週日
-        d -= timedelta(days=1)
-    return d.strftime("%Y-%m-%d")
+    def last_trading_day():
+        d = date.today()
+        while d.weekday() >= 5:
+          d -= timedelta(days=1)
+        return d.strftime("%Y-%m-%d")
+
+ts = f"{last_trading_day()} {datetime.now().strftime('%H:%M')}"
 
 ts = f"{last_trading_day()} {datetime.now().strftime('%H:%M')}"
     output = {"generated_at": ts, "stocks": results}
