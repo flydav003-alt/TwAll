@@ -1,0 +1,55 @@
+name: 清除髒資料
+
+on:
+  workflow_dispatch:  # 手動觸發
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 清除非交易日資料
+        run: |
+          python3 - << 'EOF'
+          import sqlite3, os
+
+          db = "data/stats.db"
+          if not os.path.exists(db):
+              print("找不到 stats.db，略過")
+              exit(0)
+
+          conn = sqlite3.connect(db)
+
+          bad_dates = ['2026-06-06', '2026-06-07']
+
+          for d in bad_dates:
+              for table, col in [
+                  ("daily_stock_snapshot", "trade_date"),
+                  ("signal_events",        "trade_date"),
+                  ("event_outcomes",       "signal_date"),
+                  ("watch_transitions",    "watch_date"),
+              ]:
+                  cur = conn.execute(f"DELETE FROM {table} WHERE {col}=?", (d,))
+                  print(f"刪除 {table} / {d}：{cur.rowcount} 筆")
+
+          conn.commit()
+
+          # 確認結果
+          rows = conn.execute(
+              "SELECT trade_date, COUNT(*) FROM daily_stock_snapshot GROUP BY trade_date ORDER BY trade_date"
+          ).fetchall()
+          print("\n剩餘日期：")
+          for r in rows:
+              print(f"  {r[0]}：{r[1]} 筆")
+
+          conn.close()
+          EOF
+
+      - name: 推回 GitHub
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/stats.db
+          git diff --cached --quiet || git commit -m "清除非交易日髒資料 (6/6, 6/7)"
+          git push
