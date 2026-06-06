@@ -67,7 +67,7 @@ def _detect_rsi_divergence(data, rsi_arr):
     n = len(data)
     if n < 20:
         return None
-    wb = 5
+    wb = 8
     price_highs, price_lows = [], []
     rsi_highs,   rsi_lows   = [], []
     for i in range(wb, n - wb):
@@ -87,11 +87,13 @@ def _detect_rsi_divergence(data, rsi_arr):
             rsi_lows.append({"i": i, "val": rv})
     if (len(price_highs) >= 2 and len(rsi_highs) >= 2
             and price_highs[-1]["price"] > price_highs[-2]["price"]
-            and rsi_highs[-1]["val"]    < rsi_highs[-2]["val"]):
+            and rsi_highs[-1]["val"]    < rsi_highs[-2]["val"]
+            and price_highs[-1]["i"] - price_highs[-2]["i"] >= 10):
         return "bear"
     if (len(price_lows) >= 2 and len(rsi_lows) >= 2
             and price_lows[-1]["price"] < price_lows[-2]["price"]
-            and rsi_lows[-1]["val"]    > rsi_lows[-2]["val"]):
+            and rsi_lows[-1]["val"]    > rsi_lows[-2]["val"]
+            and price_lows[-1]["i"] - price_lows[-2]["i"] >= 10):
         return "bull"
     return None
 
