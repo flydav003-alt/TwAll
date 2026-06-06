@@ -251,8 +251,28 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
 # ──────────────────────────────────────────────────────────────
 # 主程式
 # ──────────────────────────────────────────────────────────────
+def is_trading_day() -> bool:
+    """
+    用大盤今日是否有成交來判定是否為交易日。
+    yfinance period='1d' 在非交易日（國定假日、週末）會回傳空 DataFrame。
+    """
+    try:
+        h = yf.Ticker("^TWII").history(period="1d")
+        return h is not None and len(h) > 0
+    except Exception:
+        return True   # 抓取失敗時保守地繼續執行，避免漏抓
+
+
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
+
+    # ── 交易日檢查 ──────────────────────────────────────────────
+    print("[INFO] 確認今日是否為交易日 ...")
+    if not is_trading_day():
+        print("[INFO] 今日大盤無成交資料，判定為非交易日，跳過執行。")
+        return
+    print("[INFO] 交易日確認，開始執行。")
+    # ────────────────────────────────────────────────────────────
 
     if not os.path.exists(STOCK_FILE):
         print(f"[ERROR] 找不到股票清單：{STOCK_FILE}")
