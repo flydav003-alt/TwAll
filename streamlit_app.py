@@ -631,7 +631,7 @@ function buildTabThreshold(){{
   const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?Number(x.win_rate):0;}});
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
 
-  const hdr = '<tr><th style="min-width:160px">條件</th><th>樣本</th>' + ''.join([f'<th>T+{h} 勝率</th><th>T+{h} 報酬</th>' for h in hs]) + '</tr>';
+  const hdr = '<tr><th style="min-width:160px">條件</th><th>樣本</th>' + ''.join([f'<th>T+{h} 勝率</th><th>T+{h} 報酬</th>' for h in hs]) + '</tr>' ;
   const rows=rules.map(r=>{{
     const rd=ts.filter(x=>x.rule===r);
     const n=rd[0]?.sample_count||0;
