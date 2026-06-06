@@ -34,6 +34,10 @@ def _load_market():
     if not os.path.exists(p): return {}
     with open(p,encoding="utf-8") as f: return json.load(f)
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _load_stats():
+    return export_stats_payload()
+
 def main():
     stocks, generated_at = _load_stocks()
     mkt = _load_market()
@@ -74,7 +78,7 @@ def main():
     mkt_rsi = mkt.get("rsi")
     mkt_ma  = not mkt.get("below_ma20", False)
     rows_json = json.dumps(rows, ensure_ascii=False, default=str)
-    stats_json = json.dumps(export_stats_payload(), ensure_ascii=False, default=str)
+    stats_json = json.dumps(_load_stats(), ensure_ascii=False, default=str)
     total     = len(rows)
     gen_at    = generated_at or "N/A"
     r5cls     = "pos" if mkt_r5>0 else ("neg" if mkt_r5<0 else "neu")
