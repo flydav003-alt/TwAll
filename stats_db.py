@@ -17,7 +17,7 @@ def connect(db_path=DB_PATH):
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=DELETE")
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
@@ -217,60 +217,63 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
         event_type, trigger_source = classify_signal(kline, comp)
         patterns = json.dumps(s.get("patterns", []), ensure_ascii=False, default=str)
 
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO daily_stock_snapshot (
-                trade_date, ticker, name, market, close_price, prev_close, change_pct,
-                volume_today, volume_avg20, volume_ratio, kline_score, kline_strategy,
-                kline_bucket, composite_score, composite_bucket, rsi14, rs5d, ma5,
-                ma20, ma60, price_vs_ma20_pct, price_vs_ma60_pct, ma20_rising,
-                week52_pct, inst_buy_days, entry_signal, signal_rank, patterns,
-                signal_group, score_version, generated_at, raw_json
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                trade_date, ticker, s.get("name"), s.get("market"), _num(price),
-                _num(s.get("prev_close")), _change_pct(price, s.get("prev_close")),
-                s.get("volume_today"), s.get("volume_avg20"), _num(s.get("volume_ratio")),
-                _num(kline), s.get("kline_strat"), k_bucket, _num(comp), c_bucket,
-                _num(s.get("rsi14")), _num(s.get("rs5d")), _num(s.get("ma5")),
-                _num(s.get("ma20")), _num(s.get("ma60")), _num(s.get("price_vs_ma20_pct")),
-                _num(s.get("price_vs_ma60_pct")), 1 if s.get("ma20_rising") else 0,
-                _num(s.get("week52_pct")), int(s.get("inst_buy_days") or 0),
-                s.get("entry_signal", ""), int(s.get("signal_rank") or 0), patterns,
-                event_type, SCORE_VERSION, generated_at,
-                json.dumps(s, ensure_ascii=False, default=str),
-            ),
-        )
-
-        if event_type != "NEUTRAL":
-            event_id = f"{trade_date}:{ticker}:{event_type}"
+        try:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO signal_events (
-                    event_id, trade_date, ticker, name, event_type, trigger_source,
-                    kline_score, composite_score, kline_bucket, composite_bucket,
-                    entry_reference_close, entry_price_mode, status, score_version, created_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT OR REPLACE INTO daily_stock_snapshot (
+                    trade_date, ticker, name, market, close_price, prev_close, change_pct,
+                    volume_today, volume_avg20, volume_ratio, kline_score, kline_strategy,
+                    kline_bucket, composite_score, composite_bucket, rsi14, rs5d, ma5,
+                    ma20, ma60, price_vs_ma20_pct, price_vs_ma60_pct, ma20_rising,
+                    week52_pct, inst_buy_days, entry_signal, signal_rank, patterns,
+                    signal_group, score_version, generated_at, raw_json
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
-                    _num(kline), _num(comp), k_bucket, c_bucket, _num(price),
-                    "close_after_signal", "open", SCORE_VERSION, now,
+                    trade_date, ticker, s.get("name"), s.get("market"), _num(price),
+                    _num(s.get("prev_close")), _change_pct(price, s.get("prev_close")),
+                    s.get("volume_today"), s.get("volume_avg20"), _num(s.get("volume_ratio")),
+                    _num(kline), s.get("kline_strat"), k_bucket, _num(comp), c_bucket,
+                    _num(s.get("rsi14")), _num(s.get("rs5d")), _num(s.get("ma5")),
+                    _num(s.get("ma20")), _num(s.get("ma60")), _num(s.get("price_vs_ma20_pct")),
+                    _num(s.get("price_vs_ma60_pct")), 1 if s.get("ma20_rising") else 0,
+                    _num(s.get("week52_pct")), int(s.get("inst_buy_days") or 0),
+                    s.get("entry_signal", ""), int(s.get("signal_rank") or 0), patterns,
+                    event_type, SCORE_VERSION, generated_at,
+                    json.dumps(s, ensure_ascii=False, default=str),
                 ),
             )
 
-        if event_type in ("COMP_HIGH_K_LOW", "COMP_STRONG_K_LOW"):
-            watch_id = f"{trade_date}:{ticker}:WATCH"
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO watch_transitions (
-                    watch_id, watch_date, ticker, name, watch_kline_score,
-                    watch_composite_score, watch_close, status, created_at
-                ) VALUES (?,?,?,?,?,?,?,?,?)
-                """,
-                (watch_id, trade_date, ticker, s.get("name"), _num(kline), _num(comp), _num(price), "open", now),
-            )
+            if event_type != "NEUTRAL":
+                event_id = f"{trade_date}:{ticker}:{event_type}"
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO signal_events (
+                        event_id, trade_date, ticker, name, event_type, trigger_source,
+                        kline_score, composite_score, kline_bucket, composite_bucket,
+                        entry_reference_close, entry_price_mode, status, score_version, created_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
+                        _num(kline), _num(comp), k_bucket, c_bucket, _num(price),
+                        "close_after_signal", "open", SCORE_VERSION, now,
+                    ),
+                )
+
+            if event_type in ("COMP_HIGH_K_LOW", "COMP_STRONG_K_LOW"):
+                watch_id = f"{trade_date}:{ticker}:WATCH"
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO watch_transitions (
+                        watch_id, watch_date, ticker, name, watch_kline_score,
+                        watch_composite_score, watch_close, status, created_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?)
+                    """,
+                    (watch_id, trade_date, ticker, s.get("name"), _num(kline), _num(comp), _num(price), "open", now),
+                )
+        except Exception as e:
+            print(f"[WARN] 寫入 {ticker} 失敗，略過：{e}")
 
     update_watch_transitions(conn, trade_date)
     update_event_outcomes(conn)
@@ -324,7 +327,7 @@ def update_watch_transitions(conn, trade_date):
                     age, confirm_type, event_id, r["watch_id"],
                 ),
             )
-        elif age >= 3:
+        elif age >= 7:
             conn.execute(
                 "UPDATE watch_transitions SET days_to_confirm=?, confirmed=0, confirm_type='expired', status='expired' WHERE watch_id=?",
                 (age, r["watch_id"]),
@@ -339,7 +342,7 @@ def _ticker_symbol(ticker, market=None):
 
 def _history_after_signal(ticker, signal_date, market=None):
     start = (datetime.fromisoformat(signal_date) - timedelta(days=1)).strftime("%Y-%m-%d")
-    end = (datetime.fromisoformat(signal_date) + timedelta(days=25)).strftime("%Y-%m-%d")
+    end = (datetime.fromisoformat(signal_date) + timedelta(days=35)).strftime("%Y-%m-%d")
     for symbol in (_ticker_symbol(ticker, market), f"{ticker}.TW", f"{ticker}.TWO"):
         try:
             hist = yf.Ticker(symbol).history(start=start, end=end)
@@ -445,9 +448,9 @@ def refresh_summary_stats(conn):
         grouped = {}
         for r in rows:
             if group_name == "score_matrix":
-                key = (r["kline_bucket"], r["composite_bucket"], r["horizon"])
+                key = ("score_matrix", r["kline_bucket"], r["composite_bucket"], r["horizon"])
             else:
-                key = (r["event_type"], None, None, r["horizon"])
+                key = ("event_type", r["event_type"], None, r["horizon"])
             grouped.setdefault(key, []).append(r)
 
         for key, items in grouped.items():
@@ -458,13 +461,13 @@ def refresh_summary_stats(conn):
             losses = [v for v in vals if v <= 0]
             gross_win = sum(wins)
             gross_loss = abs(sum(losses))
+            _, field1, field2, horizon = key
             if group_name == "score_matrix":
-                k_bucket, c_bucket, horizon = key
+                k_bucket, c_bucket = field1, field2
                 event_type = None
                 stat_key = f"{group_name}:{k_bucket}:{c_bucket}:T{horizon}"
             else:
-                event_type, _, _, horizon = key
-                k_bucket = c_bucket = None
+                event_type, k_bucket, c_bucket = field1, None, None
                 stat_key = f"{group_name}:{event_type}:T{horizon}"
             conn.execute(
                 """
