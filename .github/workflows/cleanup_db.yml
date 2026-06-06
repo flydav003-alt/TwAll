@@ -1,7 +1,10 @@
 name: 清除髒資料
 
 on:
-  workflow_dispatch:  # 手動觸發
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   cleanup:
@@ -35,7 +38,6 @@ jobs:
 
           conn.commit()
 
-          # 確認結果
           rows = conn.execute(
               "SELECT trade_date, COUNT(*) FROM daily_stock_snapshot GROUP BY trade_date ORDER BY trade_date"
           ).fetchall()
