@@ -29,7 +29,7 @@ from stats_db import save_daily_run
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("peewee").setLevel(logging.CRITICAL)
 
-SLEEP_BETWEEN = 0.5
+SLEEP_BETWEEN = 0.2
 STOCK_FILE    = "371檔股票.xlsx"
 DATA_DIR      = "data"
 
