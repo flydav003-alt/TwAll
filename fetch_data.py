@@ -303,9 +303,7 @@ def main():
           d -= timedelta(days=1)
         return d.strftime("%Y-%m-%d")
 
-ts = f"{last_trading_day()} {datetime.now().strftime('%H:%M')}"
-
-ts = f"{last_trading_day()} {datetime.now().strftime('%H:%M')}"
+    ts = f"{last_trading_day()} {datetime.now().strftime('%H:%M')}"
     output = {"generated_at": ts, "stocks": results}
 
     data_path = os.path.join(DATA_DIR, "screener_data.json")
