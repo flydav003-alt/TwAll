@@ -627,6 +627,35 @@ function buildTabThreshold(){{
   if(!rules.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
   const hs=[1,3,5,7,10];
 
+  // ── KPI 計算 ──
+  const t5rows=ts.filter(x=>x.horizon===5&&(x.sample_count||0)>=5);
+  const bestWr=t5rows.length?[...t5rows].sort((a,b)=>b.win_rate-a.win_rate)[0]:null;
+  const mostN=t5rows.length?[...t5rows].sort((a,b)=>b.sample_count-a.sample_count)[0]:null;
+  const avgRet=t5rows.length?(t5rows.reduce((s,x)=>s+Number(x.avg_return),0)/t5rows.length):null;
+  const totalN=mostN?mostN.sample_count:0;
+
+  const kpiCards=`
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 14px 0">
+    <div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:14px;border-top:2px solid #f87171;">
+      <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">🏆 最高勝率條件</div>
+      <div style="font-size:15px;font-weight:700;color:#f87171;line-height:1.3">${{bestWr?Number(bestWr.win_rate).toFixed(1)+'%':'—'}}</div>
+      <div style="font-size:11px;color:#93c5fd;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{bestWr?bestWr.rule:'—'}}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:3px">n = ${{bestWr?bestWr.sample_count:'—'}}</div>
+    </div>
+    <div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:14px;border-top:2px solid #fbbf24;">
+      <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">📊 樣本最豐富</div>
+      <div style="font-size:15px;font-weight:700;color:#fbbf24;line-height:1.3">${{mostN?mostN.sample_count+' 筆':'—'}}</div>
+      <div style="font-size:11px;color:#93c5fd;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{mostN?mostN.rule:'—'}}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:3px">T+5 勝率 ${{mostN?Number(mostN.win_rate).toFixed(1)+'%':'—'}}</div>
+    </div>
+    <div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:14px;border-top:2px solid #4ade80;">
+      <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">📈 T+5 整體平均報酬</div>
+      <div style="font-size:15px;font-weight:700;color:${{avgRet!=null&&avgRet>=0?'#f87171':'#4ade80'}};line-height:1.3">${{avgRet!=null?(avgRet>=0?'+':'')+Number(avgRet).toFixed(2)+'%':'—'}}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:6px">所有門檻條件均值</div>
+      <div style="font-size:10px;color:#64748b;margin-top:3px">共 ${{t5rows.length}} 個條件有效</div>
+    </div>
+  </div>`;
+
   // Build horizontal bar chart data (T+5 win rate per rule)
   const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?Number(x.win_rate):0;}});
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
@@ -643,8 +672,8 @@ function buildTabThreshold(){{
     return`<tr><td style="color:#93c5fd;font-weight:600">${{r}}</td><td style="color:#94a3b8">${{n}}</td>${{cells.join('')}}</tr>`;
   }});
 
-  return`
-  <div class="sc-grid sc-wide" style="padding-bottom:0">
+  return`${{kpiCards}}
+  <div class="sc-grid sc-wide" style="padding-bottom:0;padding-top:12px">
     <div class="sc-box">
       <div class="sc-title">T+5 勝率比較（各門檻）</div>
       <div style="position:relative;height:${{Math.max(rules.length*32,140)}}px"><canvas id="chartThresh"></canvas></div>
@@ -948,20 +977,20 @@ function renderStats(){{
       <div class="stat-card sk4"><div class="stat-k">觀察追蹤</div><div class="stat-v">${{(c.watches||0).toLocaleString()}}</div><div class="stat-sub">待確認</div></div>
     </div>
     <div class="stats-inner-tabs">
-      <button class="sit sa" onclick="switchStatsTab('sth',this)">🎯 門檻分析</button>
+      <button class="sit sa" onclick="switchStatsTab('srec',this)">📋 近期訊號</button>
+      <button class="sit" onclick="switchStatsTab('sth',this)">🎯 門檻分析</button>
       <button class="sit" onclick="switchStatsTab('smat',this)">🔥 分數熱圖</button>
-      <button class="sit" onclick="switchStatsTab('srec',this)">📋 近期訊號</button>
       <button class="sit" onclick="switchStatsTab('speak',this)">🏆 黃金出場</button>
       <button class="sit" onclick="switchStatsTab('shot',this)">⚡ 常勝標的</button>
     </div>
-    <div class="sp sa" id="sth">${{buildTabThreshold()}}</div>
+    <div class="sp sa" id="srec">${{buildTabRecent()}}</div>
+    <div class="sp" id="sth">${{buildTabThreshold()}}</div>
     <div class="sp" id="smat">${{buildTabMatrix()}}</div>
-    <div class="sp" id="srec">${{buildTabRecent()}}</div>
     <div class="sp" id="speak">${{buildTabPeak()}}</div>
     <div class="sp" id="shot">${{buildTabHot()}}</div>`;
 
   // Init visible tab charts
-  setTimeout(()=>{{afterThreshold();schedResize();}},50);
+  setTimeout(()=>{{afterRecent();schedResize();}},50);
 }}
 
 function switchStatsTab(id,btn){{
