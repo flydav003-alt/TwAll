@@ -762,7 +762,8 @@ function buildTabRecent(){{
     <table class="stats-table">
       <thead><tr>
         <th class="stats-sort" onclick="statsSortBy('trade_date')">日期</th>
-        <th class="stats-sort" onclick="statsSortBy('ticker')">代號</th><th>名稱</th>
+        <th class="stats-sort" onclick="statsSortBy('ticker')">代號</th>
+        <th class="stats-sort" onclick="statsSortBy('name')">名稱</th>
         <th class="stats-sort" onclick="statsSortBy('event_type')">訊號</th>
         <th class="stats-sort" onclick="statsSortBy('kline_score')">K線分</th>
         <th class="stats-sort" onclick="statsSortBy('composite_score')">綜合分</th>
