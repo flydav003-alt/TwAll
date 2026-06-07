@@ -83,9 +83,13 @@ def load_stock_list(filepath: str):
     id_col   = next((c for c in df.columns if "id" in c.lower() or "代號" in c or "stock" in c.lower()), df.columns[0])
     name_col = next((c for c in df.columns if "name" in c.lower() or "名稱" in c or "名字" in c), None)
     stocks = []
+    seen   = set()
     for _, row in df.iterrows():
         try:
             sid  = str(int(row[id_col]))
+            if sid in seen:
+                continue
+            seen.add(sid)
             name = str(row[name_col]) if name_col else sid
             stocks.append((sid, name))
         except Exception:
