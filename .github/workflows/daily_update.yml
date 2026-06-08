@@ -2,8 +2,8 @@ name: Daily stock data update
 
 on:
   schedule:
-    # Taiwan market close update. 08:35 UTC = 16:35 Asia/Taipei.
-    - cron: "35 8 * * 1-5"
+    # Taiwan market close update. 07:31 UTC = 15:35 Asia/Taipei.
+    - cron: "31 7 * * 1-5"
   workflow_dispatch:
 
 jobs:
