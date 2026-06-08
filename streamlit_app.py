@@ -99,11 +99,12 @@ def main():
         st.stop()
 
     # ── 方案B：補抓即時價格（只覆蓋 price / chg，評分欄位完全不動）──
-    from tw_screener_core import is_otc
-    def _build_yf_sym(sid):
-        return f"{sid}.TWO" if is_otc(sid) else f"{sid}.TW"
+    # 直接用 JSON 已記錄的 market 欄位（fetch_data.py 試錯後確認的正確 suffix）
+    def _build_yf_sym(s):
+        market = s.get("market", "TW")   # "TW"（上市）或 "TWO"（上櫃）
+        return f"{s['ticker']}.{market}"
 
-    yf_syms   = tuple(_build_yf_sym(s["ticker"]) for s in stocks)
+    yf_syms   = tuple(_build_yf_sym(s) for s in stocks)
     live_px   = _fetch_live_prices(yf_syms)          # dict: "1234.TW" → {price, prev_close}
     # ─────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,7 @@ def main():
     rows = []
     for s in stocks:
         # 優先用即時價格，抓不到才 fallback 回 JSON 原值
-        yf_sym  = _build_yf_sym(s["ticker"])
+        yf_sym  = _build_yf_sym(s)
         live    = live_px.get(yf_sym, {})
         price   = live.get("price")   or s.get("price")
         prev    = live.get("prev_close") or s.get("prev_close")
