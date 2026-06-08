@@ -38,6 +38,59 @@ def _load_market():
 def _load_stats():
     return export_stats_payload()
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _fetch_live_prices(tickers: tuple) -> dict:
+    """
+    盤中補抓即時收盤價（TTL=60秒）。
+    只取 price / prev_close，不影響任何評分欄位。
+    非交易時段或抓取失敗時回傳空 dict，自動 fallback 回 JSON 原值。
+    """
+    import yfinance as yf, contextlib, io, time
+    result = {}
+    # 每次最多批次抓 50 檔，避免 yfinance 單次請求過大
+    batch_size = 50
+    ticker_list = list(tickers)
+    for i in range(0, len(ticker_list), batch_size):
+        batch = ticker_list[i:i+batch_size]
+        yf_symbols = " ".join(batch)
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                data = yf.download(
+                    yf_symbols,
+                    period="2d",
+                    interval="1d",
+                    group_by="ticker",
+                    auto_adjust=True,
+                    progress=False,
+                    threads=True,
+                )
+            if data.empty:
+                continue
+            # 單檔時 yfinance 不會有 ticker 層級，需特殊處理
+            if len(batch) == 1:
+                sym = batch[0]
+                closes = data["Close"].dropna()
+                if len(closes) >= 1:
+                    result[sym] = {
+                        "price":      round(float(closes.iloc[-1]), 2),
+                        "prev_close": round(float(closes.iloc[-2]), 2) if len(closes) >= 2 else None,
+                    }
+            else:
+                for sym in batch:
+                    try:
+                        closes = data[sym]["Close"].dropna()
+                        if len(closes) >= 1:
+                            result[sym] = {
+                                "price":      round(float(closes.iloc[-1]), 2),
+                                "prev_close": round(float(closes.iloc[-2]), 2) if len(closes) >= 2 else None,
+                            }
+                    except Exception:
+                        continue
+        except Exception:
+            continue
+        time.sleep(0.1)
+    return result
+
 def main():
     stocks, generated_at = _load_stocks()
     mkt = _load_market()
@@ -45,14 +98,26 @@ def main():
         st.error("⚠️ 找不到 data/screener_data.json，請先執行 GitHub Actions。")
         st.stop()
 
+    # ── 方案B：補抓即時價格（只覆蓋 price / chg，評分欄位完全不動）──
+    from tw_screener_core import is_otc
+    def _build_yf_sym(sid):
+        return f"{sid}.TWO" if is_otc(sid) else f"{sid}.TW"
+
+    yf_syms   = tuple(_build_yf_sym(s["ticker"]) for s in stocks)
+    live_px   = _fetch_live_prices(yf_syms)          # dict: "1234.TW" → {price, prev_close}
+    # ─────────────────────────────────────────────────────────────────
+
     SIG_RANK = {"💥突破放量":4,"🚀主力進場":3,"✅洗盤結束":2,"📉量縮整理":1,"":0}
     PAT_RANK = {"pat-a":3,"pat-b":2,"pat-c":1}
 
     rows = []
     for s in stocks:
-        price = s.get("price")
-        prev  = s.get("prev_close")
-        chg   = round((price-prev)/prev*100,2) if price and prev and prev!=0 else None
+        # 優先用即時價格，抓不到才 fallback 回 JSON 原值
+        yf_sym  = _build_yf_sym(s["ticker"])
+        live    = live_px.get(yf_sym, {})
+        price   = live.get("price")   or s.get("price")
+        prev    = live.get("prev_close") or s.get("prev_close")
+        chg     = round((price-prev)/prev*100,2) if price and prev and prev!=0 else None
         pat_r = max((PAT_RANK.get(c,0) for _,c in s.get("patterns",[])), default=0)
         rows.append({
             "ticker":   s["ticker"],
