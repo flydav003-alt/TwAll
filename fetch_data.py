@@ -30,7 +30,7 @@ logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("peewee").setLevel(logging.CRITICAL)
 
 SLEEP_BETWEEN = 0.2
-STOCK_FILE    = "371檔股票.xlsx"
+STOCK_FILE    = "371檔股票.XLSX"
 DATA_DIR      = "data"
 
 
