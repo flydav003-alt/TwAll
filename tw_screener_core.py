@@ -25,6 +25,171 @@ def yahoo_tw_url(stock_id: str, market: str = "TW") -> str:
 
 
 # ──────────────────────────────────────────────────────────────
+# SEPA+VCP 回檔波段分（須先通過 RS 門檻才計分）
+# ──────────────────────────────────────────────────────────────
+RS_GATE = 85          # RS分 >= 85 才有資格進入 VCP 評分（SEPA 規格）
+DD_MIN, DD_MAX = 10, 30      # 60日最大回撤健康區間 %
+SECOND_PULLBACK_RATIO = 0.6  # 第二次回檔 < 第一次 × 0.6 才算「收縮」
+
+
+def calc_ma120(closes):
+    if closes is None or len(closes) < 1:
+        return None
+    if len(closes) >= 120:
+        return round(float(closes.iloc[-120:].mean()), 2)
+    return round(float(closes.mean()), 2)  # 不足120天就用抓到的全部資料代替
+
+
+def calc_max_drawdown_pct(closes, n=60):
+    """近n日最大回撤(%)，資料不足就用抓到的全部資料代替"""
+    if closes is None or len(closes) < 2:
+        return None
+    window = closes.iloc[-min(n, len(closes)):]
+    roll_max = window.cummax()
+    dd = (roll_max - window) / roll_max
+    val = dd.max()
+    return round(float(val) * 100, 1) if not np.isnan(val) else None
+
+
+def _find_swing_points(values, window=5):
+    """簡化版局部高低點偵測：用滾動窗口找局部極值，回傳 [(idx, price, 'H'/'L'), ...]"""
+    n = len(values)
+    points = []
+    for i in range(window, n - window):
+        seg = values[i - window:i + window + 1]
+        if values[i] == seg.max():
+            points.append((i, values[i], "H"))
+        elif values[i] == seg.min():
+            points.append((i, values[i], "L"))
+    return points
+
+
+def calc_vcp_contraction(closes, lookback=90, window=5):
+    """
+    取最近 lookback 天，找局部高低點，組成「高→低」回檔波段，
+    比較最近兩次回檔深度是否收縮（第二次 < 第一次 × 0.6）。
+    回傳 dict: {contracting: bool|None, leg1_pct, leg2_pct}
+    資料不足或找不到兩次回檔時 contracting=None（不是False，避免誤判為「沒收縮」）
+    """
+    if closes is None or len(closes) < window * 2 + 2:
+        return {"contracting": None, "leg1_pct": None, "leg2_pct": None}
+
+    recent = closes.iloc[-lookback:] if len(closes) > lookback else closes
+    vals = recent.values
+    pts = _find_swing_points(vals, window=window)
+    if len(pts) < 2:
+        return {"contracting": None, "leg1_pct": None, "leg2_pct": None}
+
+    # 過濾成 H/L 交替序列，同類型只留較極端者
+    filtered = []
+    for p in pts:
+        if not filtered or filtered[-1][2] != p[2]:
+            filtered.append(p)
+        elif p[2] == "H" and p[1] > filtered[-1][1]:
+            filtered[-1] = p
+        elif p[2] == "L" and p[1] < filtered[-1][1]:
+            filtered[-1] = p
+
+    legs = []
+    for i in range(len(filtered) - 1):
+        a, b = filtered[i], filtered[i + 1]
+        if a[2] == "H" and b[2] == "L" and a[1] > 0:
+            legs.append(round((a[1] - b[1]) / a[1] * 100, 1))
+
+    if len(legs) < 2:
+        return {"contracting": None, "leg1_pct": None, "leg2_pct": None}
+
+    leg1, leg2 = legs[-2], legs[-1]   # 倒數第二次、最近一次
+    contracting = leg2 < leg1 * SECOND_PULLBACK_RATIO
+    return {"contracting": contracting, "leg1_pct": leg1, "leg2_pct": leg2}
+
+
+def calc_consolidation_vol_ratio(volumes, recent_n=10, base_n=60):
+    """整理量 ÷ 60日均量：近recent_n日均量 / 近base_n日均量"""
+    if volumes is None or len(volumes) < base_n:
+        return None
+    base_avg = volumes.iloc[-base_n:].mean()
+    if base_avg <= 0:
+        return None
+    recent_avg = volumes.iloc[-recent_n:].mean()
+    return round(float(recent_avg / base_avg), 2)
+
+
+def calc_breakout_60d(closes, volumes, n=60, vol_mult=1.5):
+    """今日是否60日新高 + 量達60日均量的vol_mult倍以上"""
+    if closes is None or volumes is None or len(closes) < 2:
+        return False
+    window_c = closes.iloc[-min(n, len(closes)):]
+    is_new_high = float(closes.iloc[-1]) >= float(window_c.max())
+    if len(volumes) < min(n, len(closes)):
+        return False
+    base_avg = volumes.iloc[-min(n, len(volumes)):].mean()
+    vol_ok = base_avg > 0 and float(volumes.iloc[-1]) >= base_avg * vol_mult
+    return bool(is_new_high and vol_ok)
+
+
+def calc_vcp_score(r):
+    """
+    SEPA+VCP 回檔波段分（0~100），需先通過 RS >= RS_GATE 門檻，否則回傳 None（未達標，非0分）。
+    組成：MA趨勢排列(20) + 距52週高(15) + 半年漲幅(15) + 60日回撤健康區間(15) + 二次回檔收縮(25) + 整理量縮(10)
+    """
+    rs = r.get("rs_score")
+    if rs is None or rs < RS_GATE:
+        return None
+
+    score = 0.0
+
+    # MA20 > MA60 > MA120 排列 (20分)
+    ma20, ma60, ma120 = r.get("ma20"), r.get("ma60"), r.get("ma120")
+    if ma20 is not None and ma60 is not None and ma120 is not None:
+        if ma20 > ma60 > ma120:
+            score += 20
+        elif ma20 > ma60 or ma60 > ma120:
+            score += 8
+
+    # 距52週高 <20% 最佳 (15分)
+    w52 = r.get("week52_pct")   # 負值，例如 -8.0 代表低於高點8%
+    if w52 is not None:
+        if -20 <= w52 <= 0:
+            score += 15
+        elif -30 <= w52 < -20:
+            score += 8
+
+    # 半年漲幅(ret126d) >30% (15分)
+    ret126 = r.get("ret126d")
+    if ret126 is not None:
+        if ret126 >= 30:
+            score += 15
+        elif 15 <= ret126 < 30:
+            score += 8
+
+    # 60日最大回撤落在 10~30% 健康區間 (15分)
+    dd60 = r.get("dd60")
+    if dd60 is not None:
+        if DD_MIN <= dd60 <= DD_MAX:
+            score += 15
+        elif (5 <= dd60 < DD_MIN) or (DD_MAX < dd60 <= 40):
+            score += 8
+
+    # 第二次回檔較第一次收縮 (25分，VCP核心訊號)
+    contracting = r.get("vcp_contracting")
+    if contracting is True:
+        score += 25
+    elif contracting is False:
+        score += 8   # 有偵測到兩次回檔但沒收縮，給部分分數
+
+    # 整理量縮 <0.7×60日均量 (10分)
+    cons_vr = r.get("cons_vol_ratio")
+    if cons_vr is not None:
+        if cons_vr < 0.7:
+            score += 10
+        elif cons_vr < 0.9:
+            score += 5
+
+    return round(min(score, 100), 1)
+
+
+# ──────────────────────────────────────────────────────────────
 # 多週期漲幅 & 橫向排名 RS 分數
 # ──────────────────────────────────────────────────────────────
 RS_PERIODS = [("ret21d", 21, 0.4), ("ret63d", 63, 0.3), ("ret126d", 126, 0.2), ("ret252d", 252, 0.1)]
