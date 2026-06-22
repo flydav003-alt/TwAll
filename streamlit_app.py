@@ -127,6 +127,7 @@ def main():
             "chg":      chg,
             "kline":    s.get("kline_score"),
             "comp":     s.get("composite"),
+            "vcp":      s.get("vcp_score"),
             "vol":      s.get("volume_ratio"),
             "rsi":      s.get("rsi14"),
             "rs5d":     s.get("rs5d"),
@@ -493,6 +494,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <th class="sortable" data-k="chg">漲跌%<span class="arr"></span></th>
   <th class="sortable" data-k="kline">K線分<span class="arr"></span></th>
   <th class="sortable" data-k="comp">綜合分<span class="arr"></span></th>
+  <th class="sortable" data-k="vcp">回檔分<span class="arr"></span></th>
   <th class="sortable" data-k="vol">爆量<span class="arr"></span></th>
   <th class="sortable" data-k="rsi">RSI<span class="arr"></span></th>
   <th class="sortable" data-k="rs5d">RS(5日)<span class="arr"></span></th>
@@ -687,6 +689,7 @@ function wrBadge(wr,n){{
 }}
 function kCol(v){{return v>=78?'#f87171':v>=70?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
 function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
+function vcpCol(v){{return v>=70?'#f87171':v>=50?'#fbbf24':v>=30?'#4ade80':'#64748b';}}
 
 // ── Tab: 門檻分析 ──────────────────────────────────────────────
 function buildTabThreshold(){{
@@ -1087,7 +1090,7 @@ function updSlider(el,vidId){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="12" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="14" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
@@ -1098,6 +1101,7 @@ function renderRows(data){{
     <td>${{fChg(r.chg)}}</td>
     <td>${{bar(r.kline,kc,r.kline_url)}}</td>
     <td>${{bar(r.comp,cc)}}</td>
+    <td>${{bar(r.vcp,vcpCol)}}</td>
     <td>${{fVol(r.vol)}}</td>
     <td>${{fRsi(r.rsi)}}</td>
     <td>${{fRs(r.rs5d)}}</td>
