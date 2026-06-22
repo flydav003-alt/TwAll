@@ -25,6 +25,54 @@ def yahoo_tw_url(stock_id: str, market: str = "TW") -> str:
 
 
 # ──────────────────────────────────────────────────────────────
+# 多週期漲幅 & 橫向排名 RS 分數
+# ──────────────────────────────────────────────────────────────
+RS_PERIODS = [("ret21d", 21, 0.4), ("ret63d", 63, 0.3), ("ret126d", 126, 0.2), ("ret252d", 252, 0.1)]
+
+
+def calc_ret_n(closes, n):
+    """算 n 個交易日漲幅。資料不足 n 天時，用抓到的最遠資料代替，不額外要求補抓。"""
+    if closes is None or len(closes) < 2:
+        return None
+    idx = min(n, len(closes) - 1)
+    try:
+        return round((float(closes.iloc[-1]) / float(closes.iloc[-(idx + 1)]) - 1) * 100, 2)
+    except Exception:
+        return None
+
+
+def calc_rs_score(results):
+    """
+    跨股票橫向排名，算出 RS 分數（0~100，越高代表相對同期股票越強勢）。
+    近期權重最重：0.4×21日 + 0.3×63日 + 0.2×126日 + 0.1×252日
+    需在所有股票資料都收集完之後（results 為 list[dict]）才能呼叫，
+    單檔逐筆抓取時無法算出橫向排名。
+    會直接把 rs_score 寫回每個 dict。
+    """
+    for key, _, _ in RS_PERIODS:
+        vals = sorted(set(r[key] for r in results if r.get(key) is not None))
+        if not vals:
+            continue
+        rank_of = {v: i for i, v in enumerate(vals)}
+        n = len(vals)
+        for r in results:
+            v = r.get(key)
+            r[f"{key}_rank"] = round(rank_of[v] / (n - 1) * 100, 1) if v is not None and n > 1 else None
+
+    for r in results:
+        total_w = 0.0
+        score = 0.0
+        for key, _, w in RS_PERIODS:
+            rk = r.get(f"{key}_rank")
+            if rk is not None:
+                score += w * rk
+                total_w += w
+        # 缺值時用剩餘權重正規化，避免新股(資料不足)被低估
+        r["rs_score"] = round(score / total_w, 1) if total_w > 0 else None
+    return results
+
+
+# ──────────────────────────────────────────────────────────────
 # 今日訊號優先順序
 # ──────────────────────────────────────────────────────────────
 SIGNAL_RANK = {
