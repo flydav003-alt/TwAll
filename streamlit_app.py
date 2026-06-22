@@ -130,6 +130,7 @@ def main():
             "vol":      s.get("volume_ratio"),
             "rsi":      s.get("rsi14"),
             "rs5d":     s.get("rs5d"),
+            "rs":       s.get("rs_score"),
             "inst":     s.get("inst_buy_days",0) or 0,
             "signal":   s.get("entry_signal",""),
             "sig_rank": SIG_RANK.get(s.get("entry_signal",""),0),
@@ -495,6 +496,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <th class="sortable" data-k="vol">爆量<span class="arr"></span></th>
   <th class="sortable" data-k="rsi">RSI<span class="arr"></span></th>
   <th class="sortable" data-k="rs5d">RS(5日)<span class="arr"></span></th>
+  <th class="sortable" data-k="rs">RS分<span class="arr"></span></th>
   <th class="sortable" data-k="inst">法人<span class="arr"></span></th>
   <th class="sortable" data-k="sig_rank">今日訊號<span class="arr"></span></th>
   <th class="sortable" data-k="pat_rank">型態<span class="arr"></span></th>
@@ -772,8 +774,8 @@ function hmColor(v,mode){{
     return{{bg:'rgba(15,32,64,.7)',txt:'#334155'}};
   }}else{{
     if(v>=3)return{{bg:'rgba(127,29,29,.8)',txt:'#fca5a5'}};
-    if(v>=0)return{{bg:'rgba(20,83,45,.7)',txt:'#86efac'}};
-    return{{bg:'rgba(90,10,10,.7)',txt:'#f87171'}};
+    if(v>=0)return{{bg:'rgba(127,29,29,.5)',txt:'#fca5a5'}};
+    return{{bg:'rgba(20,83,45,.7)',txt:'#86efac'}};
   }}
 }}
 function buildTabMatrix(){{
@@ -1099,6 +1101,7 @@ function renderRows(data){{
     <td>${{fVol(r.vol)}}</td>
     <td>${{fRsi(r.rsi)}}</td>
     <td>${{fRs(r.rs5d)}}</td>
+    <td>${{fRsi(r.rs)}}</td>
     <td>${{fInst(r.inst)}}</td>
     <td>${{fSig(r.signal)}}</td>
     <td>${{fPat(r.patterns)}}</td>
