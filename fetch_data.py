@@ -24,6 +24,8 @@ from tw_screener_core import (
     calc_composite_tw, detect_patterns_tw,
     is_otc, SIGNAL_RANK, _detect_rsi_divergence,
     calc_ret_n, calc_rs_score, RS_PERIODS,
+    calc_ma120, calc_max_drawdown_pct, calc_vcp_contraction,
+    calc_consolidation_vol_ratio, calc_breakout_60d, calc_vcp_score,
 )
 from stats_db import save_daily_run
 
@@ -146,6 +148,8 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         rs5d=None,
         ret21d=None, ret63d=None, ret126d=None, ret252d=None,
         rs_score=None,
+        ma120=None, dd60=None, vcp_contracting=None, cons_vol_ratio=None,
+        vcp_breakout=False, vcp_score=None,
         composite=0,
         patterns=[],
     )
@@ -200,6 +204,7 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         base["ma60"] = round(float(closes.iloc[-60:].mean()), 2)
     elif len(closes) >= 20:
         base["ma60"] = round(float(closes.mean()), 2)
+    base["ma120"] = calc_ma120(closes)
 
     if base["ma20"] and base["price"]:
         base["price_vs_ma20_pct"] = round((base["price"] - base["ma20"]) / base["ma20"] * 100, 1)
@@ -217,6 +222,12 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         base["ret5d"] = round((float(closes.iloc[-1]) / float(closes.iloc[-6]) - 1) * 100, 2)
     for key, n, _ in RS_PERIODS:
         base[key] = calc_ret_n(closes, n)
+
+    base["dd60"] = calc_max_drawdown_pct(closes, n=60)
+    vcp = calc_vcp_contraction(closes, lookback=90, window=5)
+    base["vcp_contracting"] = vcp["contracting"]
+    base["cons_vol_ratio"]  = calc_consolidation_vol_ratio(volumes, recent_n=10, base_n=60)
+    base["vcp_breakout"]    = calc_breakout_60d(closes, volumes, n=60, vol_mult=1.5)
     if len(closes) >= 25:
         ma20_now  = float(closes.iloc[-20:].mean())
         ma20_5ago = float(closes.iloc[-25:-5].mean())
@@ -326,8 +337,17 @@ def main():
 
     print("[INFO] 計算橫向排名 RS 分數 ...")
     calc_rs_score(results)
-    # 只保留最終 rs_score，中間的各期漲幅與排名只是計算用，不需要存進 JSON / 顯示
-    _drop_keys = [k for k, _, _ in RS_PERIODS] + [f"{k}_rank" for k, _, _ in RS_PERIODS]
+
+    print("[INFO] 計算 SEPA+VCP 回檔波段分 ...")
+    for r in results:
+        r["vcp_score"] = calc_vcp_score(r)
+
+    # 只保留最終分數，中間用的各期漲幅/排名/VCP原始輸入不需要存進 JSON / 顯示
+    _drop_keys = (
+        [k for k, _, _ in RS_PERIODS]
+        + [f"{k}_rank" for k, _, _ in RS_PERIODS]
+        + ["ma120", "dd60", "vcp_contracting", "cons_vol_ratio"]
+    )
     for r in results:
         for k in _drop_keys:
             r.pop(k, None)
