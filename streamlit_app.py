@@ -128,6 +128,7 @@ def main():
             "kline":    s.get("kline_score"),
             "comp":     s.get("composite"),
             "vcp":      s.get("vcp_score"),
+            "swing":    s.get("swing_score"),
             "vcp_contracting": s.get("vcp_contracting"),
             "vcp_higher_high": s.get("vcp_higher_high"),
             "vcp_vol_shrink_quality": s.get("vcp_vol_shrink_quality"),
@@ -135,6 +136,7 @@ def main():
             "leg2_pct": s.get("leg2_pct"),
             "vcp_detail": s.get("vcp_detail"),
             "vcp_score_breakdown": s.get("vcp_score_breakdown"),
+            "swing_score_breakdown": s.get("swing_score_breakdown"),
             "vcp_status": s.get("vcp_status"),
             "vcp_status_rank": {
                 "突破過熱": 6, "已突破": 5, "接近突破": 4,
@@ -506,7 +508,8 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <th class="sortable" data-k="chg">漲跌%<span class="arr"></span></th>
   <th class="sortable" data-k="kline">K線分<span class="arr"></span></th>
   <th class="sortable" data-k="comp">綜合分<span class="arr"></span></th>
-  <th class="sortable" data-k="vcp">回檔分<span class="arr"></span></th>
+  <th class="sortable" data-k="vcp">突破分<span class="arr"></span></th>
+  <th class="sortable" data-k="swing">波段分<span class="arr"></span></th>
   <th class="sortable" data-k="vol">爆量<span class="arr"></span></th>
   <th class="sortable" data-k="rsi">RSI<span class="arr"></span></th>
   <th class="sortable" data-k="rs5d">RS(5日)<span class="arr"></span></th>
@@ -593,6 +596,19 @@ function vcpCell(r){{
     r.vcp_detail||''
   ];
   return `<span title="${{escAttr(parts.join('\\n'))}}">${{bar(r.vcp,vcpCol)}}</span>`;
+}}
+function swingCell(r){{
+  const b=r.swing_score_breakdown||{{}};
+  const parts=[
+    `RS strength: ${{b.rs_strength??0}}/20`,
+    `Trend: ${{b.trend??0}}/15`,
+    `Pullback depth: ${{b.pullback_depth??0}}/20`,
+    `Volume shrink: ${{b.pullback_volume_shrink??0}}/15`,
+    `Turning up: ${{b.turning_up??0}}/15`,
+    `Not too close: ${{b.not_too_close_to_breakout??0}}/10`,
+    `Risk control: ${{b.risk_control??0}}/5`
+  ];
+  return `<span title="${{escAttr(parts.join('\\n'))}}">${{bar(r.swing,vcpCol)}}</span>`;
 }}
 function vcpStatusCell(r){{
   const s=r.vcp_status||'-';
@@ -1129,7 +1145,7 @@ function updSlider(el,vidId){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="15" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="16" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
@@ -1141,6 +1157,7 @@ function renderRows(data){{
     <td>${{bar(r.kline,kc,r.kline_url)}}</td>
     <td>${{bar(r.comp,cc)}}</td>
     <td>${{vcpCell(r)}}</td>
+    <td>${{swingCell(r)}}</td>
     <td>${{fVol(r.vol)}}</td>
     <td>${{fRsi(r.rsi)}}</td>
     <td>${{fRs(r.rs5d)}}</td>
