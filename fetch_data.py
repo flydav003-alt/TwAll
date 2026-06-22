@@ -24,8 +24,9 @@ from tw_screener_core import (
     calc_composite_tw, detect_patterns_tw,
     is_otc, SIGNAL_RANK, _detect_rsi_divergence,
     calc_ret_n, calc_rs_score, RS_PERIODS,
-    calc_ma120, calc_max_drawdown_pct, calc_vcp_contraction,
-    calc_consolidation_vol_ratio, calc_breakout_60d, calc_vcp_score,
+    calc_ma120, calc_max_drawdown_pct, calc_vcp_contraction_strict,
+    calc_consolidation_vol_ratio, calc_breakout_60d, calc_vcp_score_strict,
+    calc_vcp_status,
 )
 from stats_db import save_daily_run
 
@@ -148,8 +149,10 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         rs5d=None,
         ret21d=None, ret63d=None, ret126d=None, ret252d=None,
         rs_score=None,
-        ma120=None, dd60=None, vcp_contracting=None, cons_vol_ratio=None,
-        vcp_breakout=False, vcp_score=None,
+        ma120=None, dd60=None, vcp_contracting=None, vcp_higher_high=None,
+        vcp_vol_shrink_quality=None, vcp_detail=None, leg1_pct=None, leg2_pct=None,
+        vcp_score_breakdown=None, cons_vol_ratio=None,
+        vcp_breakout=False, vcp_score=None, vcp_status=None,
         composite=0,
         patterns=[],
     )
@@ -224,8 +227,19 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         base[key] = calc_ret_n(closes, n)
 
     base["dd60"] = calc_max_drawdown_pct(closes, n=60)
-    vcp = calc_vcp_contraction(closes, lookback=90, window=5)
-    base["vcp_contracting"] = vcp["contracting"]
+    vcp = calc_vcp_contraction_strict(
+        closes=closes,
+        highs=hist["High"],
+        lows=hist["Low"],
+        volumes=volumes,
+        lookback=90,
+    )
+    base["vcp_contracting"] = vcp.get("contracting")
+    base["vcp_higher_high"] = vcp.get("higher_high")
+    base["vcp_vol_shrink_quality"] = vcp.get("vol_shrink_quality")
+    base["vcp_detail"] = vcp.get("detail")
+    base["leg1_pct"] = vcp.get("leg1_pct")
+    base["leg2_pct"] = vcp.get("leg2_pct")
     base["cons_vol_ratio"]  = calc_consolidation_vol_ratio(volumes, recent_n=10, base_n=60)
     base["vcp_breakout"]    = calc_breakout_60d(closes, volumes, n=60, vol_mult=1.5)
     if len(closes) >= 25:
@@ -340,13 +354,14 @@ def main():
 
     print("[INFO] 計算 SEPA+VCP 回檔波段分 ...")
     for r in results:
-        r["vcp_score"] = calc_vcp_score(r)
+        r["vcp_score"] = calc_vcp_score_strict(r)
+        r["vcp_status"] = calc_vcp_status(r)
 
     # 只保留最終分數，中間用的各期漲幅/排名/VCP原始輸入不需要存進 JSON / 顯示
     _drop_keys = (
         [k for k, _, _ in RS_PERIODS]
         + [f"{k}_rank" for k, _, _ in RS_PERIODS]
-        + ["ma120", "dd60", "vcp_contracting", "cons_vol_ratio"]
+        + ["ma120", "dd60", "cons_vol_ratio"]
     )
     for r in results:
         for k in _drop_keys:
