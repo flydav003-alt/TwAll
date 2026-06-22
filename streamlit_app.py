@@ -495,18 +495,6 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
       oninput="updSlider(this,'kvC');applyFilter()">
     <span class="sl-val" id="kvC">0</span>
   </div>
-  <div class="sl-grp">
-    <span class="sl-lbl">突破分 ≥</span>
-    <input type="range" id="slV" min="0" max="100" step="1" value="0"
-      oninput="updSlider(this,'kvV');applyFilter()">
-    <span class="sl-val" id="kvV">0</span>
-  </div>
-  <div class="sl-grp">
-    <span class="sl-lbl">波段分 ≥</span>
-    <input type="range" id="slS" min="0" max="100" step="1" value="0"
-      oninput="updSlider(this,'kvS');applyFilter()">
-    <span class="sl-val" id="kvS">0</span>
-  </div>
 </div>
 
 <div class="stat" id="statLine">載入中…</div>
@@ -923,8 +911,6 @@ function buildTabRecent(){{
     </select>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">K線≥</span><input type="range" id="statsK" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsKv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsKv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合≥</span><input type="range" id="statsC" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsCv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsCv">0</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">突破≥</span><input type="range" id="statsV" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsVv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsVv">0</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">波段≥</span><input type="range" id="statsS" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsSv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsSv">0</span></div>
     <span style="font-size:11px;color:#94a3b8">顯示 <b id="recentStatsCount" style="color:#e2e8f0">0</b> 筆</span>
   </div>
   <div class="stats-scroll">
@@ -936,8 +922,6 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('event_type')">訊號</th>
         <th class="stats-sort" onclick="statsSortBy('kline_score')">K線分</th>
         <th class="stats-sort" onclick="statsSortBy('composite_score')">綜合分</th>
-        <th class="stats-sort" onclick="statsSortBy('vcp_score')">突破分</th>
-        <th class="stats-sort" onclick="statsSortBy('swing_score')">波段分</th>
         <th>買進收盤</th>
         <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1</th>
         <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3</th>
@@ -1189,14 +1173,10 @@ function applyFilter(){{
   const q=(document.getElementById('searchQ').value||'').toLowerCase();
   const kMin=+document.getElementById('slK').value;
   const cMin=+document.getElementById('slC').value;
-  const vMin=+document.getElementById('slV').value;
-  const sMin=+document.getElementById('slS').value;
   let data=RAW.filter(r=>{{
     if(r.kline==null&&r.vol==null)return false;
     if((r.kline||0)<kMin)return false;
     if((r.comp||0)<cMin)return false;
-    if((r.vcp||0)<vMin)return false;
-    if((r.swing||0)<sMin)return false;
     if(q&&!r.ticker.toLowerCase().includes(q)&&!r.name.toLowerCase().includes(q))return false;
     return true;
   }});
