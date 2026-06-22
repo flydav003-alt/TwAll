@@ -128,6 +128,18 @@ def main():
             "kline":    s.get("kline_score"),
             "comp":     s.get("composite"),
             "vcp":      s.get("vcp_score"),
+            "vcp_contracting": s.get("vcp_contracting"),
+            "vcp_higher_high": s.get("vcp_higher_high"),
+            "vcp_vol_shrink_quality": s.get("vcp_vol_shrink_quality"),
+            "leg1_pct": s.get("leg1_pct"),
+            "leg2_pct": s.get("leg2_pct"),
+            "vcp_detail": s.get("vcp_detail"),
+            "vcp_score_breakdown": s.get("vcp_score_breakdown"),
+            "vcp_status": s.get("vcp_status"),
+            "vcp_status_rank": {
+                "突破過熱": 6, "已突破": 5, "接近突破": 4,
+                "高品質整理": 3, "整理中": 2, "觀察": 1,
+            }.get(s.get("vcp_status"), 0),
             "vol":      s.get("volume_ratio"),
             "rsi":      s.get("rsi14"),
             "rs5d":     s.get("rs5d"),
@@ -373,8 +385,8 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 .pv{{font-weight:400;color:var(--txt);font-size:13px;}}
 
 /* mini bar — 對標原版 score-bar-wrap */
-.bc{{display:flex;align-items:center;gap:6px;min-width:90px;}}
-.bb{{height:6px;border-radius:3px;background:var(--bdr);flex:1;max-width:80px;overflow:hidden;}}
+.bc{{display:flex;align-items:center;gap:4px;min-width:48px;}}
+.bb{{height:6px;border-radius:3px;background:var(--bdr);flex:1;max-width:40px;overflow:hidden;}}
 .bf{{height:6px;border-radius:3px;}}
 .bn{{font-size:12px;font-weight:600;color:var(--txt);white-space:nowrap;min-width:24px;}}
 
@@ -501,6 +513,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <th class="sortable" data-k="rs">RS分<span class="arr"></span></th>
   <th class="sortable" data-k="inst">法人<span class="arr"></span></th>
   <th class="sortable" data-k="sig_rank">今日訊號<span class="arr"></span></th>
+  <th class="sortable" data-k="vcp_status_rank">VCP狀態<span class="arr"></span></th>
   <th class="sortable" data-k="pat_rank">型態<span class="arr"></span></th>
 </tr></thead>
 <tbody id="tBody"></tbody>
@@ -566,6 +579,32 @@ function bar(val,cfn,link){{
   const fw=val>=78||val>=88?700:600;
   const inner=`<div class="bc"><div class="bb"><div class="bf" style="width:${{pct}}%;background:${{c}}"></div></div><span class="bn" style="color:${{c}};font-weight:${{fw}}">${{Math.round(val)}}</span></div>`;
   return link?`<a href="${{link}}" target="_blank" style="text-decoration:none">${{inner}}</a>`:inner;
+}}
+function escAttr(v){{
+  return String(v??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}}
+function vcpCell(r){{
+  const parts=[
+    `contract=${{r.vcp_contracting}}`,
+    `higherHigh=${{r.vcp_higher_high}}`,
+    `leg1=${{r.leg1_pct??'-'}}%`,
+    `leg2=${{r.leg2_pct??'-'}}%`,
+    `volQ=${{r.vcp_vol_shrink_quality??'-'}}`,
+    r.vcp_detail||''
+  ];
+  return `<span title="${{escAttr(parts.join('\\n'))}}">${{bar(r.vcp,vcpCol)}}</span>`;
+}}
+function vcpStatusCell(r){{
+  const s=r.vcp_status||'-';
+  const cls={{
+    '突破過熱':'rh',
+    '已突破':'pos',
+    '接近突破':'rm',
+    '高品質整理':'vb vw',
+    '整理中':'vd',
+    '觀察':'rn'
+  }}[s]||'iz';
+  return `<span class="${{cls}}" title="${{escAttr(r.vcp_detail||'')}}">${{s}}</span>`;
 }}
 function fVol(v){{
   if(v==null)return'<span class="vd">—</span>';
@@ -1090,7 +1129,7 @@ function updSlider(el,vidId){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="14" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="15" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
@@ -1101,13 +1140,14 @@ function renderRows(data){{
     <td>${{fChg(r.chg)}}</td>
     <td>${{bar(r.kline,kc,r.kline_url)}}</td>
     <td>${{bar(r.comp,cc)}}</td>
-    <td>${{bar(r.vcp,vcpCol)}}</td>
+    <td>${{vcpCell(r)}}</td>
     <td>${{fVol(r.vol)}}</td>
     <td>${{fRsi(r.rsi)}}</td>
     <td>${{fRs(r.rs5d)}}</td>
     <td>${{fRsi(r.rs)}}</td>
     <td>${{fInst(r.inst)}}</td>
     <td>${{fSig(r.signal)}}</td>
+    <td>${{vcpStatusCell(r)}}</td>
     <td>${{fPat(r.patterns)}}</td>
   </tr>`).join('');
 }}
