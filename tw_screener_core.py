@@ -32,6 +32,11 @@ DD_MIN, DD_MAX = 10, 30      # 60日最大回撤健康區間 %
 SECOND_PULLBACK_RATIO = 0.6  # 第二次回檔 < 第一次 × 0.6 才算「收縮」
 
 
+DD_MIN, DD_MAX = 10, 30
+ZIGZAG_MIN_PERCENT = 3.0
+VCP_MIN_BARS_BETWEEN_TURNS = 3
+
+
 def calc_ma120(closes):
     if closes is None or len(closes) < 1:
         return None
@@ -102,6 +107,148 @@ def calc_vcp_contraction(closes, lookback=90, window=5):
     leg1, leg2 = legs[-2], legs[-1]   # 倒數第二次、最近一次
     contracting = leg2 < leg1 * SECOND_PULLBACK_RATIO
     return {"contracting": contracting, "leg1_pct": leg1, "leg2_pct": leg2}
+
+
+def _series_to_float_list(series):
+    if series is None:
+        return []
+    out = []
+    for v in series:
+        try:
+            out.append(float(v))
+        except Exception:
+            out.append(np.nan)
+    return out
+
+
+def _zigzag_algorithm(highs, lows=None, min_percent=ZIGZAG_MIN_PERCENT, min_bars=VCP_MIN_BARS_BETWEEN_TURNS):
+    hi = _series_to_float_list(highs)
+    lo = _series_to_float_list(lows) if lows is not None else hi
+    n = min(len(hi), len(lo))
+    if n < 3:
+        return []
+    hi, lo = hi[-n:], lo[-n:]
+
+    first = next((i for i in range(n) if not np.isnan(hi[i]) and not np.isnan(lo[i])), None)
+    if first is None:
+        return []
+
+    pivots = []
+    trend = None
+    cand_hi_i = cand_lo_i = first
+    cand_hi, cand_lo = hi[first], lo[first]
+
+    for i in range(first + 1, n):
+        if np.isnan(hi[i]) or np.isnan(lo[i]):
+            continue
+        if hi[i] >= cand_hi:
+            cand_hi, cand_hi_i = hi[i], i
+        if lo[i] <= cand_lo:
+            cand_lo, cand_lo_i = lo[i], i
+
+        up_move = (hi[i] / cand_lo - 1) * 100 if cand_lo > 0 else 0
+        down_move = (cand_hi - lo[i]) / cand_hi * 100 if cand_hi > 0 else 0
+
+        if trend is None:
+            if up_move >= min_percent and i - cand_lo_i >= min_bars:
+                pivots.append((cand_lo_i, cand_lo, "L"))
+                trend = "up"
+                cand_hi, cand_hi_i = hi[i], i
+            elif down_move >= min_percent and i - cand_hi_i >= min_bars:
+                pivots.append((cand_hi_i, cand_hi, "H"))
+                trend = "down"
+                cand_lo, cand_lo_i = lo[i], i
+            continue
+
+        if trend == "up":
+            if hi[i] >= cand_hi:
+                cand_hi, cand_hi_i = hi[i], i
+            elif (cand_hi - lo[i]) / cand_hi * 100 >= min_percent and i - cand_hi_i >= min_bars:
+                pivots.append((cand_hi_i, cand_hi, "H"))
+                trend = "down"
+                cand_lo, cand_lo_i = lo[i], i
+        else:
+            if lo[i] <= cand_lo:
+                cand_lo, cand_lo_i = lo[i], i
+            elif (hi[i] / cand_lo - 1) * 100 >= min_percent and i - cand_lo_i >= min_bars:
+                pivots.append((cand_lo_i, cand_lo, "L"))
+                trend = "up"
+                cand_hi, cand_hi_i = hi[i], i
+
+    if trend == "up" and (not pivots or pivots[-1][2] != "H"):
+        pivots.append((cand_hi_i, cand_hi, "H"))
+    elif trend == "down" and (not pivots or pivots[-1][2] != "L"):
+        pivots.append((cand_lo_i, cand_lo, "L"))
+
+    filtered = []
+    for p in sorted(pivots, key=lambda x: x[0]):
+        if not filtered or filtered[-1][2] != p[2]:
+            filtered.append(p)
+        elif p[2] == "H" and p[1] > filtered[-1][1]:
+            filtered[-1] = p
+        elif p[2] == "L" and p[1] < filtered[-1][1]:
+            filtered[-1] = p
+    return filtered
+
+
+def calc_vcp_contraction_strict(closes, highs=None, lows=None, volumes=None, lookback=90,
+                                min_percent=ZIGZAG_MIN_PERCENT):
+    if closes is None or len(closes) < 40:
+        return {
+            "contracting": None, "higher_high": None, "vol_shrink_quality": None,
+            "leg1_pct": None, "leg2_pct": None, "detail": "insufficient price history",
+        }
+
+    recent_c = closes.iloc[-lookback:] if len(closes) > lookback else closes
+    recent_h = highs.iloc[-len(recent_c):] if highs is not None else recent_c
+    recent_l = lows.iloc[-len(recent_c):] if lows is not None else recent_c
+    recent_v = volumes.iloc[-len(recent_c):] if volumes is not None else None
+
+    pivots = _zigzag_algorithm(recent_h, recent_l, min_percent=min_percent)
+    pullbacks = []
+    for i in range(len(pivots) - 1):
+        h, l = pivots[i], pivots[i + 1]
+        if h[2] == "H" and l[2] == "L" and h[1] > 0 and l[0] > h[0]:
+            pullbacks.append({"hi": h, "lo": l, "pct": round((h[1] - l[1]) / h[1] * 100, 1)})
+
+    if len(pullbacks) < 2:
+        return {
+            "contracting": None, "higher_high": None, "vol_shrink_quality": None,
+            "leg1_pct": None, "leg2_pct": None,
+            "detail": f"not enough pullbacks; pivots={[(p[0], round(p[1], 2), p[2]) for p in pivots]}",
+        }
+
+    pb1, pb2 = pullbacks[-2], pullbacks[-1]
+    leg1, leg2 = pb1["pct"], pb2["pct"]
+    contracting = leg2 < leg1 * SECOND_PULLBACK_RATIO
+    higher_high = bool(pb2["hi"][1] > pb1["hi"][1] * 1.01)
+
+    vol_q = None
+    if recent_v is not None:
+        v = _series_to_float_list(recent_v)
+        a0, a1 = pb1["hi"][0], pb1["lo"][0] + 1
+        b0, b1 = pb2["hi"][0], pb2["lo"][0] + 1
+        if a1 > a0 and b1 > b0:
+            v1 = [x for x in v[a0:a1] if not np.isnan(x) and x > 0]
+            v2 = [x for x in v[b0:b1] if not np.isnan(x) and x > 0]
+            if v1 and v2:
+                avg1, avg2 = float(np.mean(v1)), float(np.mean(v2))
+                if avg1 > 0:
+                    vol_q = round(max(0.0, min(1.0, 1 - avg2 / avg1)), 3)
+
+    detail = (
+        f"pivots={[(p[0], round(p[1], 2), p[2]) for p in pivots]}; "
+        f"leg1={leg1}%, leg2={leg2}%, ratio={(leg2 / leg1 if leg1 else 0):.2f}; "
+        f"higher_high={higher_high}; vol_shrink_quality={vol_q}"
+    )
+    return {
+        "contracting": contracting,
+        "higher_high": higher_high,
+        "vol_shrink_quality": vol_q,
+        "leg1_pct": leg1,
+        "leg2_pct": leg2,
+        "detail": detail,
+    }
 
 
 def calc_consolidation_vol_ratio(volumes, recent_n=10, base_n=60):
@@ -187,6 +334,99 @@ def calc_vcp_score(r):
             score += 5
 
     return round(min(score, 100), 1)
+
+
+def calc_vcp_score_strict(r):
+    rs = r.get("rs_score")
+    if rs is None or rs < RS_GATE:
+        r["vcp_score_breakdown"] = {}
+        return None
+
+    b = {}
+
+    ma20, ma60, ma120 = r.get("ma20"), r.get("ma60"), r.get("ma120")
+    b["ma_arrangement"] = 0
+    if ma20 is not None and ma60 is not None and ma120 is not None:
+        if ma20 > ma60 > ma120:
+            b["ma_arrangement"] = 15
+        elif ma20 > ma60 or ma60 > ma120:
+            b["ma_arrangement"] = 6
+
+    dd60 = r.get("dd60")
+    b["drawdown_health"] = 0
+    if dd60 is not None:
+        if 10 <= dd60 <= 30:
+            b["drawdown_health"] = 20
+        elif 5 <= dd60 < 10 or 30 < dd60 <= 40:
+            b["drawdown_health"] = 8
+
+    contracting = r.get("vcp_contracting", r.get("contracting"))
+    leg1, leg2 = r.get("leg1_pct"), r.get("leg2_pct")
+    b["pullback_contraction"] = 0
+    if contracting is True:
+        b["pullback_contraction"] = 25
+    elif contracting is False and leg1 is not None and leg2 is not None:
+        ratio = leg2 / leg1 if leg1 else 9
+        b["pullback_contraction"] = 10 if ratio < 0.85 else 4
+
+    b["higher_high"] = 15 if r.get("vcp_higher_high", r.get("higher_high")) is True else 0
+
+    vol_q = r.get("vcp_vol_shrink_quality", r.get("vol_shrink_quality"))
+    b["vol_shrink_quality"] = 0
+    if vol_q is not None:
+        b["vol_shrink_quality"] = round(max(0.0, min(1.0, float(vol_q))) * 10, 1)
+    else:
+        cons_vr = r.get("cons_vol_ratio")
+        if cons_vr is not None:
+            b["vol_shrink_quality"] = 6 if cons_vr < 0.7 else (3 if cons_vr < 0.9 else 0)
+
+    w52 = r.get("week52_pct")
+    b["distance_52w_high"] = 0
+    if w52 is not None:
+        if -20 <= w52 <= 0:
+            b["distance_52w_high"] = 10
+        elif -30 <= w52 < -20:
+            b["distance_52w_high"] = 4
+
+    ret126 = r.get("ret126d")
+    b["six_month_return"] = 0
+    if ret126 is not None:
+        if ret126 >= 30:
+            b["six_month_return"] = 5
+        elif 15 <= ret126 < 30:
+            b["six_month_return"] = 2
+
+    r["vcp_score_breakdown"] = b
+    return round(min(sum(b.values()), 100), 1)
+
+
+def calc_vcp_status(r):
+    rs = r.get("rs_score")
+    score = r.get("vcp_score")
+    w52 = r.get("week52_pct")
+    breakout = bool(r.get("vcp_breakout"))
+    contracting = r.get("vcp_contracting", r.get("contracting"))
+    higher_high = r.get("vcp_higher_high", r.get("higher_high"))
+    vol_q = r.get("vcp_vol_shrink_quality", r.get("vol_shrink_quality"))
+    rs5d = r.get("rs5d")
+
+    if rs is None or rs < RS_GATE:
+        return "RS未達標"
+    if score is None:
+        return "未評分"
+    if breakout:
+        if rs5d is not None and rs5d >= 10:
+            return "突破過熱"
+        return "已突破"
+    if score < 45 or contracting is None:
+        return "結構不足"
+    if w52 is not None and -8 <= w52 <= 0 and score >= 65:
+        return "接近突破"
+    if contracting is True and higher_high is True and (vol_q is None or vol_q >= 0.25):
+        return "高品質整理"
+    if score >= 60:
+        return "整理中"
+    return "觀察"
 
 
 # ──────────────────────────────────────────────────────────────
