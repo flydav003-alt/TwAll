@@ -26,7 +26,7 @@ from tw_screener_core import (
     calc_ret_n, calc_rs_score, RS_PERIODS,
     calc_ma120, calc_max_drawdown_pct, calc_vcp_contraction_strict,
     calc_consolidation_vol_ratio, calc_breakout_60d, calc_vcp_score_strict,
-    calc_vcp_status,
+    calc_vcp_status, calc_swing_score,
 )
 from stats_db import save_daily_run
 
@@ -141,6 +141,7 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         price_vs_ma20_pct=None,
         price_vs_ma60_pct=None,
         week52_high=None, week52_pct=None, rsi14=None,
+        prev_rsi14=None, macd_hist=None, macd_hist_prev=None,
         inst_buy_days=0,   # GitHub Actions with FINMIND_TOKEN fills this before saving.
         kline_score=None, kline_strat=None,
         ret5d=None, ma20_rising=None,
@@ -153,6 +154,7 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         vcp_vol_shrink_quality=None, vcp_detail=None, leg1_pct=None, leg2_pct=None,
         vcp_score_breakdown=None, cons_vol_ratio=None,
         vcp_breakout=False, vcp_score=None, vcp_status=None,
+        swing_score=None, swing_score_breakdown=None,
         composite=0,
         patterns=[],
     )
@@ -219,6 +221,16 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
     if base["price"]:
         base["week52_pct"] = round((base["price"] - wh) / wh * 100, 1)
     base["rsi14"] = calc_rsi(closes)
+    if len(closes) >= 16:
+        base["prev_rsi14"] = calc_rsi(closes.iloc[:-1])
+    if len(closes) >= 35:
+        ema12 = closes.ewm(span=12, adjust=False).mean()
+        ema26 = closes.ewm(span=26, adjust=False).mean()
+        macd = ema12 - ema26
+        macd_signal = macd.ewm(span=9, adjust=False).mean()
+        macd_hist = macd - macd_signal
+        base["macd_hist"] = round(float(macd_hist.iloc[-1]), 4)
+        base["macd_hist_prev"] = round(float(macd_hist.iloc[-2]), 4)
     if len(closes) >= 2:
         base["prev_close"] = round(float(closes.iloc[-2]), 2)
     if len(closes) >= 6:
@@ -356,6 +368,7 @@ def main():
     for r in results:
         r["vcp_score"] = calc_vcp_score_strict(r)
         r["vcp_status"] = calc_vcp_status(r)
+        r["swing_score"] = calc_swing_score(r)
 
     # 只保留最終分數，中間用的各期漲幅/排名/VCP原始輸入不需要存進 JSON / 顯示
     _drop_keys = (
