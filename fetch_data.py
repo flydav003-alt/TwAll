@@ -23,6 +23,7 @@ from tw_screener_core import (
     calc_kline_score, calc_entry_signal, calc_rsi,
     calc_composite_tw, detect_patterns_tw,
     is_otc, SIGNAL_RANK, _detect_rsi_divergence,
+    calc_ret_n, calc_rs_score, RS_PERIODS,
 )
 from stats_db import save_daily_run
 
@@ -143,6 +144,8 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         entry_signal="", signal_rank=0,
         rsi_div=None,
         rs5d=None,
+        ret21d=None, ret63d=None, ret126d=None, ret252d=None,
+        rs_score=None,
         composite=0,
         patterns=[],
     )
@@ -212,6 +215,8 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         base["prev_close"] = round(float(closes.iloc[-2]), 2)
     if len(closes) >= 6:
         base["ret5d"] = round((float(closes.iloc[-1]) / float(closes.iloc[-6]) - 1) * 100, 2)
+    for key, n, _ in RS_PERIODS:
+        base[key] = calc_ret_n(closes, n)
     if len(closes) >= 25:
         ma20_now  = float(closes.iloc[-20:].mean())
         ma20_5ago = float(closes.iloc[-25:-5].mean())
@@ -318,6 +323,14 @@ def main():
         time.sleep(SLEEP_BETWEEN)
 
     print("\n[INFO] 抓取完成！")
+
+    print("[INFO] 計算橫向排名 RS 分數 ...")
+    calc_rs_score(results)
+    # 只保留最終 rs_score，中間的各期漲幅與排名只是計算用，不需要存進 JSON / 顯示
+    _drop_keys = [k for k, _, _ in RS_PERIODS] + [f"{k}_rank" for k, _, _ in RS_PERIODS]
+    for r in results:
+        for k in _drop_keys:
+            r.pop(k, None)
 
     # 儲存
     from datetime import date, timedelta
