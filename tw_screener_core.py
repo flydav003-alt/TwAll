@@ -400,6 +400,108 @@ def calc_vcp_score_strict(r):
     return round(min(sum(b.values()), 100), 1)
 
 
+# ──────────────────────────────────────────────────────────────
+# 波段分（Big-Swing Pullback Score）- 從舊版移植
+# ──────────────────────────────────────────────────────────────
+def calc_swing_score(r):
+    """
+    Big-swing pullback score. This is intentionally separate from VCP breakout
+    scoring: it rewards strong stocks after a real pullback, before a volume
+    breakout has already happened.
+    評分組成：RS強度(20) + 趨勢排列(15) + 回撤深度(20) + 量縮(15) + 轉強訊號(15) + 距高點(10) + 風控(5)
+    """
+    b = {}
+
+    rs = r.get("rs_score")
+    b["rs_strength"] = 0
+    if rs is not None:
+        if rs >= 85:
+            b["rs_strength"] = 20
+        elif rs >= 75:
+            b["rs_strength"] = 14
+        elif rs >= 65:
+            b["rs_strength"] = 8
+
+    price, ma60, ma120 = r.get("price"), r.get("ma60"), r.get("ma120")
+    b["trend"] = 0
+    if price is not None and ma60 is not None and ma120 is not None:
+        if price > ma60 > ma120:
+            b["trend"] = 15
+        elif price > ma60:
+            b["trend"] = 10
+        elif price >= ma60 * 0.97:
+            b["trend"] = 6
+
+    dd60 = r.get("dd60")
+    b["pullback_depth"] = 0
+    if dd60 is not None:
+        if 12 <= dd60 <= 25:
+            b["pullback_depth"] = 20
+        elif 8 <= dd60 < 12 or 25 < dd60 <= 32:
+            b["pullback_depth"] = 12
+
+    cons_vr = r.get("cons_vol_ratio")
+    b["pullback_volume_shrink"] = 0
+    if cons_vr is not None:
+        if cons_vr < 0.7:
+            b["pullback_volume_shrink"] = 15
+        elif cons_vr < 0.9:
+            b["pullback_volume_shrink"] = 9
+
+    b["turning_up"] = 0
+    ma20 = r.get("ma20")
+    prev_close = r.get("prev_close")
+    ma20_pct = r.get("price_vs_ma20_pct")
+    if price is not None and ma20 is not None:
+        if prev_close is not None and prev_close < ma20 <= price:
+            b["turning_up"] += 6
+        elif r.get("ma20_rising") is True and ma20_pct is not None and 0 <= ma20_pct <= 5:
+            b["turning_up"] += 4
+
+    rsi, prev_rsi = r.get("rsi14"), r.get("prev_rsi14")
+    if rsi is not None and prev_rsi is not None and 40 <= rsi <= 65:
+        if prev_rsi < 50 <= rsi:
+            b["turning_up"] += 5
+        elif rsi - prev_rsi >= 3:
+            b["turning_up"] += 4
+
+    mh, mh_prev = r.get("macd_hist"), r.get("macd_hist_prev")
+    if mh is not None and mh_prev is not None:
+        if mh > mh_prev and mh > -0.01:
+            b["turning_up"] += 4
+        elif mh > mh_prev:
+            b["turning_up"] += 2
+    b["turning_up"] = min(b["turning_up"], 15)
+
+    w52 = r.get("week52_pct")
+    b["not_too_close_to_breakout"] = 0
+    if w52 is not None:
+        if -25 <= w52 <= -10:
+            b["not_too_close_to_breakout"] = 10
+        elif -10 < w52 <= -5:
+            b["not_too_close_to_breakout"] = 6
+        elif -5 < w52 <= -3:
+            b["not_too_close_to_breakout"] = 2
+
+    b["risk_control"] = 0
+    if price is not None and ma60 is not None:
+        if price >= ma60 * 0.97 and (dd60 is None or dd60 <= 32):
+            b["risk_control"] = 5
+
+    score = sum(b.values())
+    if r.get("vcp_breakout") is True or (r.get("volume_ratio") or 0) >= 2.0:
+        score = min(score, 65)
+    if rsi is not None and rsi > 75:
+        score = min(score, 70)
+    if w52 is not None and w52 > -3:
+        score = min(score, 70)
+    if price is not None and ma120 is not None and price < ma120:
+        score = min(score, 50)
+
+    r["swing_score_breakdown"] = b
+    return round(min(score, 100), 1)
+
+
 def calc_vcp_status(r):
     rs = r.get("rs_score")
     score = r.get("vcp_score")
@@ -975,13 +1077,12 @@ def calc_composite_tw(r):
     elif inst_days <= -3:       score -= 8
 
     # MA60 / MA20 各自算，取高分，避免錯殺 (15分)
-    # 站上均線 0~8% 為最佳買點，跌破或過熱均遞減
     def _ma_score(pct):
         if pct is None:       return 0
         if 0 <= pct <= 8:     return 15
         if 8 < pct <= 15:     return 8
         if 15 < pct <= 20:    return 4
-        return 0  # 跌破(<0) 或 超過 20% 皆給 0
+        return 0
 
     ma60_pct = r.get("price_vs_ma60_pct")
     ma20_pct = r.get("price_vs_ma20_pct")
