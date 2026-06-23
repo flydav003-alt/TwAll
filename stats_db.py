@@ -617,9 +617,9 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(CASE WHEN o.horizon=10 THEN o.return_close_pct END) AS t10_return
         FROM signal_events e
         LEFT JOIN event_outcomes o ON o.event_id=e.event_id
+        WHERE e.trade_date >= date('now', '-30 days')
         GROUP BY e.event_id
         ORDER BY e.trade_date DESC, e.event_type
-        LIMIT 120
         """
     ).fetchall()]
     threshold_stats = []
