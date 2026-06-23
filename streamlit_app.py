@@ -495,6 +495,18 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
       oninput="updSlider(this,'kvC');applyFilter()">
     <span class="sl-val" id="kvC">0</span>
   </div>
+  <div class="sl-grp">
+    <span class="sl-lbl">突破分 ≥</span>
+    <input type="range" id="slV" min="0" max="100" step="1" value="0"
+      oninput="updSlider(this,'kvV');applyFilter()">
+    <span class="sl-val" id="kvV">0</span>
+  </div>
+  <div class="sl-grp">
+    <span class="sl-lbl">波段分 ≥</span>
+    <input type="range" id="slS" min="0" max="100" step="1" value="0"
+      oninput="updSlider(this,'kvS');applyFilter()">
+    <span class="sl-val" id="kvS">0</span>
+  </div>
 </div>
 
 <div class="stat" id="statLine">載入中…</div>
@@ -821,8 +833,15 @@ function afterThreshold(){{
 }}
 
 // ── Tab: 分數熱圖 ──────────────────────────────────────────────
-const K_BUCKETS=[{{k:'A_78UP',lbl:'K ≥78'}},{{k:'B_70_77',lbl:'K 70~77'}},{{k:'C_60_69',lbl:'K 60~69'}},{{k:'D_LT60',lbl:'K <60'}}];
-const C_BUCKETS=[{{k:'A_88UP',lbl:'綜 ≥88'}},{{k:'B_75_87',lbl:'綜 75~87'}},{{k:'C_60_74',lbl:'綜 60~74'}},{{k:'D_LT60',lbl:'綜 <60'}}];
+const DIM_DEFS={{
+  kline:{{label:'K線分',field:'kline_bucket',buckets:[{{k:'A_78UP',lbl:'K≥78'}},{{k:'B_70_77',lbl:'K70~77'}},{{k:'C_60_69',lbl:'K60~69'}},{{k:'D_LT60',lbl:'K<60'}}]}},
+  composite:{{label:'綜合分',field:'composite_bucket',buckets:[{{k:'A_88UP',lbl:'綜≥88'}},{{k:'B_75_87',lbl:'綜75~87'}},{{k:'C_60_74',lbl:'綜60~74'}},{{k:'D_LT60',lbl:'綜<60'}}]}},
+  breakout:{{label:'突破分',field:'breakout_bucket',buckets:[{{k:'A_70UP',lbl:'破≥70'}},{{k:'B_50_69',lbl:'破50~69'}},{{k:'C_30_49',lbl:'破30~49'}},{{k:'D_LT30',lbl:'破<30'}}]}},
+  swing:{{label:'波段分',field:'swing_bucket',buckets:[{{k:'A_70UP',lbl:'波≥70'}},{{k:'B_50_69',lbl:'波50~69'}},{{k:'C_30_49',lbl:'波30~49'}},{{k:'D_LT30',lbl:'波<30'}}]}},
+}};
+const DIM_ORDER=['kline','composite','breakout','swing'];
+const DIM_COLORS={{kline:'#f87171',composite:'#fbbf24',breakout:'#60a5fa',swing:'#c084fc'}};
+function crossGroupName(a,b){{return DIM_ORDER.indexOf(a)<=DIM_ORDER.indexOf(b)?`cross_${{a}}_${{b}}`:`cross_${{b}}_${{a}}`;}}
 function hmColor(v,mode){{
   if(v==null)return{{bg:'#06111e',txt:'#64748b'}};
   if(mode==='wr'){{
@@ -836,56 +855,101 @@ function hmColor(v,mode){{
     return{{bg:'rgba(20,83,45,.7)',txt:'#86efac'}};
   }}
 }}
-function buildTabMatrix(){{
-  const mat=(STATS.summary||[]).filter(x=>x.group_name==='score_matrix'&&x.horizon===5);
-  function mkHM(mode){{
-    let html=`<div class="hm-grid"><div class="hm-hdr" style="text-align:left;font-size:10px;color:#94a3b8">K ↓ / 綜 →</div>${{C_BUCKETS.map(c=>`<div class="hm-hdr">${{c.lbl}}</div>`).join('')}}`;
-    K_BUCKETS.forEach(kb=>{{
-      html+=`<div class="hm-row-lbl">${{kb.lbl}}</div>`;
-      C_BUCKETS.forEach(cb=>{{
-        const cell=mat.find(m=>m.kline_bucket===kb.k&&m.composite_bucket===cb.k);
-        const val=cell?(mode==='wr'?cell.win_rate:cell.avg_return):null;
-        const {{bg,txt}}=hmColor(val,mode);
-        const disp=val!=null?(mode==='wr'?Number(val).toFixed(0)+'%':(val>=0?'+':'')+Number(val).toFixed(1)+'%'):'—';
-        const sub=cell?`n=${{cell.sample_count}}`:'';
-        html+=`<div class="hm-cell" style="background:${{bg}};color:${{txt}}" title="${{sub}}">${{disp}}<div style="font-size:9px;opacity:.5;margin-top:2px">${{sub}}</div></div>`;
-      }});
+function mkHM(mode,axisAKey,axisBKey){{
+  const A=DIM_DEFS[axisAKey],B=DIM_DEFS[axisBKey];
+  const gname=crossGroupName(axisAKey,axisBKey);
+  const mat=(STATS.summary||[]).filter(x=>x.group_name===gname&&x.horizon===5);
+  let html=`<div class="hm-grid"><div class="hm-hdr" style="text-align:left;font-size:10px;color:#94a3b8">${{A.label}} ↓ / ${{B.label}} →</div>${{B.buckets.map(c=>`<div class="hm-hdr">${{c.lbl}}</div>`).join('')}}`;
+  A.buckets.forEach(ab=>{{
+    html+=`<div class="hm-row-lbl">${{ab.lbl}}</div>`;
+    B.buckets.forEach(bb=>{{
+      const cell=mat.find(m=>m[A.field]===ab.k&&m[B.field]===bb.k);
+      const val=cell?(mode==='wr'?cell.win_rate:cell.avg_return):null;
+      const {{bg,txt}}=hmColor(val,mode);
+      const disp=val!=null?(mode==='wr'?Number(val).toFixed(0)+'%':(val>=0?'+':'')+Number(val).toFixed(1)+'%'):'—';
+      const sub=cell?`n=${{cell.sample_count}}`:'';
+      html+=`<div class="hm-cell" style="background:${{bg}};color:${{txt}}" title="${{sub}}">${{disp}}<div style="font-size:9px;opacity:.5;margin-top:2px">${{sub}}</div></div>`;
     }});
-    return html+'</div>';
-  }}
+  }});
+  return html+'</div>';
+}}
+function renderMatHeatmaps(){{
+  const a=(document.getElementById('matAxisA')||{{value:'kline'}}).value;
+  const b=(document.getElementById('matAxisB')||{{value:'composite'}}).value;
+  const wr=document.getElementById('hmWr'), ar=document.getElementById('hmAr');
+  if(wr)wr.innerHTML=mkHM('wr',a,b);
+  if(ar)ar.innerHTML=mkHM('ar',a,b);
+}}
+function dimOptionsHtml(selected){{
+  return DIM_ORDER.map(k=>`<option value="${{k}}" ${{k===selected?'selected':''}}>${{DIM_DEFS[k].label}}</option>`).join('');
+}}
+function buildTabMatrix(){{
   return`
+  <div class="sc-grid" style="padding-bottom:0">
+    <div class="sc-box" style="flex:1 1 100%">
+      <div class="sc-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>分數熱圖 — 四向交叉比對（T+5）</span>
+        <span style="font-size:11px;color:#94a3b8">座標 A
+          <select id="matAxisA" onchange="renderMatHeatmaps()">${{dimOptionsHtml('kline')}}</select>
+          × 座標 B
+          <select id="matAxisB" onchange="renderMatHeatmaps()">${{dimOptionsHtml('composite')}}</select>
+        </span>
+      </div>
+    </div>
+  </div>
   <div class="sc-grid">
     <div class="sc-box">
       <div class="sc-title">T+5 勝率熱圖 &nbsp;紅≥60% 橘≥50% 綠≥40%</div>
-      ${{mkHM('wr')}}
+      <div id="hmWr"></div>
     </div>
     <div class="sc-box">
       <div class="sc-title">T+5 平均報酬熱圖</div>
-      ${{mkHM('ar')}}
+      <div id="hmAr"></div>
     </div>
   </div>
   <div class="sc-grid sc-wide" style="padding-top:0">
     <div class="sc-box">
       <div class="sc-title">各 K線分區間 T+1~T+10 勝率走勢</div>
-      <div style="position:relative;height:180px"><canvas id="chartMatLine"></canvas></div>
+      <div style="position:relative;height:160px"><canvas id="chartMatLineKline"></canvas></div>
+    </div>
+    <div class="sc-box">
+      <div class="sc-title">各綜合分區間 T+1~T+10 勝率走勢</div>
+      <div style="position:relative;height:160px"><canvas id="chartMatLineComposite"></canvas></div>
+    </div>
+  </div>
+  <div class="sc-grid sc-wide" style="padding-top:0">
+    <div class="sc-box">
+      <div class="sc-title">各突破分區間 T+1~T+10 勝率走勢</div>
+      <div style="position:relative;height:160px"><canvas id="chartMatLineBreakout"></canvas></div>
+    </div>
+    <div class="sc-box">
+      <div class="sc-title">各波段分區間 T+1~T+10 勝率走勢</div>
+      <div style="position:relative;height:160px"><canvas id="chartMatLineSwing"></canvas></div>
     </div>
   </div>`;
 }}
-function afterMatrix(){{
-  const summary=STATS.summary||[];
-  const kLabels=K_BUCKETS.map(b=>b.lbl);
-  const kColors=['#f87171','#fbbf24','#4ade80','#475569'];
-  const datasets=K_BUCKETS.map((kb,i)=>{{
+function drawSingleDimTrend(canvasId, dimKey){{
+  const D=DIM_DEFS[dimKey];
+  const colors=['#f87171','#fbbf24','#4ade80','#475569'];
+  const datasets=D.buckets.map((b,i)=>{{
     const pts=[1,3,5,7,10].map(h=>{{
-      const cell=(STATS.summary||[]).find(m=>m.group_name==='score_matrix'&&m.kline_bucket===kb.k&&m.composite_bucket==='A_88UP'&&m.horizon===h);
+      const cell=(STATS.summary||[]).find(m=>m.group_name===`single_${{dimKey}}`&&m[D.field]===b.k&&m.horizon===h);
       return cell?Number(cell.win_rate):null;
     }});
-    return{{label:kb.lbl,data:pts,borderColor:kColors[i],backgroundColor:'transparent',tension:.3,pointRadius:4,pointBackgroundColor:kColors[i]}};
+    return{{label:b.lbl,data:pts,borderColor:colors[i],backgroundColor:'transparent',tension:.3,pointRadius:4,pointBackgroundColor:colors[i]}};
   }});
-  _mkChart('chartMatLine',{{type:'line',data:{{labels:['T+1','T+3','T+5','T+7','T+10'],datasets}},
+  _mkChart(canvasId,{{type:'line',data:{{labels:['T+1','T+3','T+5','T+7','T+10'],datasets}},
     options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{labels:{{color:'#64748b',boxWidth:10,font:{{size:10}}}}}}}},
     scales:{{x:{{..._BASE_SCALE.x}},y:{{..._BASE_SCALE.y,ticks:{{color:'#94a3b8',callback:v=>v+'%'}},title:{{display:true,text:'勝率 %',color:'#94a3b8',font:{{size:10}}}}}}}}}}}});
 }}
+function afterMatrix(){{
+  renderMatHeatmaps();
+  drawSingleDimTrend('chartMatLineKline','kline');
+  drawSingleDimTrend('chartMatLineComposite','composite');
+  drawSingleDimTrend('chartMatLineBreakout','breakout');
+  drawSingleDimTrend('chartMatLineSwing','swing');
+}}
+
 
 // ── Tab: 近期訊號 ──────────────────────────────────────────────
 let _sigSort='trade_date',_sigAsc=false;
@@ -911,6 +975,8 @@ function buildTabRecent(){{
     </select>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">K線≥</span><input type="range" id="statsK" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsKv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsKv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合≥</span><input type="range" id="statsC" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsCv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsCv">0</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">突破≥</span><input type="range" id="statsV" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsVv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsVv">0</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">波段≥</span><input type="range" id="statsS" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsSv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsSv">0</span></div>
     <span style="font-size:11px;color:#94a3b8">顯示 <b id="recentStatsCount" style="color:#e2e8f0">0</b> 筆</span>
   </div>
   <div class="stats-scroll">
@@ -922,6 +988,8 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('event_type')">訊號</th>
         <th class="stats-sort" onclick="statsSortBy('kline_score')">K線分</th>
         <th class="stats-sort" onclick="statsSortBy('composite_score')">綜合分</th>
+        <th class="stats-sort" onclick="statsSortBy('breakout_score')">突破分</th>
+        <th class="stats-sort" onclick="statsSortBy('swing_score')">波段分</th>
         <th>買進收盤</th>
         <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1</th>
         <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3</th>
@@ -930,7 +998,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="13" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="15" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -960,11 +1028,15 @@ function renderRecentStats(){{
   const q=((document.getElementById('statsQ')||{{}}).value||'').toLowerCase();
   const kMin=Number((document.getElementById('statsK')||{{value:0}}).value||0);
   const cMin=Number((document.getElementById('statsC')||{{value:0}}).value||0);
+  const vMin=Number((document.getElementById('statsV')||{{value:0}}).value||0);
+  const sMin=Number((document.getElementById('statsS')||{{value:0}}).value||0);
   const etFilt=(document.getElementById('statsEt')||{{}}).value||'';
   let data=(STATS.recent||[]).filter(r=>{{
     if(q&&!(String(r.ticker||'').toLowerCase().includes(q)||String(r.name||'').toLowerCase().includes(q)))return false;
     if((r.kline_score||0)<kMin)return false;
     if((r.composite_score||0)<cMin)return false;
+    if((r.breakout_score||0)<vMin)return false;
+    if((r.swing_score||0)<sMin)return false;
     if(etFilt&&r.event_type!==etFilt)return false;
     return true;
   }});
@@ -986,11 +1058,13 @@ function renderRecentStats(){{
     <td style="color:#93c5fd;font-size:11px">${{labelEvent(r.event_type)}}</td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.kline_score||0,100)}}%;background:${{kCol(r.kline_score||0)}}"></div></div><span style="color:${{kCol(r.kline_score||0)}};font-weight:700">${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.composite_score||0,100)}}%;background:${{cCol(r.composite_score||0)}}"></div></div><span style="color:${{cCol(r.composite_score||0)}};font-weight:700">${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</span></div></td>
+    <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.breakout_score||0,100)}}%;background:${{vcpCol(r.breakout_score||0)}}"></div></div><span style="color:${{vcpCol(r.breakout_score||0)}};font-weight:700">${{r.breakout_score!=null?Math.round(r.breakout_score):'-'}}</span></div></td>
+    <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.swing_score||0,100)}}%;background:${{vcpCol(r.swing_score||0)}}"></div></div><span style="color:${{vcpCol(r.swing_score||0)}};font-weight:700">${{r.swing_score!=null?Math.round(r.swing_score):'-'}}</span></div></td>
     <td style="color:#94a3b8">${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="13" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="15" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
@@ -1025,6 +1099,35 @@ function buildTabPeak(){{
   <div style="padding:8px 14px 4px;font-size:11px;color:#94a3b8">🏆 = 該訊號歷史上勝率最高的持有天數</div>
   <div class="stats-scroll" style="padding:0 0 14px">
     <table class="stats-table"><thead><tr><th>訊號類型</th><th style="text-align:center">樣本</th>
+      ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}
+      <th>黃金出場</th><th style="text-align:center">最佳報酬</th></tr></thead>
+    <tbody>${{rows.join('')}}</tbody></table>
+  </div>
+  ${{buildPeakByDim('breakout','突破分')}}
+  ${{buildPeakByDim('swing','波段分')}}`;
+}}
+function buildPeakByDim(dimKey,title){{
+  const sum=STATS.summary||[];
+  const D=DIM_DEFS[dimKey];
+  const hs=[1,3,5,7,10];
+  const rows=D.buckets.map(b=>{{
+    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name===`single_${{dimKey}}`&&s[D.field]===b.k&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+    if(!pts.length)return'';
+    const best=pts.reduce((a,c)=>c.wr>a.wr?c:a);
+    const bestAr=pts.reduce((a,c)=>c.ar>a.ar?c:a);
+    const wrCells=hs.map(h=>{{
+      const p=pts.find(x=>x.h===h);
+      if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
+      const hi=p.h===best.h;
+      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#94a3b8'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
+    }});
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{b.lbl}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
+  }}).filter(Boolean);
+  if(!rows.length)return'';
+  return`
+  <div class="sc-title" style="padding:14px 14px 0">各${{title}}區間黃金出場</div>
+  <div class="stats-scroll" style="padding:0 0 14px">
+    <table class="stats-table"><thead><tr><th>${{title}}區間</th><th style="text-align:center">樣本</th>
       ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}
       <th>黃金出場</th><th style="text-align:center">最佳報酬</th></tr></thead>
     <tbody>${{rows.join('')}}</tbody></table>
@@ -1173,10 +1276,14 @@ function applyFilter(){{
   const q=(document.getElementById('searchQ').value||'').toLowerCase();
   const kMin=+document.getElementById('slK').value;
   const cMin=+document.getElementById('slC').value;
+  const vMin=+document.getElementById('slV').value;
+  const sMin=+document.getElementById('slS').value;
   let data=RAW.filter(r=>{{
     if(r.kline==null&&r.vol==null)return false;
     if((r.kline||0)<kMin)return false;
     if((r.comp||0)<cMin)return false;
+    if((r.vcp||0)<vMin)return false;
+    if((r.swing||0)<sMin)return false;
     if(q&&!r.ticker.toLowerCase().includes(q)&&!r.name.toLowerCase().includes(q))return false;
     return true;
   }});
@@ -1214,7 +1321,7 @@ function toggleLegend(){{
 function initApp() {{
   try {{
     // 1. 強制重置拉條數值，清除瀏覽器的 Form Auto-restore 快取
-    ['slK', 'slC'].forEach(id => {{
+    ['slK', 'slC', 'slV', 'slS'].forEach(id => {{
       const el = document.getElementById(id);
       if (el) {{
         el.value = 0; // 強制將真實數值歸零
@@ -1224,6 +1331,8 @@ function initApp() {{
     // 強制重置旁邊顯示的數字
     document.getElementById('kvK').textContent = '0';
     document.getElementById('kvC').textContent = '0';
+    document.getElementById('kvV').textContent = '0';
+    document.getElementById('kvS').textContent = '0';
 
     // 2. 設定預設排序
     const thKline = document.querySelector('th[data-k="kline"]');
@@ -1237,7 +1346,7 @@ function initApp() {{
     }}
 
     // 4. 初始化統計面板的滑桿漸層百分比
-    ['statsK', 'statsC'].forEach(id => {{
+    ['statsK', 'statsC', 'statsV', 'statsS'].forEach(id => {{
       const el = document.getElementById(id);
       if (el) el.style.setProperty('--pct', '0%');
     }});
