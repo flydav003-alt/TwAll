@@ -26,7 +26,7 @@ from tw_screener_core import (
     calc_ret_n, calc_rs_score, RS_PERIODS,
     calc_ma120, calc_max_drawdown_pct, calc_vcp_contraction_strict,
     calc_consolidation_vol_ratio, calc_breakout_60d, calc_vcp_score_strict,
-    calc_vcp_status,
+    calc_vcp_status, calc_swing_score,
 )
 from stats_db import save_daily_run
 
@@ -357,6 +357,7 @@ def main():
     for r in results:
         r["vcp_score"] = calc_vcp_score_strict(r)
         r["vcp_status"] = calc_vcp_status(r)
+        r["swing_score"] = calc_swing_score(r)
 
     # 只保留最終分數，中間用的各期漲幅/排名/VCP原始輸入不需要存進 JSON / 顯示
     _drop_keys = (
