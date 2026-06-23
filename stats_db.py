@@ -9,7 +9,7 @@ from tw_screener_core import is_otc
 
 
 DB_PATH = os.path.join("data", "stats.db")
-SCORE_VERSION = "2026-06-05-v1"
+SCORE_VERSION = "2026-06-23-v2"
 HORIZONS = (1, 3, 5, 7, 10)
 
 
@@ -20,6 +20,19 @@ def connect(db_path=DB_PATH):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
+
+
+def _ensure_columns(conn, table, col_defs):
+    """col_defs: list of (col_name, sql_type). Adds any missing columns
+    via ALTER TABLE so existing databases / historical rows are preserved
+    (new columns simply start out NULL for old rows)."""
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    for name, sql_type in col_defs:
+        if name not in existing:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
+            except sqlite3.OperationalError:
+                pass
 
 
 def init_db(conn):
@@ -142,6 +155,24 @@ def init_db(conn):
         );
         """
     )
+
+    # ── 新增欄位：突破分（breakout / vcp）與波段分（swing） ──
+    # 用 ALTER TABLE 補欄位，舊資料列維持 NULL，不影響既有統計。
+    _ensure_columns(conn, "daily_stock_snapshot", [
+        ("breakout_score", "REAL"), ("breakout_bucket", "TEXT"),
+        ("swing_score", "REAL"), ("swing_bucket", "TEXT"),
+    ])
+    _ensure_columns(conn, "signal_events", [
+        ("breakout_score", "REAL"), ("breakout_bucket", "TEXT"),
+        ("swing_score", "REAL"), ("swing_bucket", "TEXT"),
+    ])
+    _ensure_columns(conn, "watch_transitions", [
+        ("watch_breakout_score", "REAL"), ("watch_swing_score", "REAL"),
+        ("confirm_breakout_score", "REAL"), ("confirm_swing_score", "REAL"),
+    ])
+    _ensure_columns(conn, "summary_stats", [
+        ("breakout_bucket", "TEXT"), ("swing_bucket", "TEXT"),
+    ])
     conn.commit()
 
 
@@ -167,6 +198,45 @@ def bucket_composite(score):
     if score >= 60:
         return "C_60_74"
     return "D_LT60"
+
+
+def bucket_breakout(score):
+    """突破分（breakout / VCP score）分級，與前端 vcpCol() 對齊。"""
+    if score is None:
+        return "NA"
+    if score >= 70:
+        return "A_70UP"
+    if score >= 50:
+        return "B_50_69"
+    if score >= 30:
+        return "C_30_49"
+    return "D_LT30"
+
+
+def bucket_swing(score):
+    """波段分（swing score）分級，沿用與突破分相同的級距。"""
+    if score is None:
+        return "NA"
+    if score >= 70:
+        return "A_70UP"
+    if score >= 50:
+        return "B_50_69"
+    if score >= 30:
+        return "C_30_49"
+    return "D_LT30"
+
+
+# 四項分數維度的通用定義，供 summary_stats 的單維 / 交叉維度統計共用
+SCORE_DIMS = {
+    "kline":     {"bucket_col": "kline_bucket",     "label": "K線分"},
+    "composite": {"bucket_col": "composite_bucket", "label": "綜合分"},
+    "breakout":  {"bucket_col": "breakout_bucket",  "label": "突破分"},
+    "swing":     {"bucket_col": "swing_bucket",      "label": "波段分"},
+}
+CROSS_PAIRS = [
+    ("kline", "composite"), ("kline", "breakout"), ("kline", "swing"),
+    ("composite", "breakout"), ("composite", "swing"), ("breakout", "swing"),
+]
 
 
 def classify_signal(kline_score, composite_score):
@@ -212,8 +282,12 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
 
         kline = s.get("kline_score")
         comp = s.get("composite")
+        breakout = s.get("vcp_score")          # 突破分（SEPA+VCP 突破評分）
+        swing = s.get("swing_score")            # 波段分（尚未有計分函式時為 None）
         k_bucket = bucket_kline(kline)
         c_bucket = bucket_composite(comp)
+        b_bucket = bucket_breakout(breakout)
+        sw_bucket = bucket_swing(swing)
         event_type, trigger_source = classify_signal(kline, comp)
         patterns = json.dumps(s.get("patterns", []), ensure_ascii=False, default=str)
 
@@ -223,17 +297,19 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                 INSERT OR REPLACE INTO daily_stock_snapshot (
                     trade_date, ticker, name, market, close_price, prev_close, change_pct,
                     volume_today, volume_avg20, volume_ratio, kline_score, kline_strategy,
-                    kline_bucket, composite_score, composite_bucket, rsi14, rs5d, ma5,
+                    kline_bucket, composite_score, composite_bucket, breakout_score, breakout_bucket,
+                    swing_score, swing_bucket, rsi14, rs5d, ma5,
                     ma20, ma60, price_vs_ma20_pct, price_vs_ma60_pct, ma20_rising,
                     week52_pct, inst_buy_days, entry_signal, signal_rank, patterns,
                     signal_group, score_version, generated_at, raw_json
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     trade_date, ticker, s.get("name"), s.get("market"), _num(price),
                     _num(s.get("prev_close")), _change_pct(price, s.get("prev_close")),
                     s.get("volume_today"), s.get("volume_avg20"), _num(s.get("volume_ratio")),
                     _num(kline), s.get("kline_strat"), k_bucket, _num(comp), c_bucket,
+                    _num(breakout), b_bucket, _num(swing), sw_bucket,
                     _num(s.get("rsi14")), _num(s.get("rs5d")), _num(s.get("ma5")),
                     _num(s.get("ma20")), _num(s.get("ma60")), _num(s.get("price_vs_ma20_pct")),
                     _num(s.get("price_vs_ma60_pct")), 1 if s.get("ma20_rising") else 0,
@@ -251,13 +327,15 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                     INSERT OR IGNORE INTO signal_events (
                         event_id, trade_date, ticker, name, event_type, trigger_source,
                         kline_score, composite_score, kline_bucket, composite_bucket,
+                        breakout_score, breakout_bucket, swing_score, swing_bucket,
                         entry_reference_close, entry_price_mode, status, score_version, created_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
-                        _num(kline), _num(comp), k_bucket, c_bucket, _num(price),
-                        "close_after_signal", "open", SCORE_VERSION, now,
+                        _num(kline), _num(comp), k_bucket, c_bucket,
+                        _num(breakout), b_bucket, _num(swing), sw_bucket,
+                        _num(price), "close_after_signal", "open", SCORE_VERSION, now,
                     ),
                 )
 
@@ -267,10 +345,12 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                     """
                     INSERT OR IGNORE INTO watch_transitions (
                         watch_id, watch_date, ticker, name, watch_kline_score,
-                        watch_composite_score, watch_close, status, created_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?)
+                        watch_composite_score, watch_breakout_score, watch_swing_score,
+                        watch_close, status, created_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                     """,
-                    (watch_id, trade_date, ticker, s.get("name"), _num(kline), _num(comp), _num(price), "open", now),
+                    (watch_id, trade_date, ticker, s.get("name"), _num(kline), _num(comp),
+                     _num(breakout), _num(swing), _num(price), "open", now),
                 )
         except Exception as e:
             print(f"[WARN] 寫入 {ticker} 失敗，略過：{e}")
@@ -286,6 +366,7 @@ def update_watch_transitions(conn, trade_date):
     rows = conn.execute(
         """
         SELECT w.*, d.kline_score AS today_kline, d.composite_score AS today_comp,
+               d.breakout_score AS today_breakout, d.swing_score AS today_swing,
                d.close_price AS today_close
         FROM watch_transitions w
         JOIN daily_stock_snapshot d ON d.ticker = w.ticker
@@ -304,13 +385,17 @@ def update_watch_transitions(conn, trade_date):
                 INSERT OR IGNORE INTO signal_events (
                     event_id, trade_date, ticker, name, event_type, trigger_source,
                     kline_score, composite_score, kline_bucket, composite_bucket,
+                    breakout_score, breakout_bucket, swing_score, swing_bucket,
                     entry_reference_close, entry_price_mode, status, score_version, created_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     event_id, trade_date, r["ticker"], r["name"], event_type, "watch_confirm",
                     r["today_kline"], r["today_comp"], bucket_kline(r["today_kline"]),
-                    bucket_composite(r["today_comp"]), r["today_close"], "close_after_signal",
+                    bucket_composite(r["today_comp"]),
+                    r["today_breakout"], bucket_breakout(r["today_breakout"]),
+                    r["today_swing"], bucket_swing(r["today_swing"]),
+                    r["today_close"], "close_after_signal",
                     "open", SCORE_VERSION, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ),
             )
@@ -318,12 +403,14 @@ def update_watch_transitions(conn, trade_date):
                 """
                 UPDATE watch_transitions
                 SET confirm_date=?, confirm_kline_score=?, confirm_composite_score=?,
+                    confirm_breakout_score=?, confirm_swing_score=?,
                     confirm_close=?, days_to_confirm=?, confirmed=1, confirm_type=?,
                     entry_event_id=?, status='confirmed'
                 WHERE watch_id=?
                 """,
                 (
-                    trade_date, r["today_kline"], r["today_comp"], r["today_close"],
+                    trade_date, r["today_kline"], r["today_comp"],
+                    r["today_breakout"], r["today_swing"], r["today_close"],
                     age, confirm_type, event_id, r["watch_id"],
                 ),
             )
@@ -428,69 +515,79 @@ def _median(vals):
 
 
 def refresh_summary_stats(conn):
+    """
+    重建 summary_stats，產生：
+      - event_type            各訊號類型 × horizon
+      - single_<dim>          K線分/綜合分/突破分/波段分 各自的單一分數區間 × horizon
+                               （供「各分數區間 T+1~T+10 勝率走勢」四張圖使用）
+      - cross_<a>_<b>         四項分數兩兩交叉（共 6 組）× horizon
+                               （供「分數熱圖」四向交叉比對使用，含原本的 K線×綜合）
+    """
     conn.execute("DELETE FROM summary_stats")
     updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    dimensions = [
-        ("event_type", "e.event_type", "e.event_type"),
-        ("score_matrix", "e.kline_bucket || '|' || e.composite_bucket", "e.kline_bucket, e.composite_bucket"),
-    ]
-    for group_name, key_expr, select_expr in dimensions:
-        rows = conn.execute(
-            f"""
-            SELECT {select_expr} AS stat_group, o.horizon, o.return_close_pct,
-                   o.max_gain_pct, o.max_drawdown_pct, o.is_win,
-                   e.event_type, e.kline_bucket, e.composite_bucket
-            FROM event_outcomes o
-            JOIN signal_events e ON e.event_id = o.event_id
-            ORDER BY o.horizon
-            """
-        ).fetchall()
-        grouped = {}
-        for r in rows:
-            if group_name == "score_matrix":
-                key = ("score_matrix", r["kline_bucket"], r["composite_bucket"], r["horizon"])
-            else:
-                key = ("event_type", r["event_type"], None, r["horizon"])
-            grouped.setdefault(key, []).append(r)
 
-        for key, items in grouped.items():
-            vals = [float(x["return_close_pct"]) for x in items if x["return_close_pct"] is not None]
-            if not vals:
-                continue
-            wins = [v for v in vals if v > 0]
-            losses = [v for v in vals if v <= 0]
-            gross_win = sum(wins)
-            gross_loss = abs(sum(losses))
-            _, field1, field2, horizon = key
-            if group_name == "score_matrix":
-                k_bucket, c_bucket = field1, field2
-                event_type = None
-                stat_key = f"{group_name}:{k_bucket}:{c_bucket}:T{horizon}"
-            else:
-                event_type, k_bucket, c_bucket = field1, None, None
-                stat_key = f"{group_name}:{event_type}:T{horizon}"
-            conn.execute(
-                """
-                INSERT INTO summary_stats (
-                    stat_key, group_name, event_type, kline_bucket, composite_bucket,
-                    horizon, sample_count, win_rate, avg_return, median_return,
-                    avg_win, avg_loss, profit_factor, max_return, min_return,
-                    avg_max_gain, avg_max_drawdown, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    stat_key, group_name, event_type, k_bucket, c_bucket, horizon,
-                    len(vals), round(len(wins) / len(vals) * 100, 1),
-                    round(sum(vals) / len(vals), 2), _median(vals),
-                    round(sum(wins) / len(wins), 2) if wins else None,
-                    round(sum(losses) / len(losses), 2) if losses else None,
-                    round(gross_win / gross_loss, 2) if gross_loss else None,
-                    round(max(vals), 2), round(min(vals), 2),
-                    round(sum(float(x["max_gain_pct"]) for x in items if x["max_gain_pct"] is not None) / len(items), 2),
-                    round(sum(float(x["max_drawdown_pct"]) for x in items if x["max_drawdown_pct"] is not None) / len(items), 2),
-                    updated,
-                ),
-            )
+    rows = conn.execute(
+        """
+        SELECT o.horizon, o.return_close_pct, o.max_gain_pct, o.max_drawdown_pct,
+               e.event_type, e.kline_bucket, e.composite_bucket, e.breakout_bucket, e.swing_bucket
+        FROM event_outcomes o
+        JOIN signal_events e ON e.event_id = o.event_id
+        """
+    ).fetchall()
+
+    groups = {}
+
+    def add(key, r):
+        groups.setdefault(key, []).append(r)
+
+    for r in rows:
+        h = r["horizon"]
+        kb, cb, bb, sb = r["kline_bucket"], r["composite_bucket"], r["breakout_bucket"], r["swing_bucket"]
+        add(("event_type", r["event_type"], None, None, None, None, h), r)
+        add(("single_kline", None, kb, None, None, None, h), r)
+        add(("single_composite", None, None, cb, None, None, h), r)
+        add(("single_breakout", None, None, None, bb, None, h), r)
+        add(("single_swing", None, None, None, None, sb, h), r)
+        add(("cross_kline_composite", None, kb, cb, None, None, h), r)
+        add(("cross_kline_breakout", None, kb, None, bb, None, h), r)
+        add(("cross_kline_swing", None, kb, None, None, sb, h), r)
+        add(("cross_composite_breakout", None, None, cb, bb, None, h), r)
+        add(("cross_composite_swing", None, None, cb, None, sb, h), r)
+        add(("cross_breakout_swing", None, None, None, bb, sb, h), r)
+
+    for key, items in groups.items():
+        group_name, event_type, kb, cb, bb, sb, horizon = key
+        vals = [float(x["return_close_pct"]) for x in items if x["return_close_pct"] is not None]
+        if not vals:
+            continue
+        wins = [v for v in vals if v > 0]
+        losses = [v for v in vals if v <= 0]
+        gross_win = sum(wins)
+        gross_loss = abs(sum(losses))
+        stat_key = f"{group_name}:{event_type}:{kb}:{cb}:{bb}:{sb}:T{horizon}"
+        conn.execute(
+            """
+            INSERT INTO summary_stats (
+                stat_key, group_name, event_type, kline_bucket, composite_bucket,
+                breakout_bucket, swing_bucket,
+                horizon, sample_count, win_rate, avg_return, median_return,
+                avg_win, avg_loss, profit_factor, max_return, min_return,
+                avg_max_gain, avg_max_drawdown, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                stat_key, group_name, event_type, kb, cb, bb, sb, horizon,
+                len(vals), round(len(wins) / len(vals) * 100, 1),
+                round(sum(vals) / len(vals), 2), _median(vals),
+                round(sum(wins) / len(wins), 2) if wins else None,
+                round(sum(losses) / len(losses), 2) if losses else None,
+                round(gross_win / gross_loss, 2) if gross_loss else None,
+                round(max(vals), 2), round(min(vals), 2),
+                round(sum(float(x["max_gain_pct"]) for x in items if x["max_gain_pct"] is not None) / len(items), 2),
+                round(sum(float(x["max_drawdown_pct"]) for x in items if x["max_drawdown_pct"] is not None) / len(items), 2),
+                updated,
+            ),
+        )
 
 
 def export_stats_payload(db_path=DB_PATH):
@@ -511,7 +608,8 @@ def export_stats_payload(db_path=DB_PATH):
     recent = [dict(r) for r in conn.execute(
         """
         SELECT e.trade_date, e.ticker, e.name, e.event_type, e.kline_score,
-               e.composite_score, e.entry_reference_close, e.status,
+               e.composite_score, e.breakout_score, e.swing_score,
+               e.entry_reference_close, e.status,
                MAX(CASE WHEN o.horizon=1 THEN o.return_close_pct END) AS t1_return,
                MAX(CASE WHEN o.horizon=3 THEN o.return_close_pct END) AS t3_return,
                MAX(CASE WHEN o.horizon=5 THEN o.return_close_pct END) AS t5_return,
@@ -534,8 +632,19 @@ def export_stats_payload(db_path=DB_PATH):
         ("綜合分 >= 80", "e.composite_score >= 80"),
         ("綜合分 >= 85", "e.composite_score >= 85"),
         ("綜合分 >= 88", "e.composite_score >= 88"),
+        ("突破分 >= 30", "e.breakout_score >= 30"),
+        ("突破分 >= 50", "e.breakout_score >= 50"),
+        ("突破分 >= 70", "e.breakout_score >= 70"),
+        ("波段分 >= 30", "e.swing_score >= 30"),
+        ("波段分 >= 50", "e.swing_score >= 50"),
+        ("波段分 >= 70", "e.swing_score >= 70"),
         ("K線 >= 75 且綜合分 >= 80", "e.kline_score >= 75 AND e.composite_score >= 80"),
         ("K線 >= 78 且綜合分 >= 88", "e.kline_score >= 78 AND e.composite_score >= 88"),
+        ("K線 >= 70 且突破分 >= 50", "e.kline_score >= 70 AND e.breakout_score >= 50"),
+        ("綜合分 >= 75 且突破分 >= 50", "e.composite_score >= 75 AND e.breakout_score >= 50"),
+        ("K線 >= 70 且波段分 >= 50", "e.kline_score >= 70 AND e.swing_score >= 50"),
+        ("綜合分 >= 75 且波段分 >= 50", "e.composite_score >= 75 AND e.swing_score >= 50"),
+        ("突破分 >= 50 且波段分 >= 50", "e.breakout_score >= 50 AND e.swing_score >= 50"),
     ]
     for label, where_sql in threshold_defs:
         rows = conn.execute(
