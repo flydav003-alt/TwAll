@@ -707,6 +707,9 @@ function labelEvent(v){{
     COMP_HIGH_K_LOW:'綜高K低',
     K_STRONG_COMP_LOW:'K強綜低',
     K_HIGH_COMP_LOW:'K高綜低',
+    BREAKOUT_SWING_STRONG:'突破波段雙強',
+    BREAKOUT_STRONG:'突破強',
+    SWING_STRONG:'波段強',
     WATCH_CONFIRMED:'觀察確認'
   }};
   return m[v]||v||'-';
@@ -737,8 +740,8 @@ const _TICK={{color:'#94a3b8'}};
 const _BASE_SCALE={{x:{{grid:_GRID,ticks:_TICK}},y:{{grid:_GRID,ticks:_TICK}}}};
 const _NO_LEGEND={{legend:{{display:false}}}};
 
-const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',WATCH_CONFIRMED:'觀察確認'}};
-const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa'];
+const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',WATCH_CONFIRMED:'觀察確認'}};
+const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa','#fb923c','#2dd4bf'];
 
 function labelEvent(v){{return ETYPE_LBL[v]||v||'-';}}
 function pct(v){{if(v==null||Number.isNaN(Number(v)))return'-';const n=Number(v);return`${{n>0?'+':''}}${{n.toFixed(2)}}%`;}}
@@ -972,6 +975,8 @@ function buildTabRecent(){{
       <option value="BOTH_STRONG">雙強</option><option value="ENTRY">雙分進場</option>
       <option value="K_STRONG_COMP_LOW">K強綜低</option><option value="COMP_STRONG_K_LOW">綜強K低</option>
       <option value="COMP_HIGH_K_LOW">綜高K低</option>
+      <option value="BREAKOUT_SWING_STRONG">突破波段雙強</option><option value="BREAKOUT_STRONG">突破強</option>
+      <option value="SWING_STRONG">波段強</option>
     </select>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">K線≥</span><input type="range" id="statsK" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsKv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsKv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合≥</span><input type="range" id="statsC" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsCv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsCv">0</span></div>
