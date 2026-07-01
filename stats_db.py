@@ -239,9 +239,11 @@ CROSS_PAIRS = [
 ]
 
 
-def classify_signal(kline_score, composite_score):
+def classify_signal(kline_score, composite_score, breakout_score=None, swing_score=None):
     k = kline_score if kline_score is not None else -1
     c = composite_score if composite_score is not None else -1
+    b = breakout_score if breakout_score is not None else -1
+    sw = swing_score if swing_score is not None else -1
     if k >= 78 and c >= 88:
         return "BOTH_STRONG", "both"
     if k >= 70 and c >= 75:
@@ -254,6 +256,14 @@ def classify_signal(kline_score, composite_score):
         return "K_STRONG_COMP_LOW", "kline"
     if k >= 70 and c < 75:
         return "K_HIGH_COMP_LOW", "kline"
+    # ── 突破分 / 波段分 ≥75 的獨立觸發條件 ──
+    # 即使 K線分／綜合分未達標，只要突破分或波段分夠高，也保留在 signal_events。
+    if b >= 75 and sw >= 75:
+        return "BREAKOUT_SWING_STRONG", "both_alt"
+    if b >= 75:
+        return "BREAKOUT_STRONG", "breakout"
+    if sw >= 75:
+        return "SWING_STRONG", "swing"
     return "NEUTRAL", "none"
 
 
@@ -288,7 +298,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
         c_bucket = bucket_composite(comp)
         b_bucket = bucket_breakout(breakout)
         sw_bucket = bucket_swing(swing)
-        event_type, trigger_source = classify_signal(kline, comp)
+        event_type, trigger_source = classify_signal(kline, comp, breakout, swing)
         patterns = json.dumps(s.get("patterns", []), ensure_ascii=False, default=str)
 
         try:
