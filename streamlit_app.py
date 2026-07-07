@@ -740,8 +740,11 @@ const _TICK={{color:'#94a3b8'}};
 const _BASE_SCALE={{x:{{grid:_GRID,ticks:_TICK}},y:{{grid:_GRID,ticks:_TICK}}}};
 const _NO_LEGEND={{legend:{{display:false}}}};
 
-const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',WATCH_CONFIRMED:'觀察確認'}};
+const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分'}};
 const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa','#fb923c','#2dd4bf'];
+// 四策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，最後是有結構驗證的A、B
+const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING'];
+const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa'}};
 
 function labelEvent(v){{return ETYPE_LBL[v]||v||'-';}}
 function pct(v){{if(v==null||Number.isNaN(Number(v)))return'-';const n=Number(v);return`${{n>0?'+':''}}${{n.toFixed(2)}}%`;}}
@@ -888,6 +891,7 @@ function dimOptionsHtml(selected){{
 }}
 function buildTabMatrix(){{
   return`
+  ${{buildCrossOverview()}}
   <div class="sc-grid" style="padding-bottom:0">
     <div class="sc-box" style="flex:1 1 100%">
       <div class="sc-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -931,6 +935,71 @@ function buildTabMatrix(){{
     </div>
   </div>`;
 }}
+// ── 六大組合總覽：四分數兩兩都在最高分位時的表現，直接回答「哪個組合最有效」──
+const CROSS_TOP_BUCKET={{kline:'A_78UP',composite:'A_88UP',breakout:'A_70UP',swing:'A_70UP'}};
+const CROSS_PAIR_LIST=[['kline','composite'],['kline','breakout'],['kline','swing'],['composite','breakout'],['composite','swing'],['breakout','swing']];
+function buildCrossOverview(){{
+  const hs=[1,3,5,7,10];
+  const rows=CROSS_PAIR_LIST.map(([a,b])=>{{
+    const gname=crossGroupName(a,b);
+    const ka=CROSS_TOP_BUCKET[a], kb=CROSS_TOP_BUCKET[b];
+    const pts=hs.map(h=>{{
+      const x=(STATS.summary||[]).find(s=>s.group_name===gname&&s[DIM_DEFS[a].field]===ka&&s[DIM_DEFS[b].field]===kb&&s.horizon===h);
+      return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;
+    }}).filter(Boolean);
+    return{{a,b,label:`${{DIM_DEFS[a].label}}高 × ${{DIM_DEFS[b].label}}高`,pts}};
+  }});
+  const validRows=rows.filter(r=>r.pts.length);
+  if(!validRows.length)return'<div style="padding:14px;color:#94a3b8">尚無足夠交叉樣本，等資料庫多累積一些高分股票再回來看。</div>';
+  const sorted=[...validRows].sort((r1,r2)=>{{
+    const b1=r1.pts.find(p=>p.h===5),b2=r2.pts.find(p=>p.h===5);
+    return (b2?b2.wr:0)-(b1?b1.wr:0);
+  }});
+  const tableRows=sorted.map(r=>{{
+    const best=r.pts.reduce((a,c)=>c.wr>a.wr?c:a);
+    const t5=r.pts.find(p=>p.h===5);
+    const nWarn=t5&&t5.n<10?' <span style="color:#f87171">(樣本偏小僅供參考)</span>':'';
+    const wrCells=hs.map(h=>{{
+      const p=r.pts.find(x=>x.h===h);
+      if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
+      const hi=p.h===best.h;
+      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#94a3b8'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
+    }});
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{r.label}}</td><td style="text-align:center;color:#94a3b8">${{t5?t5.n:0}}${{nWarn}}</td>${{wrCells.join('')}}</tr>`;
+  }});
+  return`
+  <div class="sc-grid sc-wide" style="padding-bottom:0">
+    <div class="sc-box">
+      <div class="sc-title">六大組合總覽 — 兩兩都在最高分位時的 T+1~T+10 勝率（依T+5排名）</div>
+      <div style="position:relative;height:200px"><canvas id="chartCrossOverview"></canvas></div>
+    </div>
+  </div>
+  <div style="padding:8px 14px 0;font-size:11px;color:#94a3b8">例如「K線高×突破高」代表 K線分≥78 且 突破分≥70 同時成立那批股票的實際表現。突破×波段這組樣本通常很小是正常的——因為這兩個分數本來就代表不同階段的股票，很少同時都在最高分位，這正好驗證了兩者是互補而非重複的訊號。</div>
+  <div class="stats-scroll" style="padding:6px 0 14px">
+    <table class="stats-table"><thead><tr><th>組合（兩兩皆最高分位）</th><th style="text-align:center">樣本</th>
+      ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}</tr></thead>
+    <tbody>${{tableRows.join('')}}</tbody></table>
+  </div>`;
+}}
+function afterCrossOverview(){{
+  const hs=[1,3,5,7,10];
+  const rows=CROSS_PAIR_LIST.map(([a,b])=>{{
+    const gname=crossGroupName(a,b);
+    const ka=CROSS_TOP_BUCKET[a], kb=CROSS_TOP_BUCKET[b];
+    const data=hs.map(h=>{{
+      const x=(STATS.summary||[]).find(s=>s.group_name===gname&&s[DIM_DEFS[a].field]===ka&&s[DIM_DEFS[b].field]===kb&&s.horizon===h);
+      return x?Number(x.win_rate):null;
+    }});
+    return{{label:`${{DIM_DEFS[a].label}}高×${{DIM_DEFS[b].label}}高`,data}};
+  }});
+  const colors=['#f87171','#fbbf24','#4ade80','#60a5fa','#c084fc','#fb923c'];
+  const hLabels=hs.map(h=>`T+${{h}}`);
+  const datasets=rows.map((r,i)=>({{label:r.label,data:r.data,borderColor:colors[i%colors.length],backgroundColor:'transparent',tension:.3,pointRadius:3,pointBackgroundColor:colors[i%colors.length]}}));
+  _mkChart('chartCrossOverview',{{type:'line',data:{{labels:hLabels,datasets}},
+    options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{labels:{{color:'#94a3b8',boxWidth:10,font:{{size:9}}}},position:'bottom'}}}},
+    scales:{{x:{{..._BASE_SCALE.x}},y:{{..._BASE_SCALE.y,min:0,max:100,ticks:{{color:'#94a3b8',callback:v=>v+'%'}}}}}}}}}});
+}}
+
 function drawSingleDimTrend(canvasId, dimKey){{
   const D=DIM_DEFS[dimKey];
   const colors=['#f87171','#fbbf24','#4ade80','#475569'];
@@ -946,6 +1015,7 @@ function drawSingleDimTrend(canvasId, dimKey){{
     scales:{{x:{{..._BASE_SCALE.x}},y:{{..._BASE_SCALE.y,ticks:{{color:'#94a3b8',callback:v=>v+'%'}},title:{{display:true,text:'勝率 %',color:'#94a3b8',font:{{size:10}}}}}}}}}}}});
 }}
 function afterMatrix(){{
+  afterCrossOverview();
   renderMatHeatmaps();
   drawSingleDimTrend('chartMatLineKline','kline');
   drawSingleDimTrend('chartMatLineComposite','composite');
@@ -977,6 +1047,8 @@ function buildTabRecent(){{
       <option value="COMP_HIGH_K_LOW">綜高K低</option>
       <option value="BREAKOUT_SWING_STRONG">突破波段雙強</option><option value="BREAKOUT_STRONG">突破強</option>
       <option value="SWING_STRONG">波段強</option>
+      <option value="STRAT_A_BREAKOUT">策略A突破族</option><option value="STRAT_B_SWING">策略B波段族</option>
+      <option value="STRAT_C_KLINE">策略C純K線</option><option value="STRAT_D_COMPOSITE">策略D純綜合分</option>
     </select>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">K線≥</span><input type="range" id="statsK" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsKv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsKv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合≥</span><input type="range" id="statsC" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsCv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsCv">0</span></div>
@@ -1154,6 +1226,67 @@ function afterPeak(){{
     scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#94a3b8'}}}},y:{{..._BASE_SCALE.y,min:0,max:100,ticks:{{color:'#94a3b8',callback:v=>v+'%'}}}}}}}}}});
 }}
 
+// ── Tab: 策略組合回測（A突破族／B波段族／C純K線／D純綜合分基準線）──────
+function buildTabStrategy(){{
+  const sum=STATS.summary||[];
+  const hs=[1,3,5,7,10];
+  const present=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='event_type'&&s.event_type===et));
+  if(!present.length){{
+    return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含四策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
+  }}
+  const rows=present.map(et=>{{
+    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+    if(!pts.length)return'';
+    const best=pts.reduce((a,b)=>b.wr>a.wr?b:a);
+    const bestAr=pts.reduce((a,b)=>b.ar>a.ar?b:a);
+    const wrCells=hs.map(h=>{{
+      const p=pts.find(x=>x.h===h);
+      if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
+      const hi=p.h===best.h;
+      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#94a3b8'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
+    }});
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
+  }}).filter(Boolean);
+
+  return`
+  <div style="padding:14px 14px 6px;font-size:12px;color:#94a3b8;line-height:1.9">
+    <div><b style="color:#4ade80">策略A 突破族</b>：RS≥85 + 突破分≥60 + VCP狀態為高品質整理/接近突破/已突破 + 當日出現💥突破放量</div>
+    <div><b style="color:#a78bfa">策略B 波段族</b>：RS≥85 + 波段分≥60 + 當日出現✅洗盤結束</div>
+    <div><b style="color:#f87171">策略C 純K線分</b>：K線分≥78，不看RS門檻——當「單一雜訊分數」的對照組</div>
+    <div><b style="color:#94a3b8">策略D 純綜合分</b>：綜合分≥75，不看RS門檻——當你原本選股習慣的基準線</div>
+    <div style="margin-top:4px;color:#64748b">四組樣本互不互斥、各自獨立計算，A、B要打贏的對象是D，不是C。</div>
+  </div>
+  <div class="sc-grid sc-wide" style="padding-bottom:0">
+    <div class="sc-box">
+      <div class="sc-title">四策略 T+1~T+10 勝率對比</div>
+      <div style="position:relative;height:200px"><canvas id="chartStrategy"></canvas></div>
+    </div>
+  </div>
+  <div style="padding:8px 14px 4px;font-size:11px;color:#94a3b8">🏆 = 該策略歷史上勝率最高的持有天數</div>
+  <div class="stats-scroll" style="padding:0 0 14px">
+    <table class="stats-table"><thead><tr><th>策略</th><th style="text-align:center">樣本</th>
+      ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}
+      <th>黃金出場</th><th style="text-align:center">最佳報酬</th></tr></thead>
+    <tbody>${{rows.join('')}}</tbody></table>
+  </div>`;
+}}
+function afterStrategy(){{
+  const sum=STATS.summary||[];
+  const hs=[1,3,5,7,10];
+  const present=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='event_type'&&s.event_type===et));
+  if(!present.length)return;
+  const hLabels=hs.map(h=>`T+${{h}}`);
+  const datasets=present.map(et=>{{
+    const data=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?Number(x.win_rate):null;}});
+    return{{label:labelEvent(et),data,backgroundColor:(STRAT_COLORS[et]||'#3b82f6')+'bb',borderRadius:3,borderSkipped:false}};
+  }});
+  _mkChart('chartStrategy',{{type:'bar',data:{{labels:hLabels,datasets}},
+    options:{{responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{labels:{{color:'#94a3b8',boxWidth:10,font:{{size:10}}}},position:'bottom'}},
+      tooltip:{{callbacks:{{label:ctx=>`${{ctx.dataset.label}}: ${{ctx.parsed.y?.toFixed(1)}}%`}}}}}},
+    scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#94a3b8'}}}},y:{{..._BASE_SCALE.y,min:0,max:100,ticks:{{color:'#94a3b8',callback:v=>v+'%'}}}}}}}}}});
+}}
+
 // ── Tab: 常勝標的 ──────────────────────────────────────────────
 function buildTabHot(){{
   const recent=STATS.recent||[];if(!recent.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
@@ -1216,12 +1349,14 @@ function renderStats(){{
       <button class="sit" onclick="switchStatsTab('smat',this)">🔥 分數熱圖</button>
       <button class="sit" onclick="switchStatsTab('speak',this)">🏆 黃金出場</button>
       <button class="sit" onclick="switchStatsTab('shot',this)">⚡ 常勝標的</button>
+      <button class="sit" onclick="switchStatsTab('sstrat',this)">🧪 策略組合回測</button>
     </div>
     <div class="sp sa" id="srec">${{buildTabRecent()}}</div>
     <div class="sp" id="sth">${{buildTabThreshold()}}</div>
     <div class="sp" id="smat">${{buildTabMatrix()}}</div>
     <div class="sp" id="speak">${{buildTabPeak()}}</div>
-    <div class="sp" id="shot">${{buildTabHot()}}</div>`;
+    <div class="sp" id="shot">${{buildTabHot()}}</div>
+    <div class="sp" id="sstrat">${{buildTabStrategy()}}</div>`;
 
   // Init visible tab charts
   setTimeout(()=>{{afterRecent();schedResize();}},50);
@@ -1235,6 +1370,7 @@ function switchStatsTab(id,btn){{
     if(id==='smat')afterMatrix();
     if(id==='srec'){{afterRecent();}}
     if(id==='speak')afterPeak();
+    if(id==='sstrat')afterStrategy();
     schedResize();
   }},30);
 }}
