@@ -161,6 +161,7 @@ def init_db(conn):
     _ensure_columns(conn, "daily_stock_snapshot", [
         ("breakout_score", "REAL"), ("breakout_bucket", "TEXT"),
         ("swing_score", "REAL"), ("swing_bucket", "TEXT"),
+        ("rs_score", "REAL"), ("vcp_status", "TEXT"),
     ])
     _ensure_columns(conn, "signal_events", [
         ("breakout_score", "REAL"), ("breakout_bucket", "TEXT"),
@@ -267,6 +268,35 @@ def classify_signal(kline_score, composite_score, breakout_score=None, swing_sco
     return "NEUTRAL", "none"
 
 
+# ── 四策略組合回測用的獨立標籤（不影響上面 classify_signal 的既有分類）──
+# 這四個策略彼此不互斥，同一檔股票同一天可以同時符合多個，各自獨立記錄一筆
+# signal_events，才能公平比較每個策略各自的 T+1~T+10 勝率，不會互相稀釋樣本。
+#   A：突破族 — 已通過 RS≥85 門檻的 VCP 高品質整理／接近突破股，當日出現突破放量才進場
+#   B：波段族 — 已通過 RS≥85 門檻、拉回夠深後止跌轉強的股票，當日出現洗盤結束才進場
+#   C：純K線分對照組 — 完全不看RS/結構，單純K線分排序，驗證「單一雜訊分數」有沒有用
+#   D：純綜合分基準線 — 你原本習慣的做法，用來當A、B有沒有真的比較好的比較基準
+STRAT_VCP_OK_STATUS = ("高品質整理", "接近突破", "已突破")
+
+
+def classify_strategy_events(kline_score, composite_score, breakout_score, swing_score,
+                              rs_score, vcp_status, entry_signal):
+    events = []
+    if (rs_score is not None and rs_score >= 85
+            and breakout_score is not None and breakout_score >= 60
+            and vcp_status in STRAT_VCP_OK_STATUS
+            and entry_signal == "💥突破放量"):
+        events.append("STRAT_A_BREAKOUT")
+    if (rs_score is not None and rs_score >= 85
+            and swing_score is not None and swing_score >= 60
+            and entry_signal == "✅洗盤結束"):
+        events.append("STRAT_B_SWING")
+    if kline_score is not None and kline_score >= 78:
+        events.append("STRAT_C_KLINE")
+    if composite_score is not None and composite_score >= 75:
+        events.append("STRAT_D_COMPOSITE")
+    return events
+
+
 def _num(v):
     return None if v is None else float(v)
 
@@ -298,6 +328,8 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
         c_bucket = bucket_composite(comp)
         b_bucket = bucket_breakout(breakout)
         sw_bucket = bucket_swing(swing)
+        rs = s.get("rs_score")            # 橫向排名 RS 分數（突破分/波段分的資格門檻）
+        vcp_status = s.get("vcp_status")  # VCP 狀態文字（高品質整理／接近突破…）
         event_type, trigger_source = classify_signal(kline, comp, breakout, swing)
         patterns = json.dumps(s.get("patterns", []), ensure_ascii=False, default=str)
 
@@ -311,8 +343,9 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                     swing_score, swing_bucket, rsi14, rs5d, ma5,
                     ma20, ma60, price_vs_ma20_pct, price_vs_ma60_pct, ma20_rising,
                     week52_pct, inst_buy_days, entry_signal, signal_rank, patterns,
-                    signal_group, score_version, generated_at, raw_json
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    signal_group, score_version, generated_at, raw_json,
+                    rs_score, vcp_status
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     trade_date, ticker, s.get("name"), s.get("market"), _num(price),
@@ -327,6 +360,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                     s.get("entry_signal", ""), int(s.get("signal_rank") or 0), patterns,
                     event_type, SCORE_VERSION, generated_at,
                     json.dumps(s, ensure_ascii=False, default=str),
+                    _num(rs), vcp_status,
                 ),
             )
 
@@ -343,6 +377,29 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                     """,
                     (
                         event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
+                        _num(kline), _num(comp), k_bucket, c_bucket,
+                        _num(breakout), b_bucket, _num(swing), sw_bucket,
+                        _num(price), "close_after_signal", "open", SCORE_VERSION, now,
+                    ),
+                )
+
+            # ── 四策略組合回測標籤（獨立於上面的 event_type，彼此不互斥）──
+            strat_events = classify_strategy_events(
+                kline, comp, breakout, swing, rs, vcp_status, s.get("entry_signal", "")
+            )
+            for strat_event_type in strat_events:
+                strat_event_id = f"{trade_date}:{ticker}:{strat_event_type}"
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO signal_events (
+                        event_id, trade_date, ticker, name, event_type, trigger_source,
+                        kline_score, composite_score, kline_bucket, composite_bucket,
+                        breakout_score, breakout_bucket, swing_score, swing_bucket,
+                        entry_reference_close, entry_price_mode, status, score_version, created_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        strat_event_id, trade_date, ticker, s.get("name"), strat_event_type, "strategy_combo",
                         _num(kline), _num(comp), k_bucket, c_bucket,
                         _num(breakout), b_bucket, _num(swing), sw_bucket,
                         _num(price), "close_after_signal", "open", SCORE_VERSION, now,
