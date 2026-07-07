@@ -390,12 +390,16 @@ def main():
         json.dump(market_info or {}, f, ensure_ascii=False)
     print(f"[INFO] 已儲存 → {market_path}")
 
-    # 只將 K線≥75、綜合分≥80、突破分≥75 或 波段分≥75 的股票存入統計資料庫
+    # 只將 K線≥75、綜合分≥75、突破分≥60、波段分≥60 的股票存入統計資料庫
     # 低分股票不具備進場條件，不應計入績效統計，也節省資料庫空間
+    # ── 門檻對齊 stats_db.py 的四策略組合回測 ──
+    #   策略A 要抓 突破分≥60，策略B 要抓 波段分≥60，策略D 要抓 綜合分≥75，
+    #   如果這裡的門檻比策略門檻還嚴格，會讓對應分數區間的股票根本進不了
+    #   資料庫，統計出來的樣本永遠是空的或被悄悄墊高標準。
     DB_KLINE_MIN    = 75
-    DB_COMP_MIN     = 80
-    DB_BREAKOUT_MIN = 75
-    DB_SWING_MIN    = 75
+    DB_COMP_MIN     = 75
+    DB_BREAKOUT_MIN = 60
+    DB_SWING_MIN    = 60
     qualified = [
         s for s in results
         if (s.get("kline_score") or 0) >= DB_KLINE_MIN
