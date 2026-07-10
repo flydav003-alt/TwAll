@@ -532,6 +532,193 @@ def calc_vcp_status(r):
 
 
 # ──────────────────────────────────────────────────────────────
+# 布林通道分（BB分）— 擠壓／下軌反轉／上軌突破 三選一 + 防呆Gate
+# ──────────────────────────────────────────────────────────────
+# 設計精神：跟VCP（zigzag型態法）互補，BB分是純統計法（標準差），
+# 抓的是「進場時機」而非「選股」，主用途是跟其他四維度搭配做組合回測。
+BB_PERIOD = 20
+BB_WIDTH_LOOKBACK = 120     # 算寬度百分位的回顧天數
+BB_LOWER_TOUCH_PB = 0.2     # %B <= 此值視為觸及下軌
+BB_UPPER_BREAK_PB = 0.85    # %B >= 此值視為接近/站上上軌
+BB_BAND_WALK_WINDOW = 10    # 判斷「沿下軌走空頭」的觀察天數
+BB_BAND_WALK_MIN_TOUCHES = 4  # 這段天數內碰下軌達此次數 → 視為band walk空頭，非反轉
+
+
+def calc_bb_data(closes, period=BB_PERIOD, width_lookback=BB_WIDTH_LOOKBACK,
+                  band_walk_window=BB_BAND_WALK_WINDOW):
+    """
+    回傳最新一天的布林通道原始數據，供 calc_bb_score 使用。
+    - bb_width_pct：目前通道寬度在近 width_lookback 天中的百分位（越低＝越擠壓）
+    - bb_percent_b：價格在通道中的相對位置，0=下軌，1=上軌
+    - bb_mid_rising：中軌（=MA20）近5日是否上揚
+    - bb_lower_touch_days_10：近 band_walk_window 天內 %B<=BB_LOWER_TOUCH_PB 的次數
+      （用來判斷是否為「沿下軌走的空頭趨勢」而非健康拉回反轉）
+    """
+    if closes is None or len(closes) < period + 5:
+        return None
+
+    ma = closes.rolling(period).mean()
+    std = closes.rolling(period).std(ddof=0)
+    upper = ma + 2 * std
+    lower = ma - 2 * std
+    width = (upper - lower) / ma  # 標準化寬度，可跨股票比較
+
+    last_close = float(closes.iloc[-1])
+    last_upper = float(upper.iloc[-1])
+    last_lower = float(lower.iloc[-1])
+    last_mid   = float(ma.iloc[-1])
+
+    if np.isnan(last_upper) or np.isnan(last_lower) or np.isnan(last_mid):
+        return None
+
+    hist_width = width.iloc[-min(width_lookback, len(width)):].dropna()
+    last_width = float(width.iloc[-1]) if not np.isnan(width.iloc[-1]) else None
+    width_pct = None
+    if last_width is not None and len(hist_width) >= 20:
+        width_pct = round(float((hist_width < last_width).sum() / len(hist_width) * 100), 1)
+
+    band_range = last_upper - last_lower
+    percent_b = round((last_close - last_lower) / band_range, 3) if band_range > 0 else None
+
+    mid_rising = None
+    ma_valid = ma.dropna()
+    if len(ma_valid) >= 6:
+        mid_rising = bool(ma_valid.iloc[-1] > ma_valid.iloc[-6])
+
+    pb_series = (closes - lower) / (upper - lower).replace(0, np.nan)
+    recent_pb = pb_series.iloc[-min(band_walk_window, len(pb_series)):].dropna()
+    lower_touch_days = int((recent_pb <= BB_LOWER_TOUCH_PB).sum()) if len(recent_pb) else 0
+
+    return {
+        "bb_upper": round(last_upper, 2),
+        "bb_lower": round(last_lower, 2),
+        "bb_mid": round(last_mid, 2),
+        "bb_width_pct": width_pct,
+        "bb_percent_b": percent_b,
+        "bb_mid_rising": mid_rising,
+        "bb_lower_touch_days_10": lower_touch_days,
+    }
+
+
+def detect_bb_setup(r):
+    """三選一 setup 判定，判斷不出來（中性區）回傳 'neutral'。"""
+    pb = r.get("bb_percent_b")
+    wp = r.get("bb_width_pct")
+    if pb is None:
+        return None
+    if pb <= BB_LOWER_TOUCH_PB:
+        return "lower_reversal"
+    if pb >= BB_UPPER_BREAK_PB:
+        return "upper_breakout"
+    if 0.3 <= pb <= 0.65 and wp is not None and wp <= 35:
+        return "squeeze_consolidation"
+    return "neutral"
+
+
+def bb_gate_multiplier(r, setup):
+    """
+    防呆 Gate：趨勢死亡 / band walk(沿下軌走空頭) 的下軌反轉直接砍分，
+    不讓「還在跌」被誤判成「要反彈」。
+    """
+    if setup != "lower_reversal":
+        return 1.0
+
+    price, ma120 = r.get("price"), r.get("ma120")
+    trend_alive = ma120 is None or price is None or price >= ma120 * 0.93
+
+    band_walk_days = r.get("bb_lower_touch_days_10", 0) or 0
+    is_band_walk = band_walk_days >= BB_BAND_WALK_MIN_TOUCHES
+
+    if is_band_walk:
+        return 0.15
+    if not trend_alive:
+        return 0.5
+    return 1.0
+
+
+def _score_lower_reversal(r):
+    """大波段下軌反轉：基礎分很低，靠底背離/超賣鈍化/量縮竭盡疊加，恐慌量扣分。上限45。"""
+    b = {}
+    rsi = r.get("rsi14")
+    bull_div = r.get("rsi_div") == "bull"
+    vr = r.get("volume_ratio")
+
+    base = 8  # 只是碰到，先給很少
+    if bull_div:
+        base += 20
+    elif rsi is not None and rsi < 28:
+        base += 10
+
+    if vr is not None:
+        if vr > 2.2:
+            base -= 12          # 恐慌爆量下殺
+        elif vr < 0.8:
+            base += 8           # 量縮竭盡，健康拉回
+
+    b["lower_reversal_raw"] = max(0, min(base, 45))
+    return b
+
+
+def _score_squeeze(r):
+    """擠壓蓄勢：純快篩，方向未定，需搭配K線分/RS分過濾多空。上限55。"""
+    b = {}
+    wp = r.get("bb_width_pct")
+    vr = r.get("volume_ratio")
+
+    squeeze = 0
+    if wp is not None:
+        if wp <= 10:      squeeze = 30
+        elif wp <= 25:    squeeze = 20
+        elif wp <= 40:    squeeze = 10
+        elif wp <= 60:    squeeze = 3
+    b["squeeze"] = squeeze
+
+    b["mid_trend"] = 10 if r.get("bb_mid_rising") is True else 0
+    b["extreme_shrink"] = 10 if (vr is not None and vr < 0.7) else 0
+    return b
+
+
+def _score_upper_breakout(r):
+    """上軌突破確認：刻意壓低「沒先擠壓」的追高型突破。上限45。"""
+    b = {}
+    vr = r.get("volume_ratio")
+    wp = r.get("bb_width_pct")
+
+    b["upper_touch"] = 10
+    b["volume_confirm"] = 20 if (vr is not None and vr >= 1.5) else (10 if vr is not None and vr >= 1.0 else 0)
+    b["chase_penalty"] = -15 if (wp is not None and wp > 70) else 0
+    return b
+
+
+def calc_bb_score(r):
+    """
+    布林通道分（0~100）。三種高勝率型態互斥判定 + 防呆Gate（非線性，直接乘）。
+    回傳 (score, setup)；setup 為 None 時代表資料不足，score 也是 None。
+    """
+    setup = detect_bb_setup(r)
+    if setup is None:
+        r["bb_score_breakdown"] = {}
+        return None, None
+
+    if setup == "lower_reversal":
+        b = _score_lower_reversal(r)
+    elif setup == "squeeze_consolidation":
+        b = _score_squeeze(r)
+    elif setup == "upper_breakout":
+        b = _score_upper_breakout(r)
+    else:
+        b = {"neutral": 0}
+
+    raw = sum(b.values())
+    mult = bb_gate_multiplier(r, setup)
+    final = round(max(0, min(raw * mult, 100)), 1)
+
+    b["gate_multiplier"] = mult
+    r["bb_score_breakdown"] = b
+    return final, setup
+
+
+# ──────────────────────────────────────────────────────────────
 # 多週期漲幅 & 橫向排名 RS 分數
 # ──────────────────────────────────────────────────────────────
 RS_PERIODS = [("ret21d", 21, 0.4), ("ret63d", 63, 0.3), ("ret126d", 126, 0.2), ("ret252d", 252, 0.1)]
