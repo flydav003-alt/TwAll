@@ -27,6 +27,7 @@ from tw_screener_core import (
     calc_ma120, calc_max_drawdown_pct, calc_vcp_contraction_strict,
     calc_consolidation_vol_ratio, calc_breakout_60d, calc_vcp_score_strict,
     calc_vcp_status, calc_swing_score,
+    calc_bb_data, calc_bb_score,
 )
 from stats_db import save_daily_run
 
@@ -154,6 +155,9 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         vcp_score_breakdown=None, cons_vol_ratio=None,
         vcp_breakout=False, vcp_score=None, vcp_status=None,
         swing_score=None, swing_score_breakdown=None,  # 波段分：目前尚無計分函式，預留欄位供未來擴充
+        bb_score=None, bb_setup=None, bb_score_breakdown=None,
+        bb_upper=None, bb_lower=None, bb_mid=None, bb_width_pct=None,
+        bb_percent_b=None, bb_mid_rising=None, bb_lower_touch_days_10=None,
         composite=0,
         patterns=[],
     )
@@ -276,6 +280,12 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
                 rsi_vals.append(100 - 100 / (1 + (g_sum/cnt) / (l_sum/cnt)))
         base["rsi_div"] = _detect_rsi_divergence(ohlcv, rsi_vals)
 
+    # 布林通道分（BB分）：需在 rsi_div / volume_ratio / ma120 / price 都備妥後才計算
+    bb_data = calc_bb_data(closes)
+    if bb_data:
+        base.update(bb_data)
+        base["bb_score"], base["bb_setup"] = calc_bb_score(base)
+
     # Initial score before FinMind. GitHub Actions recalculates after inst_buy_days is filled.
     base["composite"] = calc_composite_tw(base)
     base["patterns"]  = detect_patterns_tw(base)
@@ -390,25 +400,27 @@ def main():
         json.dump(market_info or {}, f, ensure_ascii=False)
     print(f"[INFO] 已儲存 → {market_path}")
 
-    # 只將 K線≥75、綜合分≥75、突破分≥60、波段分≥60 的股票存入統計資料庫
+    # 只將 K線≥75、綜合分≥75、突破分≥60、波段分≥60、BB分≥60 的股票存入統計資料庫
     # 低分股票不具備進場條件，不應計入績效統計，也節省資料庫空間
-    # ── 門檻對齊 stats_db.py 的四策略組合回測 ──
+    # ── 門檻對齊 stats_db.py 的策略組合回測 ──
     #   策略A 要抓 突破分≥60，策略B 要抓 波段分≥60，策略D 要抓 綜合分≥75，
-    #   如果這裡的門檻比策略門檻還嚴格，會讓對應分數區間的股票根本進不了
-    #   資料庫，統計出來的樣本永遠是空的或被悄悄墊高標準。
+    #   策略E 要抓 BB分≥60，如果這裡的門檻比策略門檻還嚴格，會讓對應分數區間的
+    #   股票根本進不了資料庫，統計出來的樣本永遠是空的或被悄悄墊高標準。
     DB_KLINE_MIN    = 75
     DB_COMP_MIN     = 75
     DB_BREAKOUT_MIN = 60
     DB_SWING_MIN    = 60
+    DB_BB_MIN       = 60
     qualified = [
         s for s in results
         if (s.get("kline_score") or 0) >= DB_KLINE_MIN
         or (s.get("composite") or 0) >= DB_COMP_MIN
         or (s.get("vcp_score") or 0) >= DB_BREAKOUT_MIN
         or (s.get("swing_score") or 0) >= DB_SWING_MIN
+        or (s.get("bb_score") or 0) >= DB_BB_MIN
     ]
     print(f"[INFO] 符合資料庫下線（K線≥{DB_KLINE_MIN} 或 綜合分≥{DB_COMP_MIN} "
-          f"或 突破分≥{DB_BREAKOUT_MIN} 或 波段分≥{DB_SWING_MIN}）：{len(qualified)} 檔")
+          f"或 突破分≥{DB_BREAKOUT_MIN} 或 波段分≥{DB_SWING_MIN} 或 BB分≥{DB_BB_MIN}）：{len(qualified)} 檔")
     save_daily_run(qualified, generated_at=ts)
     print(f"[INFO] 已更新統計資料庫 → {os.path.join(DATA_DIR, 'stats.db')}")
 
