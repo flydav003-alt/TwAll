@@ -129,6 +129,13 @@ def main():
             "comp":     s.get("composite"),
             "vcp":      s.get("vcp_score"),
             "swing":    s.get("swing_score"),
+            "bb":       s.get("bb_score"),
+            "bb_setup": s.get("bb_setup"),
+            "bb_score_breakdown": s.get("bb_score_breakdown"),
+            "bb_percent_b": s.get("bb_percent_b"),
+            "bb_width_pct": s.get("bb_width_pct"),
+            "bb_mid_rising": s.get("bb_mid_rising"),
+            "bb_lower_touch_days_10": s.get("bb_lower_touch_days_10"),
             "vcp_contracting": s.get("vcp_contracting"),
             "vcp_higher_high": s.get("vcp_higher_high"),
             "vcp_vol_shrink_quality": s.get("vcp_vol_shrink_quality"),
@@ -507,6 +514,12 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
       oninput="updSlider(this,'kvS');applyFilter()">
     <span class="sl-val" id="kvS">0</span>
   </div>
+  <div class="sl-grp">
+    <span class="sl-lbl">BB分 ≥</span>
+    <input type="range" id="slB" min="0" max="100" step="1" value="0"
+      oninput="updSlider(this,'kvB');applyFilter()">
+    <span class="sl-val" id="kvB">0</span>
+  </div>
 </div>
 
 <div class="stat" id="statLine">載入中…</div>
@@ -522,6 +535,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <th class="sortable" data-k="comp">綜合分<span class="arr"></span></th>
   <th class="sortable" data-k="vcp">突破分<span class="arr"></span></th>
   <th class="sortable" data-k="swing">波段分<span class="arr"></span></th>
+  <th class="sortable" data-k="bb">BB分<span class="arr"></span></th>
   <th class="sortable" data-k="vol">爆量<span class="arr"></span></th>
   <th class="sortable" data-k="rsi">RSI<span class="arr"></span></th>
   <th class="sortable" data-k="rs5d">RS(5日)<span class="arr"></span></th>
@@ -556,6 +570,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
         <tr><td>A 法人爆量</td><td>法人連買≥3天 且 爆量≥1.5倍</td></tr>
         <tr><td>B 回踩MA60</td><td>股價在MA60附近、RSI 32~55、MA20上升中</td></tr>
         <tr><td>C 底背離</td><td>RSI 底背離（技術反轉訊號）</td></tr>
+        <tr><td>BB分</td><td>布林通道分，三選一型態：下軌反轉／擠壓蓄勢／上軌突破，滑鼠移到分數上可看型態與細項</td></tr>
       </tbody>
     </table>
     <p class="note">⚠️ 本工具僅供技術面參考，不構成投資建議。</p>
@@ -621,6 +636,21 @@ function swingCell(r){{
     `Risk control: ${{b.risk_control??0}}/5`
   ];
   return `<span title="${{escAttr(parts.join('\\n'))}}">${{bar(r.swing,vcpCol)}}</span>`;
+}}
+const BB_SETUP_LBL={{lower_reversal:'下軌反轉',squeeze_consolidation:'擠壓蓄勢',upper_breakout:'上軌突破',neutral:'中性區'}};
+function bbCell(r){{
+  const b=r.bb_score_breakdown||{{}};
+  const setupLbl=BB_SETUP_LBL[r.bb_setup]||r.bb_setup||'-';
+  const parts=[
+    `型態: ${{setupLbl}}`,
+    `%B: ${{r.bb_percent_b??'-'}}`,
+    `寬度百分位: ${{r.bb_width_pct??'-'}}`,
+    `中軌上揚: ${{r.bb_mid_rising}}`,
+    `近10日觸下軌次數: ${{r.bb_lower_touch_days_10??'-'}}`,
+    `防呆倍率: ${{b.gate_multiplier??1}}`,
+    ...Object.entries(b).filter(([k])=>k!=='gate_multiplier').map(([k,v])=>`${{k}}: ${{v}}`)
+  ];
+  return `<span title="${{escAttr(parts.join('\\n'))}}">${{bar(r.bb,vcpCol)}}</span>`;
 }}
 function vcpStatusCell(r){{
   const s=r.vcp_status||'-';
@@ -740,11 +770,11 @@ const _TICK={{color:'#94a3b8'}};
 const _BASE_SCALE={{x:{{grid:_GRID,ticks:_TICK}},y:{{grid:_GRID,ticks:_TICK}}}};
 const _NO_LEGEND={{legend:{{display:false}}}};
 
-const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分'}};
+const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分'}};
 const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa','#fb923c','#2dd4bf'];
 // 四策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，最後是有結構驗證的A、B
-const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING'];
-const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa'}};
+const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB'];
+const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf'}};
 
 function labelEvent(v){{return ETYPE_LBL[v]||v||'-';}}
 function pct(v){{if(v==null||Number.isNaN(Number(v)))return'-';const n=Number(v);return`${{n>0?'+':''}}${{n.toFixed(2)}}%`;}}
@@ -844,9 +874,10 @@ const DIM_DEFS={{
   composite:{{label:'綜合分',field:'composite_bucket',buckets:[{{k:'A_88UP',lbl:'綜≥88'}},{{k:'B_75_87',lbl:'綜75~87'}},{{k:'C_60_74',lbl:'綜60~74'}},{{k:'D_LT60',lbl:'綜<60'}}]}},
   breakout:{{label:'突破分',field:'breakout_bucket',buckets:[{{k:'A_70UP',lbl:'破≥70'}},{{k:'B_50_69',lbl:'破50~69'}},{{k:'C_30_49',lbl:'破30~49'}},{{k:'D_LT30',lbl:'破<30'}}]}},
   swing:{{label:'波段分',field:'swing_bucket',buckets:[{{k:'A_70UP',lbl:'波≥70'}},{{k:'B_50_69',lbl:'波50~69'}},{{k:'C_30_49',lbl:'波30~49'}},{{k:'D_LT30',lbl:'波<30'}}]}},
+  bb:{{label:'BB分',field:'bb_bucket',buckets:[{{k:'A_70UP',lbl:'BB≥70'}},{{k:'B_50_69',lbl:'BB50~69'}},{{k:'C_30_49',lbl:'BB30~49'}},{{k:'D_LT30',lbl:'BB<30'}}]}},
 }};
-const DIM_ORDER=['kline','composite','breakout','swing'];
-const DIM_COLORS={{kline:'#f87171',composite:'#fbbf24',breakout:'#60a5fa',swing:'#c084fc'}};
+const DIM_ORDER=['kline','composite','breakout','swing','bb'];
+const DIM_COLORS={{kline:'#f87171',composite:'#fbbf24',breakout:'#60a5fa',swing:'#c084fc',bb:'#2dd4bf'}};
 function crossGroupName(a,b){{return DIM_ORDER.indexOf(a)<=DIM_ORDER.indexOf(b)?`cross_${{a}}_${{b}}`:`cross_${{b}}_${{a}}`;}}
 function hmColor(v,mode){{
   if(v==null)return{{bg:'#06111e',txt:'#64748b'}};
@@ -933,11 +964,17 @@ function buildTabMatrix(){{
       <div class="sc-title">各波段分區間 T+1~T+10 勝率走勢</div>
       <div style="position:relative;height:160px"><canvas id="chartMatLineSwing"></canvas></div>
     </div>
+  </div>
+  <div class="sc-grid sc-wide" style="padding-top:0">
+    <div class="sc-box">
+      <div class="sc-title">各BB分區間 T+1~T+10 勝率走勢</div>
+      <div style="position:relative;height:160px"><canvas id="chartMatLineBB"></canvas></div>
+    </div>
   </div>`;
 }}
-// ── 六大組合總覽：四分數兩兩都在最高分位時的表現，直接回答「哪個組合最有效」──
-const CROSS_TOP_BUCKET={{kline:'A_78UP',composite:'A_88UP',breakout:'A_70UP',swing:'A_70UP'}};
-const CROSS_PAIR_LIST=[['kline','composite'],['kline','breakout'],['kline','swing'],['composite','breakout'],['composite','swing'],['breakout','swing']];
+// ── 十大組合總覽：五分數兩兩都在最高分位時的表現，直接回答「哪個組合最有效」──
+const CROSS_TOP_BUCKET={{kline:'A_78UP',composite:'A_88UP',breakout:'A_70UP',swing:'A_70UP',bb:'A_70UP'}};
+const CROSS_PAIR_LIST=[['kline','composite'],['kline','breakout'],['kline','swing'],['kline','bb'],['composite','breakout'],['composite','swing'],['composite','bb'],['breakout','swing'],['breakout','bb'],['swing','bb']];
 function buildCrossOverview(){{
   const hs=[1,3,5,7,10];
   const rows=CROSS_PAIR_LIST.map(([a,b])=>{{
@@ -970,11 +1007,11 @@ function buildCrossOverview(){{
   return`
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">六大組合總覽 — 兩兩都在最高分位時的 T+1~T+10 勝率（依T+5排名）</div>
+      <div class="sc-title">十大組合總覽 — 兩兩都在最高分位時的 T+1~T+10 勝率（依T+5排名）</div>
       <div style="position:relative;height:200px"><canvas id="chartCrossOverview"></canvas></div>
     </div>
   </div>
-  <div style="padding:8px 14px 0;font-size:11px;color:#94a3b8">例如「K線高×突破高」代表 K線分≥78 且 突破分≥70 同時成立那批股票的實際表現。突破×波段這組樣本通常很小是正常的——因為這兩個分數本來就代表不同階段的股票，很少同時都在最高分位，這正好驗證了兩者是互補而非重複的訊號。</div>
+  <div style="padding:8px 14px 0;font-size:11px;color:#94a3b8">例如「K線高×突破高」代表 K線分≥78 且 突破分≥70 同時成立那批股票的實際表現。突破×波段這組樣本通常很小是正常的——因為這兩個分數本來就代表不同階段的股票，很少同時都在最高分位，這正好驗證了兩者是互補而非重複的訊號。BB分是統計法(標準差)算的進場時機濾網，跟其他四項分數理論上重疊最少，這四組「X高×BB高」的樣本量與勝率特別值得關注。</div>
   <div class="stats-scroll" style="padding:6px 0 14px">
     <table class="stats-table"><thead><tr><th>組合（兩兩皆最高分位）</th><th style="text-align:center">樣本</th>
       ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}</tr></thead>
@@ -1021,6 +1058,7 @@ function afterMatrix(){{
   drawSingleDimTrend('chartMatLineComposite','composite');
   drawSingleDimTrend('chartMatLineBreakout','breakout');
   drawSingleDimTrend('chartMatLineSwing','swing');
+  drawSingleDimTrend('chartMatLineBB','bb');
 }}
 
 
@@ -1047,13 +1085,16 @@ function buildTabRecent(){{
       <option value="COMP_HIGH_K_LOW">綜高K低</option>
       <option value="BREAKOUT_SWING_STRONG">突破波段雙強</option><option value="BREAKOUT_STRONG">突破強</option>
       <option value="SWING_STRONG">波段強</option>
+      <option value="BB_CONFIRMED_STRONG">BB確認強</option><option value="BB_STRONG">BB強</option>
       <option value="STRAT_A_BREAKOUT">策略A突破族</option><option value="STRAT_B_SWING">策略B波段族</option>
       <option value="STRAT_C_KLINE">策略C純K線</option><option value="STRAT_D_COMPOSITE">策略D純綜合分</option>
+      <option value="STRAT_E_BB">策略E純BB分</option>
     </select>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">K線≥</span><input type="range" id="statsK" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsKv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsKv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合≥</span><input type="range" id="statsC" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsCv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsCv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">突破≥</span><input type="range" id="statsV" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsVv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsVv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">波段≥</span><input type="range" id="statsS" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsSv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsSv">0</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">BB≥</span><input type="range" id="statsB" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsBv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsBv">0</span></div>
     <span style="font-size:11px;color:#94a3b8">顯示 <b id="recentStatsCount" style="color:#e2e8f0">0</b> 筆</span>
   </div>
   <div class="stats-scroll">
@@ -1067,6 +1108,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('composite_score')">綜合分</th>
         <th class="stats-sort" onclick="statsSortBy('breakout_score')">突破分</th>
         <th class="stats-sort" onclick="statsSortBy('swing_score')">波段分</th>
+        <th class="stats-sort" onclick="statsSortBy('bb_score')">BB分</th>
         <th>買進收盤</th>
         <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1</th>
         <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3</th>
@@ -1075,7 +1117,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="15" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="16" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1107,6 +1149,7 @@ function renderRecentStats(){{
   const cMin=Number((document.getElementById('statsC')||{{value:0}}).value||0);
   const vMin=Number((document.getElementById('statsV')||{{value:0}}).value||0);
   const sMin=Number((document.getElementById('statsS')||{{value:0}}).value||0);
+  const bMin=Number((document.getElementById('statsB')||{{value:0}}).value||0);
   const etFilt=(document.getElementById('statsEt')||{{}}).value||'';
   let data=(STATS.recent||[]).filter(r=>{{
     if(q&&!(String(r.ticker||'').toLowerCase().includes(q)||String(r.name||'').toLowerCase().includes(q)))return false;
@@ -1114,6 +1157,7 @@ function renderRecentStats(){{
     if((r.composite_score||0)<cMin)return false;
     if((r.breakout_score||0)<vMin)return false;
     if((r.swing_score||0)<sMin)return false;
+    if((r.bb_score||0)<bMin)return false;
     if(etFilt&&r.event_type!==etFilt)return false;
     return true;
   }});
@@ -1137,11 +1181,12 @@ function renderRecentStats(){{
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.composite_score||0,100)}}%;background:${{cCol(r.composite_score||0)}}"></div></div><span style="color:${{cCol(r.composite_score||0)}};font-weight:700">${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.breakout_score||0,100)}}%;background:${{vcpCol(r.breakout_score||0)}}"></div></div><span style="color:${{vcpCol(r.breakout_score||0)}};font-weight:700">${{r.breakout_score!=null?Math.round(r.breakout_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.swing_score||0,100)}}%;background:${{vcpCol(r.swing_score||0)}}"></div></div><span style="color:${{vcpCol(r.swing_score||0)}};font-weight:700">${{r.swing_score!=null?Math.round(r.swing_score):'-'}}</span></div></td>
+    <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.bb_score||0,100)}}%;background:${{vcpCol(r.bb_score||0)}}"></div></div><span style="color:${{vcpCol(r.bb_score||0)}};font-weight:700" title="${{escAttr(BB_SETUP_LBL[r.bb_setup]||r.bb_setup||'-')}}">${{r.bb_score!=null?Math.round(r.bb_score):'-'}}</span></div></td>
     <td style="color:#94a3b8">${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="15" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="16" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
@@ -1181,7 +1226,8 @@ function buildTabPeak(){{
     <tbody>${{rows.join('')}}</tbody></table>
   </div>
   ${{buildPeakByDim('breakout','突破分')}}
-  ${{buildPeakByDim('swing','波段分')}}`;
+  ${{buildPeakByDim('swing','波段分')}}
+  ${{buildPeakByDim('bb','BB分')}}`;
 }}
 function buildPeakByDim(dimKey,title){{
   const sum=STATS.summary||[];
@@ -1226,7 +1272,7 @@ function afterPeak(){{
     scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#94a3b8'}}}},y:{{..._BASE_SCALE.y,min:0,max:100,ticks:{{color:'#94a3b8',callback:v=>v+'%'}}}}}}}}}});
 }}
 
-// ── Tab: 策略組合回測（A突破族／B波段族／C純K線／D純綜合分基準線）──────
+// ── Tab: 策略組合回測（A突破族／B波段族／C純K線／D純綜合分基準線／E純BB分時機濾網）──────
 function buildTabStrategy(){{
   const sum=STATS.summary||[];
   const hs=[1,3,5,7,10];
@@ -1254,6 +1300,7 @@ function buildTabStrategy(){{
     <div><b style="color:#a78bfa">策略B 波段族</b>：RS≥85 + 波段分≥60 + 當日出現✅洗盤結束</div>
     <div><b style="color:#f87171">策略C 純K線分</b>：K線分≥78，不看RS門檻——當「單一雜訊分數」的對照組</div>
     <div><b style="color:#94a3b8">策略D 純綜合分</b>：綜合分≥75，不看RS門檻——當你原本選股習慣的基準線</div>
+    <div><b style="color:#2dd4bf">策略E 純BB分</b>：BB分≥60 且 setup屬於下軌反轉/擠壓蓄勢/上軌突破任一，不看RS門檻——驗證BB分單獨作為時機濾網有沒有比D基準線更早/更準</div>
     <div style="margin-top:4px;color:#64748b">四組樣本互不互斥、各自獨立計算，A、B要打贏的對象是D，不是C。</div>
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
@@ -1389,7 +1436,7 @@ function updSlider(el,vidId){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="16" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="17" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
@@ -1402,6 +1449,7 @@ function renderRows(data){{
     <td>${{bar(r.comp,cc)}}</td>
     <td>${{vcpCell(r)}}</td>
     <td>${{swingCell(r)}}</td>
+    <td>${{bbCell(r)}}</td>
     <td>${{fVol(r.vol)}}</td>
     <td>${{fRsi(r.rsi)}}</td>
     <td>${{fRs(r.rs5d)}}</td>
@@ -1419,12 +1467,14 @@ function applyFilter(){{
   const cMin=+document.getElementById('slC').value;
   const vMin=+document.getElementById('slV').value;
   const sMin=+document.getElementById('slS').value;
+  const bMin=+document.getElementById('slB').value;
   let data=RAW.filter(r=>{{
     if(r.kline==null&&r.vol==null)return false;
     if((r.kline||0)<kMin)return false;
     if((r.comp||0)<cMin)return false;
     if((r.vcp||0)<vMin)return false;
     if((r.swing||0)<sMin)return false;
+    if((r.bb||0)<bMin)return false;
     if(q&&!r.ticker.toLowerCase().includes(q)&&!r.name.toLowerCase().includes(q))return false;
     return true;
   }});
@@ -1462,7 +1512,7 @@ function toggleLegend(){{
 function initApp() {{
   try {{
     // 1. 強制重置拉條數值，清除瀏覽器的 Form Auto-restore 快取
-    ['slK', 'slC', 'slV', 'slS'].forEach(id => {{
+    ['slK', 'slC', 'slV', 'slS', 'slB'].forEach(id => {{
       const el = document.getElementById(id);
       if (el) {{
         el.value = 0; // 強制將真實數值歸零
@@ -1474,6 +1524,7 @@ function initApp() {{
     document.getElementById('kvC').textContent = '0';
     document.getElementById('kvV').textContent = '0';
     document.getElementById('kvS').textContent = '0';
+    document.getElementById('kvB').textContent = '0';
 
     // 2. 設定預設排序
     const thKline = document.querySelector('th[data-k="kline"]');
@@ -1487,7 +1538,7 @@ function initApp() {{
     }}
 
     // 4. 初始化統計面板的滑桿漸層百分比
-    ['statsK', 'statsC', 'statsV', 'statsS'].forEach(id => {{
+    ['statsK', 'statsC', 'statsV', 'statsS', 'statsB'].forEach(id => {{
       const el = document.getElementById(id);
       if (el) el.style.setProperty('--pct', '0%');
     }});
