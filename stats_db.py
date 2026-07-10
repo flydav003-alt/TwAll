@@ -174,6 +174,22 @@ def init_db(conn):
     _ensure_columns(conn, "summary_stats", [
         ("breakout_bucket", "TEXT"), ("swing_bucket", "TEXT"),
     ])
+
+    # ── 新增欄位：BB分（布林通道分）──
+    # setup 額外存起來（lower_reversal / squeeze_consolidation / upper_breakout / neutral），
+    # 方便回測時區分「哪種型態」的BB分表現最好，不會被三種型態的分數混在一起稀釋。
+    _ensure_columns(conn, "daily_stock_snapshot", [
+        ("bb_score", "REAL"), ("bb_bucket", "TEXT"), ("bb_setup", "TEXT"),
+    ])
+    _ensure_columns(conn, "signal_events", [
+        ("bb_score", "REAL"), ("bb_bucket", "TEXT"), ("bb_setup", "TEXT"),
+    ])
+    _ensure_columns(conn, "watch_transitions", [
+        ("watch_bb_score", "REAL"), ("confirm_bb_score", "REAL"),
+    ])
+    _ensure_columns(conn, "summary_stats", [
+        ("bb_bucket", "TEXT"),
+    ])
     conn.commit()
 
 
@@ -227,24 +243,40 @@ def bucket_swing(score):
     return "D_LT30"
 
 
-# 四項分數維度的通用定義，供 summary_stats 的單維 / 交叉維度統計共用
+def bucket_bb(score):
+    """BB分（布林通道分）分級，沿用與突破分/波段分相同的級距，方便熱圖/組合表直接複用。"""
+    if score is None:
+        return "NA"
+    if score >= 70:
+        return "A_70UP"
+    if score >= 50:
+        return "B_50_69"
+    if score >= 30:
+        return "C_30_49"
+    return "D_LT30"
+
+
+# 五項分數維度的通用定義，供 summary_stats 的單維 / 交叉維度統計共用
 SCORE_DIMS = {
     "kline":     {"bucket_col": "kline_bucket",     "label": "K線分"},
     "composite": {"bucket_col": "composite_bucket", "label": "綜合分"},
     "breakout":  {"bucket_col": "breakout_bucket",  "label": "突破分"},
     "swing":     {"bucket_col": "swing_bucket",      "label": "波段分"},
+    "bb":        {"bucket_col": "bb_bucket",         "label": "BB分"},
 }
 CROSS_PAIRS = [
-    ("kline", "composite"), ("kline", "breakout"), ("kline", "swing"),
-    ("composite", "breakout"), ("composite", "swing"), ("breakout", "swing"),
+    ("kline", "composite"), ("kline", "breakout"), ("kline", "swing"), ("kline", "bb"),
+    ("composite", "breakout"), ("composite", "swing"), ("composite", "bb"),
+    ("breakout", "swing"), ("breakout", "bb"), ("swing", "bb"),
 ]
 
 
-def classify_signal(kline_score, composite_score, breakout_score=None, swing_score=None):
+def classify_signal(kline_score, composite_score, breakout_score=None, swing_score=None, bb_score=None):
     k = kline_score if kline_score is not None else -1
     c = composite_score if composite_score is not None else -1
     b = breakout_score if breakout_score is not None else -1
     sw = swing_score if swing_score is not None else -1
+    bbv = bb_score if bb_score is not None else -1
     if k >= 78 and c >= 88:
         return "BOTH_STRONG", "both"
     if k >= 70 and c >= 75:
@@ -265,21 +297,30 @@ def classify_signal(kline_score, composite_score, breakout_score=None, swing_sco
         return "BREAKOUT_STRONG", "breakout"
     if sw >= 75:
         return "SWING_STRONG", "swing"
+    # ── BB分 ≥75 的獨立觸發條件（跟突破分/波段分同層級，抓「時機濾網」訊號）──
+    if bbv >= 75 and (b >= 75 or sw >= 75):
+        return "BB_CONFIRMED_STRONG", "bb_confirmed"
+    if bbv >= 75:
+        return "BB_STRONG", "bb"
     return "NEUTRAL", "none"
 
 
-# ── 四策略組合回測用的獨立標籤（不影響上面 classify_signal 的既有分類）──
-# 這四個策略彼此不互斥，同一檔股票同一天可以同時符合多個，各自獨立記錄一筆
+# ── 策略組合回測用的獨立標籤（不影響上面 classify_signal 的既有分類）──
+# 這五個策略彼此不互斥，同一檔股票同一天可以同時符合多個，各自獨立記錄一筆
 # signal_events，才能公平比較每個策略各自的 T+1~T+10 勝率，不會互相稀釋樣本。
 #   A：突破族 — 已通過 RS≥85 門檻的 VCP 高品質整理／接近突破股，當日出現突破放量才進場
 #   B：波段族 — 已通過 RS≥85 門檻、拉回夠深後止跌轉強的股票，當日出現洗盤結束才進場
 #   C：純K線分對照組 — 完全不看RS/結構，單純K線分排序，驗證「單一雜訊分數」有沒有用
 #   D：純綜合分基準線 — 你原本習慣的做法，用來當A、B有沒有真的比較好的比較基準
+#   E：BB時機濾網族 — 不看RS門檻，純粹用BB分本身的三選一setup(下軌反轉/擠壓/突破)
+#      當進場條件，驗證「BB分單獨使用」的時機濾網有沒有比D這個基準線更早/更準
 STRAT_VCP_OK_STATUS = ("高品質整理", "接近突破", "已突破")
+STRAT_BB_OK_SETUP = ("lower_reversal", "squeeze_consolidation", "upper_breakout")
 
 
 def classify_strategy_events(kline_score, composite_score, breakout_score, swing_score,
-                              rs_score, vcp_status, entry_signal):
+                              rs_score, vcp_status, entry_signal,
+                              bb_score=None, bb_setup=None):
     events = []
     if (rs_score is not None and rs_score >= 85
             and breakout_score is not None and breakout_score >= 60
@@ -294,6 +335,9 @@ def classify_strategy_events(kline_score, composite_score, breakout_score, swing
         events.append("STRAT_C_KLINE")
     if composite_score is not None and composite_score >= 75:
         events.append("STRAT_D_COMPOSITE")
+    if (bb_score is not None and bb_score >= 60
+            and bb_setup in STRAT_BB_OK_SETUP):
+        events.append("STRAT_E_BB")
     return events
 
 
@@ -324,13 +368,16 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
         comp = s.get("composite")
         breakout = s.get("vcp_score")          # 突破分（SEPA+VCP 突破評分）
         swing = s.get("swing_score")            # 波段分（尚未有計分函式時為 None）
+        bb = s.get("bb_score")                  # BB分（布林通道分）
+        bb_setup = s.get("bb_setup")             # BB setup：lower_reversal/squeeze_consolidation/upper_breakout/neutral
         k_bucket = bucket_kline(kline)
         c_bucket = bucket_composite(comp)
         b_bucket = bucket_breakout(breakout)
         sw_bucket = bucket_swing(swing)
+        bb_bucket = bucket_bb(bb)
         rs = s.get("rs_score")            # 橫向排名 RS 分數（突破分/波段分的資格門檻）
         vcp_status = s.get("vcp_status")  # VCP 狀態文字（高品質整理／接近突破…）
-        event_type, trigger_source = classify_signal(kline, comp, breakout, swing)
+        event_type, trigger_source = classify_signal(kline, comp, breakout, swing, bb)
         patterns = json.dumps(s.get("patterns", []), ensure_ascii=False, default=str)
 
         try:
@@ -344,8 +391,8 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                     ma20, ma60, price_vs_ma20_pct, price_vs_ma60_pct, ma20_rising,
                     week52_pct, inst_buy_days, entry_signal, signal_rank, patterns,
                     signal_group, score_version, generated_at, raw_json,
-                    rs_score, vcp_status
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    rs_score, vcp_status, bb_score, bb_bucket, bb_setup
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     trade_date, ticker, s.get("name"), s.get("market"), _num(price),
@@ -360,7 +407,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                     s.get("entry_signal", ""), int(s.get("signal_rank") or 0), patterns,
                     event_type, SCORE_VERSION, generated_at,
                     json.dumps(s, ensure_ascii=False, default=str),
-                    _num(rs), vcp_status,
+                    _num(rs), vcp_status, _num(bb), bb_bucket, bb_setup,
                 ),
             )
 
@@ -372,20 +419,23 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         event_id, trade_date, ticker, name, event_type, trigger_source,
                         kline_score, composite_score, kline_bucket, composite_bucket,
                         breakout_score, breakout_bucket, swing_score, swing_bucket,
-                        entry_reference_close, entry_price_mode, status, score_version, created_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        entry_reference_close, entry_price_mode, status, score_version, created_at,
+                        bb_score, bb_bucket, bb_setup
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
                         _num(kline), _num(comp), k_bucket, c_bucket,
                         _num(breakout), b_bucket, _num(swing), sw_bucket,
                         _num(price), "close_after_signal", "open", SCORE_VERSION, now,
+                        _num(bb), bb_bucket, bb_setup,
                     ),
                 )
 
-            # ── 四策略組合回測標籤（獨立於上面的 event_type，彼此不互斥）──
+            # ── 策略組合回測標籤（獨立於上面的 event_type，彼此不互斥）──
             strat_events = classify_strategy_events(
-                kline, comp, breakout, swing, rs, vcp_status, s.get("entry_signal", "")
+                kline, comp, breakout, swing, rs, vcp_status, s.get("entry_signal", ""),
+                bb, bb_setup,
             )
             for strat_event_type in strat_events:
                 strat_event_id = f"{trade_date}:{ticker}:{strat_event_type}"
@@ -395,14 +445,16 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         event_id, trade_date, ticker, name, event_type, trigger_source,
                         kline_score, composite_score, kline_bucket, composite_bucket,
                         breakout_score, breakout_bucket, swing_score, swing_bucket,
-                        entry_reference_close, entry_price_mode, status, score_version, created_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        entry_reference_close, entry_price_mode, status, score_version, created_at,
+                        bb_score, bb_bucket, bb_setup
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         strat_event_id, trade_date, ticker, s.get("name"), strat_event_type, "strategy_combo",
                         _num(kline), _num(comp), k_bucket, c_bucket,
                         _num(breakout), b_bucket, _num(swing), sw_bucket,
                         _num(price), "close_after_signal", "open", SCORE_VERSION, now,
+                        _num(bb), bb_bucket, bb_setup,
                     ),
                 )
 
@@ -413,11 +465,11 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                     INSERT OR IGNORE INTO watch_transitions (
                         watch_id, watch_date, ticker, name, watch_kline_score,
                         watch_composite_score, watch_breakout_score, watch_swing_score,
-                        watch_close, status, created_at
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                        watch_close, status, created_at, watch_bb_score
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (watch_id, trade_date, ticker, s.get("name"), _num(kline), _num(comp),
-                     _num(breakout), _num(swing), _num(price), "open", now),
+                     _num(breakout), _num(swing), _num(price), "open", now, _num(bb)),
                 )
         except Exception as e:
             print(f"[WARN] 寫入 {ticker} 失敗，略過：{e}")
@@ -434,6 +486,7 @@ def update_watch_transitions(conn, trade_date):
         """
         SELECT w.*, d.kline_score AS today_kline, d.composite_score AS today_comp,
                d.breakout_score AS today_breakout, d.swing_score AS today_swing,
+               d.bb_score AS today_bb, d.bb_setup AS today_bb_setup,
                d.close_price AS today_close
         FROM watch_transitions w
         JOIN daily_stock_snapshot d ON d.ticker = w.ticker
@@ -453,8 +506,9 @@ def update_watch_transitions(conn, trade_date):
                     event_id, trade_date, ticker, name, event_type, trigger_source,
                     kline_score, composite_score, kline_bucket, composite_bucket,
                     breakout_score, breakout_bucket, swing_score, swing_bucket,
-                    entry_reference_close, entry_price_mode, status, score_version, created_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    entry_reference_close, entry_price_mode, status, score_version, created_at,
+                    bb_score, bb_bucket, bb_setup
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     event_id, trade_date, r["ticker"], r["name"], event_type, "watch_confirm",
@@ -464,20 +518,21 @@ def update_watch_transitions(conn, trade_date):
                     r["today_swing"], bucket_swing(r["today_swing"]),
                     r["today_close"], "close_after_signal",
                     "open", SCORE_VERSION, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    r["today_bb"], bucket_bb(r["today_bb"]), r["today_bb_setup"],
                 ),
             )
             conn.execute(
                 """
                 UPDATE watch_transitions
                 SET confirm_date=?, confirm_kline_score=?, confirm_composite_score=?,
-                    confirm_breakout_score=?, confirm_swing_score=?,
+                    confirm_breakout_score=?, confirm_swing_score=?, confirm_bb_score=?,
                     confirm_close=?, days_to_confirm=?, confirmed=1, confirm_type=?,
                     entry_event_id=?, status='confirmed'
                 WHERE watch_id=?
                 """,
                 (
                     trade_date, r["today_kline"], r["today_comp"],
-                    r["today_breakout"], r["today_swing"], r["today_close"],
+                    r["today_breakout"], r["today_swing"], r["today_bb"], r["today_close"],
                     age, confirm_type, event_id, r["watch_id"],
                 ),
             )
@@ -585,10 +640,12 @@ def refresh_summary_stats(conn):
     """
     重建 summary_stats，產生：
       - event_type            各訊號類型 × horizon
-      - single_<dim>          K線分/綜合分/突破分/波段分 各自的單一分數區間 × horizon
-                               （供「各分數區間 T+1~T+10 勝率走勢」四張圖使用）
-      - cross_<a>_<b>         四項分數兩兩交叉（共 6 組）× horizon
-                               （供「分數熱圖」四向交叉比對使用，含原本的 K線×綜合）
+      - single_<dim>          K線分/綜合分/突破分/波段分/BB分 各自的單一分數區間 × horizon
+                               （供「各分數區間 T+1~T+10 勝率走勢」五張圖使用）
+      - cross_<a>_<b>         五項分數兩兩交叉（共 10 組，來自 CROSS_PAIRS）× horizon
+                               （供「分數熱圖」與「十大組合總覽」使用）
+    改用 SCORE_DIMS / CROSS_PAIRS 通用產生，之後再加新分數維度只需要改那兩個常數，
+    不用再回來改這個函式的分組邏輯。
     """
     conn.execute("DELETE FROM summary_stats")
     updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -596,11 +653,19 @@ def refresh_summary_stats(conn):
     rows = conn.execute(
         """
         SELECT o.horizon, o.return_close_pct, o.max_gain_pct, o.max_drawdown_pct,
-               e.event_type, e.kline_bucket, e.composite_bucket, e.breakout_bucket, e.swing_bucket
+               e.event_type, e.kline_bucket, e.composite_bucket, e.breakout_bucket,
+               e.swing_bucket, e.bb_bucket
         FROM event_outcomes o
         JOIN signal_events e ON e.event_id = o.event_id
         """
     ).fetchall()
+
+    # bucket 欄位在 signal_events 資料表裡的實際 column 名稱（依 SCORE_DIMS 順序）
+    ROW_BUCKET_COL = {
+        "kline": "kline_bucket", "composite": "composite_bucket",
+        "breakout": "breakout_bucket", "swing": "swing_bucket", "bb": "bb_bucket",
+    }
+    DIM_ORDER = ["kline", "composite", "breakout", "swing", "bb"]
 
     groups = {}
 
@@ -609,21 +674,28 @@ def refresh_summary_stats(conn):
 
     for r in rows:
         h = r["horizon"]
-        kb, cb, bb, sb = r["kline_bucket"], r["composite_bucket"], r["breakout_bucket"], r["swing_bucket"]
-        add(("event_type", r["event_type"], None, None, None, None, h), r)
-        add(("single_kline", None, kb, None, None, None, h), r)
-        add(("single_composite", None, None, cb, None, None, h), r)
-        add(("single_breakout", None, None, None, bb, None, h), r)
-        add(("single_swing", None, None, None, None, sb, h), r)
-        add(("cross_kline_composite", None, kb, cb, None, None, h), r)
-        add(("cross_kline_breakout", None, kb, None, bb, None, h), r)
-        add(("cross_kline_swing", None, kb, None, None, sb, h), r)
-        add(("cross_composite_breakout", None, None, cb, bb, None, h), r)
-        add(("cross_composite_swing", None, None, cb, None, sb, h), r)
-        add(("cross_breakout_swing", None, None, None, bb, sb, h), r)
+        buckets = {dim: r[ROW_BUCKET_COL[dim]] for dim in DIM_ORDER}
+
+        # event_type 分組（不分維度）
+        add(("event_type", r["event_type"], "NA", "NA", "NA", "NA", "NA", h), r)
+
+        # single_<dim> 分組
+        for dim in DIM_ORDER:
+            key_buckets = {d: "NA" for d in DIM_ORDER}
+            key_buckets[dim] = buckets[dim]
+            add((f"single_{dim}", None, key_buckets["kline"], key_buckets["composite"],
+                 key_buckets["breakout"], key_buckets["swing"], key_buckets["bb"], h), r)
+
+        # cross_<a>_<b> 分組（十組，來自 CROSS_PAIRS）
+        for a, b in CROSS_PAIRS:
+            key_buckets = {d: "NA" for d in DIM_ORDER}
+            key_buckets[a] = buckets[a]
+            key_buckets[b] = buckets[b]
+            add((f"cross_{a}_{b}", None, key_buckets["kline"], key_buckets["composite"],
+                 key_buckets["breakout"], key_buckets["swing"], key_buckets["bb"], h), r)
 
     for key, items in groups.items():
-        group_name, event_type, kb, cb, bb, sb, horizon = key
+        group_name, event_type, kb, cb, brk_b, sw_b, bb_b, horizon = key
         vals = [float(x["return_close_pct"]) for x in items if x["return_close_pct"] is not None]
         if not vals:
             continue
@@ -631,19 +703,19 @@ def refresh_summary_stats(conn):
         losses = [v for v in vals if v <= 0]
         gross_win = sum(wins)
         gross_loss = abs(sum(losses))
-        stat_key = f"{group_name}:{event_type}:{kb}:{cb}:{bb}:{sb}:T{horizon}"
+        stat_key = f"{group_name}:{event_type}:{kb}:{cb}:{brk_b}:{sw_b}:{bb_b}:T{horizon}"
         conn.execute(
             """
             INSERT INTO summary_stats (
                 stat_key, group_name, event_type, kline_bucket, composite_bucket,
-                breakout_bucket, swing_bucket,
+                breakout_bucket, swing_bucket, bb_bucket,
                 horizon, sample_count, win_rate, avg_return, median_return,
                 avg_win, avg_loss, profit_factor, max_return, min_return,
                 avg_max_gain, avg_max_drawdown, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
-                stat_key, group_name, event_type, kb, cb, bb, sb, horizon,
+                stat_key, group_name, event_type, kb, cb, brk_b, sw_b, bb_b, horizon,
                 len(vals), round(len(wins) / len(vals) * 100, 1),
                 round(sum(vals) / len(vals), 2), _median(vals),
                 round(sum(wins) / len(wins), 2) if wins else None,
@@ -676,6 +748,7 @@ def export_stats_payload(db_path=DB_PATH):
         """
         SELECT e.trade_date, e.ticker, e.name, e.event_type, e.kline_score,
                e.composite_score, e.breakout_score, e.swing_score,
+               e.bb_score, e.bb_setup,
                e.entry_reference_close, e.status,
                MAX(CASE WHEN o.horizon=1 THEN o.return_close_pct END) AS t1_return,
                MAX(CASE WHEN o.horizon=3 THEN o.return_close_pct END) AS t3_return,
@@ -712,6 +785,16 @@ def export_stats_payload(db_path=DB_PATH):
         ("K線 >= 70 且波段分 >= 50", "e.kline_score >= 70 AND e.swing_score >= 50"),
         ("綜合分 >= 75 且波段分 >= 50", "e.composite_score >= 75 AND e.swing_score >= 50"),
         ("突破分 >= 50 且波段分 >= 50", "e.breakout_score >= 50 AND e.swing_score >= 50"),
+        ("BB分 >= 30", "e.bb_score >= 30"),
+        ("BB分 >= 50", "e.bb_score >= 50"),
+        ("BB分 >= 70", "e.bb_score >= 70"),
+        ("K線 >= 70 且BB分 >= 50", "e.kline_score >= 70 AND e.bb_score >= 50"),
+        ("綜合分 >= 75 且BB分 >= 50", "e.composite_score >= 75 AND e.bb_score >= 50"),
+        ("突破分 >= 50 且BB分 >= 50", "e.breakout_score >= 50 AND e.bb_score >= 50"),
+        ("波段分 >= 50 且BB分 >= 50", "e.swing_score >= 50 AND e.bb_score >= 50"),
+        ("BB分下軌反轉(bb_setup) >= 60", "e.bb_score >= 60 AND e.bb_setup = 'lower_reversal'"),
+        ("BB分擠壓蓄勢(bb_setup) >= 50", "e.bb_score >= 50 AND e.bb_setup = 'squeeze_consolidation'"),
+        ("BB分上軌突破(bb_setup) >= 50", "e.bb_score >= 50 AND e.bb_setup = 'upper_breakout'"),
     ]
     for label, where_sql in threshold_defs:
         rows = conn.execute(
