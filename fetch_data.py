@@ -156,7 +156,7 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         vcp_breakout=False, vcp_score=None, vcp_status=None,
         swing_score=None, swing_score_breakdown=None,  # 波段分：目前尚無計分函式，預留欄位供未來擴充
         bb_score=None, bb_setup=None, bb_score_breakdown=None,
-        bb_upper=None, bb_lower=None, bb_mid=None, bb_width_pct=None,
+        bb_upper=None, bb_lower=None, bb_mid=None, bb_width_pct=None, bb_width_pct_5ago=None,
         bb_percent_b=None, bb_mid_rising=None, bb_lower_touch_days_10=None,
         composite=0,
         patterns=[],
