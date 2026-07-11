@@ -589,22 +589,39 @@ def calc_bb_data(closes, period=BB_PERIOD, width_lookback=BB_WIDTH_LOOKBACK,
     recent_pb = pb_series.iloc[-min(band_walk_window, len(pb_series)):].dropna()
     lower_touch_days = int((recent_pb <= BB_LOWER_TOUCH_PB).sum()) if len(recent_pb) else 0
 
-    # 5 日前的寬度百分位（用同一份 hist_width 分布近似估算，給上軌突破判斷「突破前是否剛擠壓過」用）
-    width_pct_5ago = None
-    if len(width) >= 6 and len(hist_width) >= 20:
-        w5 = width.iloc[-6]
-        if not np.isnan(w5):
-            width_pct_5ago = round(float((hist_width < w5).sum() / len(hist_width) * 100), 1)
+    # 突破前擠壓：改用「3~7天前的區間最小寬度百分位」取代單一天snapshot，
+    # 避免單日雜訊（例如剛好那天資料異常窄）誤判成「有經過真正擠壓」。
+    pre_squeeze_min_pct = None
+    if len(width) >= 8 and len(hist_width) >= 20:
+        window_vals = width.iloc[-8:-2].dropna()  # 3~7天前的區間
+        if len(window_vals):
+            pcts = [float((hist_width < w).sum() / len(hist_width) * 100) for w in window_vals]
+            pre_squeeze_min_pct = round(min(pcts), 1)
+
+    # 突破新鮮度：近10日內 %B>=BB_UPPER_BREAK_PB 的天數，用來分辨「剛突破」vs「已經噴一段時間才追」
+    upper_touch_days = int((recent_pb >= BB_UPPER_BREAK_PB).sum()) if len(recent_pb) else 0
+
+    # 擠壓持續天數：近5日內，寬度百分位<=35（squeeze門檻）的天數有幾天
+    # 用來區分「已經窄了一段時間的真蓄勢」vs「今天剛好雜訊掉到最低的單日假象」
+    squeeze_persist_days = 0
+    if len(hist_width) >= 20 and len(width) >= 5:
+        recent_width = width.iloc[-5:].dropna()
+        for w in recent_width:
+            wp_i = float((hist_width < w).sum() / len(hist_width) * 100)
+            if wp_i <= 35:
+                squeeze_persist_days += 1
 
     return {
         "bb_upper": round(last_upper, 2),
         "bb_lower": round(last_lower, 2),
         "bb_mid": round(last_mid, 2),
         "bb_width_pct": width_pct,
-        "bb_width_pct_5ago": width_pct_5ago,
+        "bb_pre_squeeze_min_pct": pre_squeeze_min_pct,
         "bb_percent_b": percent_b,
         "bb_mid_rising": mid_rising,
         "bb_lower_touch_days_10": lower_touch_days,
+        "bb_upper_touch_days_10": upper_touch_days,
+        "bb_squeeze_persist_days": squeeze_persist_days,
     }
 
 
@@ -700,14 +717,30 @@ def _score_squeeze(r):
       - 擠壓強度 50（連續）：寬度百分位線性換算，越窄分越高（0百分位=50分，>=60百分位=0分）
       - 中軌方向 20：MA20上揚才給分（定多空方向）
       - 量縮程度 30（連續）：量能越縮越像盤整末端
+      - 持續性乘數：擠壓強度+量縮程度這兩項天生高度相關（真正的盤整末端本來就會同時出現），
+        單日雜訊就能讓兩項一起衝滿分，鑑別力等於只驗證了一件事卻假裝驗證了兩件事。
+        用「近5日內有幾天寬度百分位<=35」當持續性乘數：只有1天在窄檔（可能是雜訊）打6折，
+        持續2~3天打8~9折，持續4天以上（真正蓄勢一段時間）才給滿額。
     """
     b = {}
     wp = r.get("bb_width_pct")
     vr = r.get("volume_ratio")
+    persist_days = r.get("bb_squeeze_persist_days", 0) or 0
 
-    b["squeeze"] = round(_clamp01((60 - wp) / 60) * 50, 1) if wp is not None else 0
+    squeeze_raw = round(_clamp01((60 - wp) / 60) * 50, 1) if wp is not None else 0
+    shrink_raw = round(_clamp01(1 - vr) * 30, 1) if (vr is not None and vr <= 1.0) else 0
+
+    if persist_days <= 1:
+        persist_mult = 0.6
+    elif persist_days <= 3:
+        persist_mult = 0.6 + (persist_days - 1) * 0.15   # 2天0.75, 3天0.9
+    else:
+        persist_mult = 1.0
+
+    b["squeeze"] = round(squeeze_raw * persist_mult, 1)
+    b["volume_shrink"] = round(shrink_raw * persist_mult, 1)
     b["mid_trend"] = 20 if r.get("bb_mid_rising") is True else 0
-    b["volume_shrink"] = round(_clamp01(1 - vr) * 30, 1) if (vr is not None and vr <= 1.0) else 0
+    b["persist_mult_applied"] = persist_mult
     return b
 
 
@@ -716,21 +749,35 @@ def _score_upper_breakout(r):
     上軌突破確認，設計滿分100（乘Gate前）：
       - 基礎站上 10
       - 爆量確認 40（連續）：量比越大分越高，vr>=2.5給滿分
-      - 突破前擠壓加成 50（連續）：5日前的寬度百分位越低，代表這是「擠壓後噴出」而非「已經噴一大段」
+      - 突破前擠壓加成 50（連續）：用3~7天前「區間最小」寬度百分位（而非單一天snapshot），
+        越窄代表這是「擠壓後噴出」而非「已經噴一大段」，同時降低單日雜訊誤判的機率
       - 追高扣分：目前寬度百分位若已經很寬（>50），代表不是剛起漲，用連續函數倒扣最多25分
+      - 新鮮度乘數：爆量確認+突破前擠壓加成這兩項是在獎勵「這是一次真突破事件」，
+        如果近10日已經有好幾天都站上上軌（代表股票已經噴了一段時間才追進來），
+        今天剛好爆一次量不代表這是「突破當下」，要打折避免追高被誤判成剛起漲。
     """
     b = {}
     vr = r.get("volume_ratio")
     wp = r.get("bb_width_pct")
-    wp5 = r.get("bb_width_pct_5ago")
+    wp_pre = r.get("bb_pre_squeeze_min_pct")
+    touch_days = r.get("bb_upper_touch_days_10", 0) or 0
+
+    volume_raw = round(_clamp01((vr - 1) / 1.5) * 40, 1) if vr is not None else 0
+    squeeze_bonus_raw = round(_clamp01((30 - wp_pre) / 30) * 50, 1) if wp_pre is not None else 0
+
+    if touch_days <= 1:
+        fresh_mult = 1.0     # 第一天站上上軌，最新鮮
+    elif touch_days <= 3:
+        fresh_mult = 0.7
+    elif touch_days <= 5:
+        fresh_mult = 0.4
+    else:
+        fresh_mult = 0.15    # 已經噴超過5天才追，視為追高不是真突破
 
     b["base_touch"] = 10
-    b["volume_confirm"] = round(_clamp01((vr - 1) / 1.5) * 40, 1) if vr is not None else 0
-
-    if wp5 is not None:
-        b["post_squeeze_bonus"] = round(_clamp01((30 - wp5) / 30) * 50, 1)
-    else:
-        b["post_squeeze_bonus"] = 0
+    b["volume_confirm"] = round(volume_raw * fresh_mult, 1)
+    b["post_squeeze_bonus"] = round(squeeze_bonus_raw * fresh_mult, 1)
+    b["fresh_mult_applied"] = fresh_mult
 
     if wp is not None and wp > 50:
         b["chase_penalty"] = -round(_clamp01((wp - 50) / 50) * 25, 1)
@@ -758,7 +805,7 @@ def calc_bb_score(r):
     else:
         b = {"neutral": 0}
 
-    raw = sum(b.values())
+    raw = sum(v for k, v in b.items() if k not in ("gate_multiplier", "persist_mult_applied", "fresh_mult_applied"))
     mult = bb_gate_multiplier(r, setup)
     final = round(max(0, min(raw * mult, 100)), 1)
 
