@@ -589,11 +589,19 @@ def calc_bb_data(closes, period=BB_PERIOD, width_lookback=BB_WIDTH_LOOKBACK,
     recent_pb = pb_series.iloc[-min(band_walk_window, len(pb_series)):].dropna()
     lower_touch_days = int((recent_pb <= BB_LOWER_TOUCH_PB).sum()) if len(recent_pb) else 0
 
+    # 5 日前的寬度百分位（用同一份 hist_width 分布近似估算，給上軌突破判斷「突破前是否剛擠壓過」用）
+    width_pct_5ago = None
+    if len(width) >= 6 and len(hist_width) >= 20:
+        w5 = width.iloc[-6]
+        if not np.isnan(w5):
+            width_pct_5ago = round(float((hist_width < w5).sum() / len(hist_width) * 100), 1)
+
     return {
         "bb_upper": round(last_upper, 2),
         "bb_lower": round(last_lower, 2),
         "bb_mid": round(last_mid, 2),
         "bb_width_pct": width_pct,
+        "bb_width_pct_5ago": width_pct_5ago,
         "bb_percent_b": percent_b,
         "bb_mid_rising": mid_rising,
         "bb_lower_touch_days_10": lower_touch_days,
@@ -636,57 +644,98 @@ def bb_gate_multiplier(r, setup):
     return 1.0
 
 
+def _clamp01(x):
+    return max(0.0, min(1.0, x))
+
+
 def _score_lower_reversal(r):
-    """大波段下軌反轉：基礎分很低，靠底背離/超賣鈍化/量縮竭盡疊加，恐慌量扣分。上限45。"""
+    """
+    大波段下軌反轉，設計滿分100（乘Gate前）：
+      - 基礎觸及 10（固定，代表「符合了pb<=0.2這件事本身」）
+      - 反轉訊號 35（連續）：底背離給滿35；沒有背離時，用RSI超賣程度連續給分（RSI越低分越高）
+      - 量能 25（連續）：量縮越深分越高，爆量下殺則倒扣
+      - 首次觸及加成 15：近10日「第一次」碰到下軌，比已經碰了好幾次更值得重視
+      - 中軌止跌翻揚 15：MA20已經翻揚，代表止跌訊號更成熟
+    連續函數取代原本的「碰到就給8分」門檻式設計，避免同一批股票分數擠在同一個數字上。
+    """
     b = {}
     rsi = r.get("rsi14")
     bull_div = r.get("rsi_div") == "bull"
     vr = r.get("volume_ratio")
+    touch_days = r.get("bb_lower_touch_days_10", 0) or 0
 
-    base = 8  # 只是碰到，先給很少
+    b["base_touch"] = 10
+
     if bull_div:
-        base += 20
-    elif rsi is not None and rsi < 28:
-        base += 10
+        b["reversal_signal"] = 35
+    elif rsi is not None:
+        # RSI 28 以上不給分，RSI 越接近 0 分數越高，斜率在 28→0 之間連續分布
+        b["reversal_signal"] = round(_clamp01((28 - rsi) / 28) * 20, 1)
+    else:
+        b["reversal_signal"] = 0
 
     if vr is not None:
-        if vr > 2.2:
-            base -= 12          # 恐慌爆量下殺
-        elif vr < 0.8:
-            base += 8           # 量縮竭盡，健康拉回
+        if vr <= 1.0:
+            b["volume"] = round(_clamp01(1 - vr) * 25, 1)      # 量縮越深分越高，vr=0時滿分25
+        else:
+            b["volume"] = -round(_clamp01((vr - 1) / 1.5) * 20, 1)  # 爆量下殺倒扣，最多扣20
+    else:
+        b["volume"] = 0
 
-    b["lower_reversal_raw"] = max(0, min(base, 45))
+    # 首次觸及：這段10日內只碰過1次分數最高，碰越多次（還沒到band walk門檻）分數遞減
+    if touch_days <= 1:
+        b["first_touch_bonus"] = 15
+    elif touch_days <= 2:
+        b["first_touch_bonus"] = 8
+    else:
+        b["first_touch_bonus"] = 0
+
+    b["mid_turn_bonus"] = 15 if r.get("bb_mid_rising") is True else 0
     return b
 
 
 def _score_squeeze(r):
-    """擠壓蓄勢：純快篩，方向未定，需搭配K線分/RS分過濾多空。上限55。"""
+    """
+    擠壓蓄勢，設計滿分100（乘Gate前）：
+      - 擠壓強度 50（連續）：寬度百分位線性換算，越窄分越高（0百分位=50分，>=60百分位=0分）
+      - 中軌方向 20：MA20上揚才給分（定多空方向）
+      - 量縮程度 30（連續）：量能越縮越像盤整末端
+    """
     b = {}
     wp = r.get("bb_width_pct")
     vr = r.get("volume_ratio")
 
-    squeeze = 0
-    if wp is not None:
-        if wp <= 10:      squeeze = 30
-        elif wp <= 25:    squeeze = 20
-        elif wp <= 40:    squeeze = 10
-        elif wp <= 60:    squeeze = 3
-    b["squeeze"] = squeeze
-
-    b["mid_trend"] = 10 if r.get("bb_mid_rising") is True else 0
-    b["extreme_shrink"] = 10 if (vr is not None and vr < 0.7) else 0
+    b["squeeze"] = round(_clamp01((60 - wp) / 60) * 50, 1) if wp is not None else 0
+    b["mid_trend"] = 20 if r.get("bb_mid_rising") is True else 0
+    b["volume_shrink"] = round(_clamp01(1 - vr) * 30, 1) if (vr is not None and vr <= 1.0) else 0
     return b
 
 
 def _score_upper_breakout(r):
-    """上軌突破確認：刻意壓低「沒先擠壓」的追高型突破。上限45。"""
+    """
+    上軌突破確認，設計滿分100（乘Gate前）：
+      - 基礎站上 10
+      - 爆量確認 40（連續）：量比越大分越高，vr>=2.5給滿分
+      - 突破前擠壓加成 50（連續）：5日前的寬度百分位越低，代表這是「擠壓後噴出」而非「已經噴一大段」
+      - 追高扣分：目前寬度百分位若已經很寬（>50），代表不是剛起漲，用連續函數倒扣最多25分
+    """
     b = {}
     vr = r.get("volume_ratio")
     wp = r.get("bb_width_pct")
+    wp5 = r.get("bb_width_pct_5ago")
 
-    b["upper_touch"] = 10
-    b["volume_confirm"] = 20 if (vr is not None and vr >= 1.5) else (10 if vr is not None and vr >= 1.0 else 0)
-    b["chase_penalty"] = -15 if (wp is not None and wp > 70) else 0
+    b["base_touch"] = 10
+    b["volume_confirm"] = round(_clamp01((vr - 1) / 1.5) * 40, 1) if vr is not None else 0
+
+    if wp5 is not None:
+        b["post_squeeze_bonus"] = round(_clamp01((30 - wp5) / 30) * 50, 1)
+    else:
+        b["post_squeeze_bonus"] = 0
+
+    if wp is not None and wp > 50:
+        b["chase_penalty"] = -round(_clamp01((wp - 50) / 50) * 25, 1)
+    else:
+        b["chase_penalty"] = 0
     return b
 
 
