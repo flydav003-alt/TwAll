@@ -650,13 +650,26 @@ def refresh_summary_stats(conn):
     conn.execute("DELETE FROM summary_stats")
     updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    rows = conn.execute(
+    rows_by_event_type = conn.execute(
         """
         SELECT o.horizon, o.return_close_pct, o.max_gain_pct, o.max_drawdown_pct,
                e.event_type, e.kline_bucket, e.composite_bucket, e.breakout_bucket,
                e.swing_bucket, e.bb_bucket
         FROM event_outcomes o
         JOIN signal_events e ON e.event_id = o.event_id
+        """
+    ).fetchall()
+    rows_unique_signal = conn.execute(
+        """
+        SELECT o.horizon,
+               MAX(o.return_close_pct) AS return_close_pct,
+               MAX(o.max_gain_pct) AS max_gain_pct,
+               MAX(o.max_drawdown_pct) AS max_drawdown_pct,
+               e.kline_bucket, e.composite_bucket, e.breakout_bucket,
+               e.swing_bucket, e.bb_bucket
+        FROM event_outcomes o
+        JOIN signal_events e ON e.event_id = o.event_id
+        GROUP BY e.trade_date, e.ticker, o.horizon
         """
     ).fetchall()
 
@@ -672,12 +685,15 @@ def refresh_summary_stats(conn):
     def add(key, r):
         groups.setdefault(key, []).append(r)
 
-    for r in rows:
+    for r in rows_by_event_type:
         h = r["horizon"]
-        buckets = {dim: r[ROW_BUCKET_COL[dim]] for dim in DIM_ORDER}
 
         # event_type 分組（不分維度）
         add(("event_type", r["event_type"], "NA", "NA", "NA", "NA", "NA", h), r)
+
+    for r in rows_unique_signal:
+        h = r["horizon"]
+        buckets = {dim: r[ROW_BUCKET_COL[dim]] for dim in DIM_ORDER}
 
         # single_<dim> 分組
         for dim in DIM_ORDER:
@@ -746,10 +762,21 @@ def export_stats_payload(db_path=DB_PATH):
     ).fetchone())
     recent = [dict(r) for r in conn.execute(
         """
-        SELECT e.trade_date, e.ticker, e.name, e.event_type, e.kline_score,
-               e.composite_score, e.breakout_score, e.swing_score,
-               e.bb_score, e.bb_setup,
-               e.entry_reference_close, e.status,
+        SELECT e.trade_date, e.ticker, MAX(e.name) AS name,
+               MIN(CASE WHEN e.trigger_source = 'strategy_combo' THEN NULL ELSE e.event_type END) AS event_type,
+               GROUP_CONCAT(e.event_type, ',') AS event_types,
+               MAX(e.kline_score) AS kline_score,
+               MAX(e.composite_score) AS composite_score,
+               MAX(e.breakout_score) AS breakout_score,
+               MAX(e.swing_score) AS swing_score,
+               MAX(e.bb_score) AS bb_score,
+               MAX(e.bb_setup) AS bb_setup,
+               MAX(e.entry_reference_close) AS entry_reference_close,
+               CASE
+                 WHEN SUM(CASE WHEN e.status = 'open' THEN 1 ELSE 0 END) > 0 THEN 'open'
+                 WHEN SUM(CASE WHEN e.status = 'partial' THEN 1 ELSE 0 END) > 0 THEN 'partial'
+                 ELSE MAX(e.status)
+               END AS status,
                MAX(CASE WHEN o.horizon=1 THEN o.return_close_pct END) AS t1_return,
                MAX(CASE WHEN o.horizon=3 THEN o.return_close_pct END) AS t3_return,
                MAX(CASE WHEN o.horizon=5 THEN o.return_close_pct END) AS t5_return,
@@ -758,8 +785,8 @@ def export_stats_payload(db_path=DB_PATH):
         FROM signal_events e
         LEFT JOIN event_outcomes o ON o.event_id=e.event_id
         WHERE e.trade_date >= date('now', '-30 days')
-        GROUP BY e.event_id
-        ORDER BY e.trade_date DESC, e.event_type
+        GROUP BY e.trade_date, e.ticker
+        ORDER BY e.trade_date DESC, e.ticker
         """
     ).fetchall()]
     threshold_stats = []
@@ -799,16 +826,23 @@ def export_stats_payload(db_path=DB_PATH):
     for label, where_sql in threshold_defs:
         rows = conn.execute(
             f"""
-            SELECT o.horizon, COUNT(*) AS sample_count,
-                   ROUND(AVG(CASE WHEN o.return_close_pct > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) AS win_rate,
-                   ROUND(AVG(o.return_close_pct), 2) AS avg_return,
-                   ROUND(AVG(o.max_gain_pct), 2) AS avg_max_gain,
-                   ROUND(AVG(o.max_drawdown_pct), 2) AS avg_max_drawdown
-            FROM event_outcomes o
-            JOIN signal_events e ON e.event_id = o.event_id
-            WHERE {where_sql}
-            GROUP BY o.horizon
-            ORDER BY o.horizon
+            SELECT horizon, COUNT(*) AS sample_count,
+                   ROUND(AVG(CASE WHEN return_close_pct > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) AS win_rate,
+                   ROUND(AVG(return_close_pct), 2) AS avg_return,
+                   ROUND(AVG(max_gain_pct), 2) AS avg_max_gain,
+                   ROUND(AVG(max_drawdown_pct), 2) AS avg_max_drawdown
+            FROM (
+                SELECT e.trade_date, e.ticker, o.horizon,
+                       MAX(o.return_close_pct) AS return_close_pct,
+                       MAX(o.max_gain_pct) AS max_gain_pct,
+                       MAX(o.max_drawdown_pct) AS max_drawdown_pct
+                FROM event_outcomes o
+                JOIN signal_events e ON e.event_id = o.event_id
+                WHERE {where_sql}
+                GROUP BY e.trade_date, e.ticker, o.horizon
+            )
+            GROUP BY horizon
+            ORDER BY horizon
             """
         ).fetchall()
         for r in rows:
