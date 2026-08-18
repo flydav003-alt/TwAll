@@ -1,6 +1,6 @@
 """
 streamlit_app.py — 台股半導體 Screener
-架構：components.html() + JS 排序/篩選，scrolling=False + ResizeObserver
+架構：components.html() + JS 排序/篩選，scrolling=True + ResizeObserver
 配色：對標圖1深藍黑風格
 """
 import json, os, streamlit as st
@@ -166,8 +166,9 @@ def main():
     mkt_r5  = mkt.get("ret5d",0) or 0
     mkt_rsi = mkt.get("rsi")
     mkt_ma  = not mkt.get("below_ma20", False)
+    stats_payload = _load_stats()
     rows_json = json.dumps(rows, ensure_ascii=False, default=str)
-    stats_json = json.dumps(_load_stats(), ensure_ascii=False, default=str)
+    stats_json = json.dumps(stats_payload, ensure_ascii=False, default=str)
     total     = len(rows)
     gen_at    = generated_at or "N/A"
     r5cls     = "pos" if mkt_r5>0 else ("neg" if mkt_r5<0 else "neu")
@@ -1575,8 +1576,15 @@ setTimeout(schedResize,150);setTimeout(schedResize,700);setTimeout(schedResize,1
 </script>
 </body></html>"""
 
-    est = 520 + len(rows)*40
-    components.html(page, height=est, scrolling=False)
+    recent_count = len((stats_payload or {}).get("recent") or [])
+    summary_count = len((stats_payload or {}).get("summary") or [])
+    est = max(
+        900,
+        520 + len(rows) * 40,
+        760 + recent_count * 42,
+        760 + min(summary_count, 80) * 28,
+    )
+    components.html(page, height=est, scrolling=True)
 
 if __name__=="__main__":
     main()
