@@ -778,6 +778,14 @@ const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT
 const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf'}};
 
 function labelEvent(v){{return ETYPE_LBL[v]||v||'-';}}
+function eventList(r){{
+  const raw = r.event_types || r.event_type || '';
+  return [...new Set(String(raw).split(',').map(x=>x.trim()).filter(Boolean))];
+}}
+function labelEventList(r){{
+  const items = eventList(r);
+  return items.length ? items.map(labelEvent).join(' / ') : '-';
+}}
 function pct(v){{if(v==null||Number.isNaN(Number(v)))return'-';const n=Number(v);return`${{n>0?'+':''}}${{n.toFixed(2)}}%`;}}
 function rate(v){{if(v==null||Number.isNaN(Number(v)))return'-';return`${{Number(v).toFixed(1)}}%`;}}
 function statCell(v){{
@@ -1159,7 +1167,7 @@ function renderRecentStats(){{
     if((r.breakout_score||0)<vMin)return false;
     if((r.swing_score||0)<sMin)return false;
     if((r.bb_score||0)<bMin)return false;
-    if(etFilt&&r.event_type!==etFilt)return false;
+    if(etFilt&&!eventList(r).includes(etFilt))return false;
     return true;
   }});
   data=[...data].sort((a,b)=>{{
@@ -1177,7 +1185,7 @@ function renderRecentStats(){{
     <td style="color:#94a3b8">${{r.trade_date||'-'}}</td>
     <td style="color:#6366f1;font-weight:700">${{r.ticker||'-'}}</td>
     <td>${{r.name||'-'}}</td>
-    <td style="color:#93c5fd;font-size:11px">${{labelEvent(r.event_type)}}</td>
+    <td style="color:#93c5fd;font-size:11px">${{labelEventList(r)}}</td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.kline_score||0,100)}}%;background:${{kCol(r.kline_score||0)}}"></div></div><span style="color:${{kCol(r.kline_score||0)}};font-weight:700">${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.composite_score||0,100)}}%;background:${{cCol(r.composite_score||0)}}"></div></div><span style="color:${{cCol(r.composite_score||0)}};font-weight:700">${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.breakout_score||0,100)}}%;background:${{vcpCol(r.breakout_score||0)}}"></div></div><span style="color:${{vcpCol(r.breakout_score||0)}};font-weight:700">${{r.breakout_score!=null?Math.round(r.breakout_score):'-'}}</span></div></td>
@@ -1342,7 +1350,8 @@ function buildTabHot(){{
   recent.forEach(r=>{{
     const key=r.ticker+'|'+(r.name||r.ticker);
     if(!freq[key])freq[key]={{ticker:r.ticker,name:r.name||r.ticker,cnt:0,wins:0,total:0,retSum:0,lastDate:r.trade_date,types:new Set()}};
-    freq[key].cnt++;freq[key].types.add(r.event_type);
+    freq[key].cnt++;
+    eventList(r).forEach(t=>freq[key].types.add(t));
     if(r.t5_return!=null){{freq[key].total++;freq[key].retSum+=Number(r.t5_return);if(Number(r.t5_return)>0)freq[key].wins++;}}
     if((r.trade_date||'')>(freq[key].lastDate||''))freq[key].lastDate=r.trade_date;
   }});
