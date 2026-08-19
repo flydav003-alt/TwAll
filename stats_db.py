@@ -936,6 +936,16 @@ def export_stats_payload(db_path=DB_PATH):
         ("BB分下軌反轉(bb_setup) >= 60", "e.bb_score >= 60 AND e.bb_setup = 'lower_reversal'"),
         ("BB分擠壓蓄勢(bb_setup) >= 50", "e.bb_score >= 50 AND e.bb_setup = 'squeeze_consolidation'"),
         ("BB分上軌突破(bb_setup) >= 50", "e.bb_score >= 50 AND e.bb_setup = 'upper_breakout'"),
+        ("RS分 50~85(甜蜜點)", "e.rs_score >= 50 AND e.rs_score < 85"),
+        ("RS分 >= 85", "e.rs_score >= 85"),
+        ("RS5日分 >= 10", "e.rs5d >= 10"),
+        ("RS5日分 >= 20(加速轉強)", "e.rs5d >= 20"),
+        ("量比 1~1.5倍(溫和放量)", "e.volume_ratio >= 1.0 AND e.volume_ratio < 1.5"),
+        ("量比 >= 2.5倍(真爆量)", "e.volume_ratio >= 2.5"),
+        ("波段分<30 且BB分<30", "e.swing_score < 30 AND e.bb_score < 30"),
+        ("波段分<30 且BB分<30 且K線<60", "e.swing_score < 30 AND e.bb_score < 30 AND e.kline_score < 60"),
+        ("波段分<30 且BB分<30 且RS5日>=20", "e.swing_score < 30 AND e.bb_score < 30 AND e.rs5d >= 20"),
+        ("RS5日>=20 且量比1~1.5倍", "e.rs5d >= 20 AND e.volume_ratio >= 1.0 AND e.volume_ratio < 1.5"),
     ]
     for label, where_sql in threshold_defs:
         rows = conn.execute(
