@@ -726,25 +726,6 @@ function statCell(v){{
   const n=Number(v), cls=n>=0?'pos':'neg';
   return `<span class="${{cls}}">${{n>0?'+':''}}${{n.toFixed(2)}}%</span>`;
 }}
-function statNum(v){{
-  if(v==null || Number.isNaN(Number(v)))return null;
-  return Number(v);
-}}
-function labelEvent(v){{
-  const m={{
-    BOTH_STRONG:'雙強',
-    ENTRY:'雙分進場',
-    COMP_STRONG_K_LOW:'綜強K低',
-    COMP_HIGH_K_LOW:'綜高K低',
-    K_STRONG_COMP_LOW:'K強綜低',
-    K_HIGH_COMP_LOW:'K高綜低',
-    BREAKOUT_SWING_STRONG:'突破波段雙強',
-    BREAKOUT_STRONG:'突破強',
-    SWING_STRONG:'波段強',
-    WATCH_CONFIRMED:'觀察確認'
-  }};
-  return m[v]||v||'-';
-}}
 function switchTab(id){{
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===id));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
@@ -773,7 +754,7 @@ const _NO_LEGEND={{legend:{{display:false}}}};
 
 const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分'}};
 const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa','#fb923c','#2dd4bf'];
-// 四策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，最後是有結構驗證的A、B
+// 五策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，最後是有結構驗證的A、B、E
 const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB'];
 const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf'}};
 
@@ -798,6 +779,20 @@ function wrBadge(wr,n){{
   if(n==null||n<5||wr==null)return`<span style="color:#94a3b8;font-size:10px">樣本不足</span>`;
   const cls=wr>=65?'wr-s':wr>=55?'wr-a':wr>=45?'wr-b':'wr-c';
   return`<span class="wr-badge ${{cls}}">${{Number(wr).toFixed(1)}}%</span>`;
+}}
+// 策略回測系列表格共用：依樣本數分三級著色跟警示，避免像A策略n=2還是裸顯示100%
+// n<10：紅色+⚠️（統計上跟丟硬幣沒兩樣，前幾輪A策略n=2/n=3就是這個等級）
+// 10<=n<30：橘黃色，數字可以參考但信賴區間還很寬
+// n>=30：正常顯示，才算是有一定統計份量
+function wrCell(wr,n,isBest){{
+  if(n==null||n===0)return`<td style="text-align:center;color:#64748b">—</td>`;
+  if(wr==null)return`<td style="text-align:center;color:#64748b">—</td>`;
+  let color,warn='';
+  if(n<10){{color='#f87171';warn=' ⚠️';}}
+  else if(n<30){{color='#fbbf24';}}
+  else{{color=isBest?'#fbbf24':'#94a3b8';}}
+  const title=n<10?`title="n=${{n}}，樣本太小，波動性極大，不能當作已驗證的訊號"`:n<30?`title="n=${{n}}，樣本偏小，數字可參考但信賴區間仍寬"`:'';
+  return`<td style="text-align:center;color:${{color}};font-weight:${{n>=30&&isBest?700:400}}" ${{title}}>${{wr.toFixed(1)}}%${{warn}}${{n>=30&&isBest?' 🏆':''}}</td>`;
 }}
 function kCol(v){{return v>=78?'#f87171':v>=70?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
 function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
@@ -1004,14 +999,12 @@ function buildCrossOverview(){{
   const tableRows=sorted.map(r=>{{
     const best=r.pts.reduce((a,c)=>c.wr>a.wr?c:a);
     const t5=r.pts.find(p=>p.h===5);
-    const nWarn=t5&&t5.n<10?' <span style="color:#f87171">(樣本偏小僅供參考)</span>':'';
     const wrCells=hs.map(h=>{{
       const p=r.pts.find(x=>x.h===h);
       if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
-      const hi=p.h===best.h;
-      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#94a3b8'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
+      return wrCell(p.wr,p.n,p.h===best.h);
     }});
-    return`<tr><td style="color:#93c5fd;font-weight:600">${{r.label}}</td><td style="text-align:center;color:#94a3b8">${{t5?t5.n:0}}${{nWarn}}</td>${{wrCells.join('')}}</tr>`;
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{r.label}}</td><td style="text-align:center;color:#94a3b8">${{t5?t5.n:0}}</td>${{wrCells.join('')}}</tr>`;
   }});
   return`
   <div class="sc-grid sc-wide" style="padding-bottom:0">
@@ -1221,8 +1214,7 @@ function buildTabPeak(){{
     const wrCells=hs.map(h=>{{
       const p=pts.find(x=>x.h===h);
       if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
-      const hi=p.h===best.h;
-      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#94a3b8'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
+      return wrCell(p.wr,p.n,p.h===best.h);
     }});
     return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
   }}).filter(Boolean);
@@ -1257,8 +1249,7 @@ function buildPeakByDim(dimKey,title){{
     const wrCells=hs.map(h=>{{
       const p=pts.find(x=>x.h===h);
       if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
-      const hi=p.h===best.h;
-      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#94a3b8'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
+      return wrCell(p.wr,p.n,p.h===best.h);
     }});
     return`<tr><td style="color:#93c5fd;font-weight:600">${{b.lbl}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
   }}).filter(Boolean);
@@ -1294,7 +1285,7 @@ function buildTabStrategy(){{
   const hs=[1,3,5,7,10];
   const present=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='event_type'&&s.event_type===et));
   if(!present.length){{
-    return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含四策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
+    return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含五策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
   }}
   const rows=present.map(et=>{{
     const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
@@ -1304,8 +1295,7 @@ function buildTabStrategy(){{
     const wrCells=hs.map(h=>{{
       const p=pts.find(x=>x.h===h);
       if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
-      const hi=p.h===best.h;
-      return`<td style="text-align:center;color:${{hi?'#fbbf24':'#94a3b8'}};font-weight:${{hi?700:400}}">${{p.wr.toFixed(1)}}%${{hi?' 🏆':''}}</td>`;
+      return wrCell(p.wr,p.n,p.h===best.h);
     }});
     return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
   }}).filter(Boolean);
@@ -1321,7 +1311,7 @@ function buildTabStrategy(){{
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">四策略 T+1~T+10 勝率對比</div>
+      <div class="sc-title">五策略 T+1~T+10 勝率對比</div>
       <div style="position:relative;height:200px"><canvas id="chartStrategy"></canvas></div>
     </div>
   </div>
