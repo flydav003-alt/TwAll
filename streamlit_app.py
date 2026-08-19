@@ -1171,7 +1171,7 @@ function renderRecentStats(){{
     if((r.breakout_score||0)<vMin)return false;
     if((r.swing_score||0)<sMin)return false;
     if((r.bb_score||0)<bMin)return false;
-    if((r.rs5d??-999)<r5Min)return false;
+    if(r.rs5d!=null && r.rs5d<r5Min)return false;
     if(etFilt&&!eventList(r).includes(etFilt))return false;
     return true;
   }});
