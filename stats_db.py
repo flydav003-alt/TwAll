@@ -190,6 +190,21 @@ def init_db(conn):
     _ensure_columns(conn, "summary_stats", [
         ("bb_bucket", "TEXT"),
     ])
+
+    # ── 新增欄位：RS分 / RS5日分 / 量比 ──
+    # 這三項原本只存在 daily_stock_snapshot（rs_score 更早已經有了，rs5d、volume_ratio
+    # 一直都在但沒有 bucket 化），signal_events 完全沒有記錄，等於資料存在但被鎖住、
+    # 每次要分析都得手動 JOIN daily_stock_snapshot。現在補上原始值+bucket，讓
+    # single_rs / single_rs5d / single_volume_ratio 以及對應的 cross_* 可以比照
+    # 既有五項分數自動產生。
+    _ensure_columns(conn, "signal_events", [
+        ("rs_score", "REAL"), ("rs_bucket", "TEXT"),
+        ("rs5d", "REAL"), ("rs5d_bucket", "TEXT"),
+        ("volume_ratio", "REAL"), ("volume_ratio_bucket", "TEXT"),
+    ])
+    _ensure_columns(conn, "summary_stats", [
+        ("rs_bucket", "TEXT"), ("rs5d_bucket", "TEXT"), ("volume_ratio_bucket", "TEXT"),
+    ])
     conn.commit()
 
 
@@ -256,18 +271,66 @@ def bucket_bb(score):
     return "D_LT30"
 
 
-# 五項分數維度的通用定義，供 summary_stats 的單維 / 交叉維度統計共用
+def bucket_rs(score):
+    """RS分（橫向排名相對強度）分級。實測發現不是越高越好，85+反而在T+10表現最差
+    （已經強過頭、後段風險最高），50~85是甜蜜點，門檻依此設定。"""
+    if score is None:
+        return "NA"
+    if score >= 85:
+        return "A_85UP"
+    if score >= 70:
+        return "B_70_84"
+    if score >= 50:
+        return "C_50_69"
+    return "D_LT50"
+
+
+def bucket_rs5d(score):
+    """RS5日分（短期相對強度加速度）分級。跟RS分邏輯不同：這裡是越高越好，
+    20+代表「正在加速轉強」，實測是少數幾個獨立於其他維度、仍有正報酬訊號的欄位。"""
+    if score is None:
+        return "NA"
+    if score >= 20:
+        return "A_20UP"
+    if score >= 10:
+        return "B_10_19"
+    if score >= 0:
+        return "C_0_9"
+    return "D_LT0"
+
+
+def bucket_volume_ratio(score):
+    """量比（今日量/20日均量）分級。實測發現2.5倍以上（真爆量）表現反而最差，
+    1~1.5倍溫和放量最穩，跟「爆量=強訊號」的直覺相反，門檻依此設定。"""
+    if score is None:
+        return "NA"
+    if score >= 2.5:
+        return "A_2P5UP"
+    if score >= 1.5:
+        return "B_1P5_2P4"
+    if score >= 1.0:
+        return "C_1_1P4"
+    return "D_LT1"
+
+
+# 八項分數維度的通用定義，供 summary_stats 的單維 / 交叉維度統計共用
 SCORE_DIMS = {
-    "kline":     {"bucket_col": "kline_bucket",     "label": "K線分"},
-    "composite": {"bucket_col": "composite_bucket", "label": "綜合分"},
-    "breakout":  {"bucket_col": "breakout_bucket",  "label": "突破分"},
-    "swing":     {"bucket_col": "swing_bucket",      "label": "波段分"},
-    "bb":        {"bucket_col": "bb_bucket",         "label": "BB分"},
+    "kline":         {"bucket_col": "kline_bucket",         "label": "K線分"},
+    "composite":     {"bucket_col": "composite_bucket",     "label": "綜合分"},
+    "breakout":      {"bucket_col": "breakout_bucket",      "label": "突破分"},
+    "swing":         {"bucket_col": "swing_bucket",          "label": "波段分"},
+    "bb":            {"bucket_col": "bb_bucket",             "label": "BB分"},
+    "rs":            {"bucket_col": "rs_bucket",             "label": "RS分"},
+    "rs5d":          {"bucket_col": "rs5d_bucket",           "label": "RS5日分"},
+    "volume_ratio":  {"bucket_col": "volume_ratio_bucket",   "label": "量比"},
 }
 CROSS_PAIRS = [
     ("kline", "composite"), ("kline", "breakout"), ("kline", "swing"), ("kline", "bb"),
     ("composite", "breakout"), ("composite", "swing"), ("composite", "bb"),
     ("breakout", "swing"), ("breakout", "bb"), ("swing", "bb"),
+    # 新增：只挑實測有互補資訊量的兩組，不把8個維度做滿28組排列組合
+    ("rs5d", "volume_ratio"),   # 加速度 x 量能，對應「怎麼搭配看」的實測發現
+    ("rs", "kline"),            # 驗證RS分獨立於K線分之外還有沒有邊際貢獻
 ]
 
 
@@ -377,6 +440,11 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
         bb_bucket = bucket_bb(bb)
         rs = s.get("rs_score")            # 橫向排名 RS 分數（突破分/波段分的資格門檻）
         vcp_status = s.get("vcp_status")  # VCP 狀態文字（高品質整理／接近突破…）
+        rs5d = s.get("rs5d")               # RS5日分（短期相對強度加速度）
+        vol_ratio = s.get("volume_ratio")  # 量比（今日量/20日均量）
+        rs_bucket = bucket_rs(rs)
+        rs5d_bucket = bucket_rs5d(rs5d)
+        vol_ratio_bucket = bucket_volume_ratio(vol_ratio)
         event_type, trigger_source = classify_signal(kline, comp, breakout, swing, bb)
         patterns = json.dumps(s.get("patterns", []), ensure_ascii=False, default=str)
 
@@ -420,8 +488,9 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         kline_score, composite_score, kline_bucket, composite_bucket,
                         breakout_score, breakout_bucket, swing_score, swing_bucket,
                         entry_reference_close, entry_price_mode, status, score_version, created_at,
-                        bb_score, bb_bucket, bb_setup
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        bb_score, bb_bucket, bb_setup,
+                        rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
@@ -429,6 +498,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         _num(breakout), b_bucket, _num(swing), sw_bucket,
                         _num(price), "close_after_signal", "open", SCORE_VERSION, now,
                         _num(bb), bb_bucket, bb_setup,
+                        _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
                     ),
                 )
 
@@ -446,8 +516,9 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         kline_score, composite_score, kline_bucket, composite_bucket,
                         breakout_score, breakout_bucket, swing_score, swing_bucket,
                         entry_reference_close, entry_price_mode, status, score_version, created_at,
-                        bb_score, bb_bucket, bb_setup
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        bb_score, bb_bucket, bb_setup,
+                        rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         strat_event_id, trade_date, ticker, s.get("name"), strat_event_type, "strategy_combo",
@@ -455,6 +526,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         _num(breakout), b_bucket, _num(swing), sw_bucket,
                         _num(price), "close_after_signal", "open", SCORE_VERSION, now,
                         _num(bb), bb_bucket, bb_setup,
+                        _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
                     ),
                 )
 
@@ -636,6 +708,38 @@ def _median(vals):
     return round((vals[mid - 1] + vals[mid]) / 2, 2)
 
 
+def backfill_rs_fields(conn):
+    """一次性回填：daily_stock_snapshot 裡本來就有 rs_score / rs5d / volume_ratio 的原始值
+    （rs_score 更早就有，rs5d、volume_ratio 則是從一開始就存在但沒被 signal_events 引用），
+    只是 signal_events 是新加的欄位、既有歷史列還是 NULL。用 trade_date+ticker 對回去，
+    把既有訊號也一起補上，不用等新資料跑出來才能分析 RS / RS5日 / 量比。
+    可重複執行，只補目前還是 NULL 的列，不會覆蓋掉未來新流程自己寫入的值。"""
+    rows = conn.execute(
+        """
+        SELECT e.event_id, d.rs_score, d.rs5d, d.volume_ratio
+        FROM signal_events e
+        JOIN daily_stock_snapshot d ON d.trade_date = e.trade_date AND d.ticker = e.ticker
+        WHERE e.rs_score IS NULL
+        """
+    ).fetchall()
+    updated = 0
+    for r in rows:
+        rs_b = bucket_rs(r["rs_score"])
+        rs5d_b = bucket_rs5d(r["rs5d"])
+        vr_b = bucket_volume_ratio(r["volume_ratio"])
+        conn.execute(
+            """
+            UPDATE signal_events
+            SET rs_score=?, rs_bucket=?, rs5d=?, rs5d_bucket=?, volume_ratio=?, volume_ratio_bucket=?
+            WHERE event_id=?
+            """,
+            (_num(r["rs_score"]), rs_b, _num(r["rs5d"]), rs5d_b, _num(r["volume_ratio"]), vr_b, r["event_id"]),
+        )
+        updated += 1
+    conn.commit()
+    return updated
+
+
 def refresh_summary_stats(conn):
     """
     重建 summary_stats，產生：
@@ -665,8 +769,10 @@ def refresh_summary_stats(conn):
                MAX(o.return_close_pct) AS return_close_pct,
                MAX(o.max_gain_pct) AS max_gain_pct,
                MAX(o.max_drawdown_pct) AS max_drawdown_pct,
-               e.kline_bucket, e.composite_bucket, e.breakout_bucket,
-               e.swing_bucket, e.bb_bucket
+               MAX(e.kline_bucket) AS kline_bucket, MAX(e.composite_bucket) AS composite_bucket,
+               MAX(e.breakout_bucket) AS breakout_bucket, MAX(e.swing_bucket) AS swing_bucket,
+               MAX(e.bb_bucket) AS bb_bucket, MAX(e.rs_bucket) AS rs_bucket,
+               MAX(e.rs5d_bucket) AS rs5d_bucket, MAX(e.volume_ratio_bucket) AS volume_ratio_bucket
         FROM event_outcomes o
         JOIN signal_events e ON e.event_id = o.event_id
         GROUP BY e.trade_date, e.ticker, o.horizon
@@ -677,19 +783,24 @@ def refresh_summary_stats(conn):
     ROW_BUCKET_COL = {
         "kline": "kline_bucket", "composite": "composite_bucket",
         "breakout": "breakout_bucket", "swing": "swing_bucket", "bb": "bb_bucket",
+        "rs": "rs_bucket", "rs5d": "rs5d_bucket", "volume_ratio": "volume_ratio_bucket",
     }
-    DIM_ORDER = ["kline", "composite", "breakout", "swing", "bb"]
+    DIM_ORDER = ["kline", "composite", "breakout", "swing", "bb", "rs", "rs5d", "volume_ratio"]
+    NA8 = {d: "NA" for d in DIM_ORDER}
 
     groups = {}
 
     def add(key, r):
         groups.setdefault(key, []).append(r)
 
+    def key_tuple(kb_dict):
+        return tuple(kb_dict[d] for d in DIM_ORDER)
+
     for r in rows_by_event_type:
         h = r["horizon"]
 
         # event_type 分組（不分維度）
-        add(("event_type", r["event_type"], "NA", "NA", "NA", "NA", "NA", h), r)
+        add(("event_type", r["event_type"]) + key_tuple(NA8) + (h,), r)
 
     for r in rows_unique_signal:
         h = r["horizon"]
@@ -697,21 +808,19 @@ def refresh_summary_stats(conn):
 
         # single_<dim> 分組
         for dim in DIM_ORDER:
-            key_buckets = {d: "NA" for d in DIM_ORDER}
+            key_buckets = dict(NA8)
             key_buckets[dim] = buckets[dim]
-            add((f"single_{dim}", None, key_buckets["kline"], key_buckets["composite"],
-                 key_buckets["breakout"], key_buckets["swing"], key_buckets["bb"], h), r)
+            add((f"single_{dim}", None) + key_tuple(key_buckets) + (h,), r)
 
-        # cross_<a>_<b> 分組（十組，來自 CROSS_PAIRS）
+        # cross_<a>_<b> 分組（來自 CROSS_PAIRS）
         for a, b in CROSS_PAIRS:
-            key_buckets = {d: "NA" for d in DIM_ORDER}
+            key_buckets = dict(NA8)
             key_buckets[a] = buckets[a]
             key_buckets[b] = buckets[b]
-            add((f"cross_{a}_{b}", None, key_buckets["kline"], key_buckets["composite"],
-                 key_buckets["breakout"], key_buckets["swing"], key_buckets["bb"], h), r)
+            add((f"cross_{a}_{b}", None) + key_tuple(key_buckets) + (h,), r)
 
     for key, items in groups.items():
-        group_name, event_type, kb, cb, brk_b, sw_b, bb_b, horizon = key
+        group_name, event_type, kb, cb, brk_b, sw_b, bb_b, rs_b, rs5d_b, vr_b, horizon = key
         vals = [float(x["return_close_pct"]) for x in items if x["return_close_pct"] is not None]
         if not vals:
             continue
@@ -719,19 +828,21 @@ def refresh_summary_stats(conn):
         losses = [v for v in vals if v <= 0]
         gross_win = sum(wins)
         gross_loss = abs(sum(losses))
-        stat_key = f"{group_name}:{event_type}:{kb}:{cb}:{brk_b}:{sw_b}:{bb_b}:T{horizon}"
+        stat_key = f"{group_name}:{event_type}:{kb}:{cb}:{brk_b}:{sw_b}:{bb_b}:{rs_b}:{rs5d_b}:{vr_b}:T{horizon}"
         conn.execute(
             """
             INSERT INTO summary_stats (
                 stat_key, group_name, event_type, kline_bucket, composite_bucket,
                 breakout_bucket, swing_bucket, bb_bucket,
+                rs_bucket, rs5d_bucket, volume_ratio_bucket,
                 horizon, sample_count, win_rate, avg_return, median_return,
                 avg_win, avg_loss, profit_factor, max_return, min_return,
                 avg_max_gain, avg_max_drawdown, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
-                stat_key, group_name, event_type, kb, cb, brk_b, sw_b, bb_b, horizon,
+                stat_key, group_name, event_type, kb, cb, brk_b, sw_b, bb_b,
+                rs_b, rs5d_b, vr_b, horizon,
                 len(vals), round(len(wins) / len(vals) * 100, 1),
                 round(sum(vals) / len(vals), 2), _median(vals),
                 round(sum(wins) / len(wins), 2) if wins else None,
@@ -771,6 +882,9 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(e.swing_score) AS swing_score,
                MAX(e.bb_score) AS bb_score,
                MAX(e.bb_setup) AS bb_setup,
+               MAX(e.rs_score) AS rs_score,
+               MAX(e.rs5d) AS rs5d,
+               MAX(e.volume_ratio) AS volume_ratio,
                MAX(e.entry_reference_close) AS entry_reference_close,
                CASE
                  WHEN SUM(CASE WHEN e.status = 'open' THEN 1 ELSE 0 END) > 0 THEN 'open'
