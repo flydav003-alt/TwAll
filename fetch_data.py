@@ -158,7 +158,7 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         bb_score=None, bb_setup=None, bb_score_breakdown=None,
         bb_upper=None, bb_lower=None, bb_mid=None, bb_width_pct=None, bb_pre_squeeze_min_pct=None,
         bb_percent_b=None, bb_mid_rising=None, bb_lower_touch_days_10=None,
-        bb_upper_touch_days_10=None, bb_squeeze_persist_days=None,
+        bb_upper_touch_days_10=None, bb_squeeze_persist_days=None, bb_consec_down_days=None,
         composite=0,
         patterns=[],
     )
@@ -249,9 +249,19 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
     base["cons_vol_ratio"]  = calc_consolidation_vol_ratio(volumes, recent_n=10, base_n=60)
     base["vcp_breakout"]    = calc_breakout_60d(closes, volumes, n=60, vol_mult=1.5)
     if len(closes) >= 25:
-        ma20_now  = float(closes.iloc[-20:].mean())
-        ma20_5ago = float(closes.iloc[-25:-5].mean())
-        base["ma20_rising"] = bool(ma20_now > ma20_5ago)
+        # 原本用「今天回推20天均值」vs「5天前回推20天均值」比較，
+        # 兩個窗口重疊15天，在急殺後止穩的初期會嚴重落後：
+        # 股價可能已經止跌好幾天，但均線還在消化更早之前的高點，
+        # 導致 ma20_rising 誤判為 True（其實只是均線還沒反應過來），
+        # 讓 bb_gate_multiplier / calc_swing_score 誤判假反轉為真轉強。
+        # 改用最近5天ma20本身的斜率（連續，不是單點比較），
+        # 且要求最近5天全部同向遞增，避免單日雜訊造成誤判。
+        ma20_series = closes.rolling(20).mean().iloc[-5:]
+        base["ma20_rising"] = bool(
+            len(ma20_series) == 5
+            and ma20_series.is_monotonic_increasing
+            and float(ma20_series.iloc[-1]) > float(ma20_series.iloc[0])
+        )
 
     # OHLCV list → K線計分
     ohlcv = [
@@ -405,13 +415,17 @@ def main():
     # 低分股票不具備進場條件，不應計入績效統計，也節省資料庫空間
     # ── 門檻對齊 stats_db.py 的策略組合回測 ──
     #   策略A 要抓 突破分≥60，策略B 要抓 波段分≥60，策略D 要抓 綜合分≥75，
-    #   策略E 要抓 BB分≥60，如果這裡的門檻比策略門檻還嚴格，會讓對應分數區間的
-    #   股票根本進不了資料庫，統計出來的樣本永遠是空的或被悄悄墊高標準。
+    #   策略E 要抓 BB分≥60，策略F(均值回歸)要抓 bb_score≥40 且 bb_setup=lower_reversal，
+    #   如果這裡的門檻比策略門檻還嚴格，會讓對應分數區間的股票根本進不了資料庫，
+    #   統計出來的樣本永遠是空的或被悄悄墊高標準。
+    #   策略F刻意用低分門檻(40)，因為均值回歸股票本來就不該五項分數都高分，
+    #   如果沿用其他策略的高門檻，F會永遠沒有樣本可以累積。
     DB_KLINE_MIN    = 75
     DB_COMP_MIN     = 75
     DB_BREAKOUT_MIN = 60
     DB_SWING_MIN    = 60
     DB_BB_MIN       = 60
+    DB_MEANREV_MIN  = 40
     qualified = [
         s for s in results
         if (s.get("kline_score") or 0) >= DB_KLINE_MIN
@@ -419,9 +433,11 @@ def main():
         or (s.get("vcp_score") or 0) >= DB_BREAKOUT_MIN
         or (s.get("swing_score") or 0) >= DB_SWING_MIN
         or (s.get("bb_score") or 0) >= DB_BB_MIN
+        or ((s.get("bb_score") or 0) >= DB_MEANREV_MIN and s.get("bb_setup") == "lower_reversal")
     ]
     print(f"[INFO] 符合資料庫下線（K線≥{DB_KLINE_MIN} 或 綜合分≥{DB_COMP_MIN} "
-          f"或 突破分≥{DB_BREAKOUT_MIN} 或 波段分≥{DB_SWING_MIN} 或 BB分≥{DB_BB_MIN}）：{len(qualified)} 檔")
+          f"或 突破分≥{DB_BREAKOUT_MIN} 或 波段分≥{DB_SWING_MIN} 或 BB分≥{DB_BB_MIN} "
+          f"或 均值回歸bb_score≥{DB_MEANREV_MIN}）：{len(qualified)} 檔")
     save_daily_run(qualified, generated_at=ts)
     print(f"[INFO] 已更新統計資料庫 → {os.path.join(DATA_DIR, 'stats.db')}")
 
