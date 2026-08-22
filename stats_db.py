@@ -383,7 +383,7 @@ STRAT_BB_OK_SETUP = ("lower_reversal", "squeeze_consolidation", "upper_breakout"
 
 def classify_strategy_events(kline_score, composite_score, breakout_score, swing_score,
                               rs_score, vcp_status, entry_signal,
-                              bb_score=None, bb_setup=None):
+                              bb_score=None, bb_setup=None, bb_consec_down_days=None):
     events = []
     if (rs_score is not None and rs_score >= 85
             and breakout_score is not None and breakout_score >= 60
@@ -401,6 +401,14 @@ def classify_strategy_events(kline_score, composite_score, breakout_score, swing
     if (bb_score is not None and bb_score >= 60
             and bb_setup in STRAT_BB_OK_SETUP):
         events.append("STRAT_E_BB")
+    # 策略F：均值回歸，故意不要求RS≥85或高分結構條件（那是動能邏輯），
+    # 只要求bb_setup是lower_reversal、bb_score本身夠高（代表已經通過
+    # bb_gate_multiplier的連跌天數防呆，不然還在崩的股票bb_score會被砍到接近0）、
+    # 且連跌天數不到危險門檻。這條線刻意跟A/B用完全相反的篩選邏輯。
+    if (bb_score is not None and bb_score >= 40
+            and bb_setup == "lower_reversal"
+            and (bb_consec_down_days is None or bb_consec_down_days < 4)):
+        events.append("STRAT_F_MEANREV")
     return events
 
 
@@ -505,7 +513,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
             # ── 策略組合回測標籤（獨立於上面的 event_type，彼此不互斥）──
             strat_events = classify_strategy_events(
                 kline, comp, breakout, swing, rs, vcp_status, s.get("entry_signal", ""),
-                bb, bb_setup,
+                bb, bb_setup, s.get("bb_consec_down_days"),
             )
             for strat_event_type in strat_events:
                 strat_event_id = f"{trade_date}:{ticker}:{strat_event_type}"
@@ -875,7 +883,9 @@ def export_stats_payload(db_path=DB_PATH):
         """
         SELECT e.trade_date, e.ticker, MAX(e.name) AS name,
                MIN(CASE WHEN e.trigger_source = 'strategy_combo' THEN NULL ELSE e.event_type END) AS event_type,
-               GROUP_CONCAT(e.event_type, ',') AS event_types,
+               (SELECT GROUP_CONCAT(DISTINCT e2.event_type)
+                FROM signal_events e2
+                WHERE e2.trade_date = e.trade_date AND e2.ticker = e.ticker) AS event_types,
                MAX(e.kline_score) AS kline_score,
                MAX(e.composite_score) AS composite_score,
                MAX(e.breakout_score) AS breakout_score,
@@ -943,7 +953,8 @@ def export_stats_payload(db_path=DB_PATH):
         ("量比 1~1.5倍(溫和放量)", "e.volume_ratio >= 1.0 AND e.volume_ratio < 1.5"),
         ("量比 >= 2.5倍(真爆量)", "e.volume_ratio >= 2.5"),
         ("波段分<30 且BB分<30", "e.swing_score < 30 AND e.bb_score < 30"),
-        ("波段分<30 且BB分<30 且K線<60", "e.swing_score < 30 AND e.bb_score < 30 AND e.kline_score < 60"),
+        ("波段分<30 且BB分<30 且K線<78(排除過熱)", "e.swing_score < 30 AND e.bb_score < 30 AND e.kline_score < 78"),
+        ("波段分<30 且BB分<30 且K線>=78(過熱對照組)", "e.swing_score < 30 AND e.bb_score < 30 AND e.kline_score >= 78"),
         ("波段分<30 且BB分<30 且RS5日>=20", "e.swing_score < 30 AND e.bb_score < 30 AND e.rs5d >= 20"),
         ("RS5日>=20 且量比1~1.5倍", "e.rs5d >= 20 AND e.volume_ratio >= 1.0 AND e.volume_ratio < 1.5"),
     ]
