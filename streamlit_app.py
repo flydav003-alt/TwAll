@@ -266,9 +266,28 @@ input[type=range]::-webkit-slider-thumb{{
 input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,241,.25);}}
 .sl-val{{
   font-size:13px;font-weight:500;color:var(--txt);
-  min-width:28px;text-align:center;
+  min-width:44px;text-align:center;
   background:var(--bg2);border:1px solid var(--bdr);
   border-radius:6px;padding:4px 8px;
+}}
+
+/* 區間拉霸（雙滑塊，高低值都能拉） */
+.rng-wrap{{position:relative;height:20px;display:flex;align-items:center;}}
+.rng-wrap input[type=range]{{
+  position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:100%;margin:0;background:none;pointer-events:none;-webkit-appearance:none;
+  height:6px;
+}}
+.rng-wrap input[type=range]::-webkit-slider-thumb{{pointer-events:auto;}}
+.rng-wrap input[type=range]::-moz-range-thumb{{pointer-events:auto;}}
+.rng-wrap input[type=range]::-moz-range-track{{background:transparent;border:none;}}
+.rng-track{{
+  position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);
+  height:6px;background:var(--bdr);border-radius:3px;
+}}
+.rng-fill{{
+  position:absolute;top:50%;transform:translateY(-50%);
+  height:6px;background:var(--acc);border-radius:3px;
 }}
 
 /* ── STAT LINE ── */
@@ -492,34 +511,58 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
     <input type="text" id="searchQ" placeholder="代號 / 名稱" oninput="applyFilter()">
   </div>
   <div class="sl-grp">
-    <span class="sl-lbl">K線分 ≥</span>
-    <input type="range" id="slK" min="0" max="100" step="1" value="0"
-      oninput="updSlider(this,'kvK');applyFilter()">
-    <span class="sl-val" id="kvK">0</span>
+    <span class="sl-lbl">K線分</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillK" style="left:0%;width:100%"></div>
+      <input type="range" id="slK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvK','fillK');applyFilter()">
+      <input type="range" id="slK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvK','fillK');applyFilter()">
+    </div>
+    <span class="sl-val" id="kvK">全部</span>
   </div>
   <div class="sl-grp">
-    <span class="sl-lbl">綜合分 ≥</span>
-    <input type="range" id="slC" min="0" max="100" step="1" value="0"
-      oninput="updSlider(this,'kvC');applyFilter()">
-    <span class="sl-val" id="kvC">0</span>
+    <span class="sl-lbl">綜合分</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillC" style="left:0%;width:100%"></div>
+      <input type="range" id="slC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvC','fillC');applyFilter()">
+      <input type="range" id="slC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvC','fillC');applyFilter()">
+    </div>
+    <span class="sl-val" id="kvC">全部</span>
   </div>
   <div class="sl-grp">
-    <span class="sl-lbl">突破分 ≥</span>
-    <input type="range" id="slV" min="0" max="100" step="1" value="0"
-      oninput="updSlider(this,'kvV');applyFilter()">
-    <span class="sl-val" id="kvV">0</span>
+    <span class="sl-lbl">突破分</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillV" style="left:0%;width:100%"></div>
+      <input type="range" id="slV_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvV','fillV');applyFilter()">
+      <input type="range" id="slV_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvV','fillV');applyFilter()">
+    </div>
+    <span class="sl-val" id="kvV">全部</span>
   </div>
   <div class="sl-grp">
-    <span class="sl-lbl">波段分 ≥</span>
-    <input type="range" id="slS" min="0" max="100" step="1" value="0"
-      oninput="updSlider(this,'kvS');applyFilter()">
-    <span class="sl-val" id="kvS">0</span>
+    <span class="sl-lbl">波段分</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillS" style="left:0%;width:100%"></div>
+      <input type="range" id="slS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvS','fillS');applyFilter()">
+      <input type="range" id="slS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvS','fillS');applyFilter()">
+    </div>
+    <span class="sl-val" id="kvS">全部</span>
   </div>
   <div class="sl-grp">
-    <span class="sl-lbl">BB分 ≥</span>
-    <input type="range" id="slB" min="0" max="100" step="1" value="0"
-      oninput="updSlider(this,'kvB');applyFilter()">
-    <span class="sl-val" id="kvB">0</span>
+    <span class="sl-lbl">BB分</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillB" style="left:0%;width:100%"></div>
+      <input type="range" id="slB_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvB','fillB');applyFilter()">
+      <input type="range" id="slB_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvB','fillB');applyFilter()">
+    </div>
+    <span class="sl-val" id="kvB">全部</span>
+  </div>
+  <div class="sl-grp">
+    <span class="sl-lbl">RSI</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillR" style="left:0%;width:100%"></div>
+      <input type="range" id="slR_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvR','fillR');applyFilter()">
+      <input type="range" id="slR_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvR','fillR');applyFilter()">
+    </div>
+    <span class="sl-val" id="kvR">全部</span>
   </div>
 </div>
 
@@ -1093,12 +1136,13 @@ function buildTabRecent(){{
       <option value="STRAT_E_BB">策略E純BB分</option>
       <option value="STRAT_F_MEANREV">策略F均值回歸</option>
     </select>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">K線≥</span><input type="range" id="statsK" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsKv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsKv">0</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合≥</span><input type="range" id="statsC" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsCv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsCv">0</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">突破≥</span><input type="range" id="statsV" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsVv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsVv">0</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">波段≥</span><input type="range" id="statsS" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsSv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsSv">0</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">BB≥</span><input type="range" id="statsB" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsBv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsBv">0</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">RS5日≥</span><input type="range" id="statsR5" min="-30" max="50" step="1" value="-30" oninput="updSlider2(this,'statsR5v');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsR5v">-30</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">K線</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillK" style="left:0%;width:100%"></div><input type="range" id="statsK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsKv','statsFillK');renderRecentStats()"><input type="range" id="statsK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsKv','statsFillK');renderRecentStats()"></div><span class="sl-val2" id="statsKv">全部</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillC" style="left:0%;width:100%"></div><input type="range" id="statsC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsCv','statsFillC');renderRecentStats()"><input type="range" id="statsC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsCv','statsFillC');renderRecentStats()"></div><span class="sl-val2" id="statsCv">全部</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">突破</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillV" style="left:0%;width:100%"></div><input type="range" id="statsV_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsVv','statsFillV');renderRecentStats()"><input type="range" id="statsV_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsVv','statsFillV');renderRecentStats()"></div><span class="sl-val2" id="statsVv">全部</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">波段</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillS" style="left:0%;width:100%"></div><input type="range" id="statsS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsSv','statsFillS');renderRecentStats()"><input type="range" id="statsS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsSv','statsFillS');renderRecentStats()"></div><span class="sl-val2" id="statsSv">全部</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">BB</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillB" style="left:0%;width:100%"></div><input type="range" id="statsB_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsBv','statsFillB');renderRecentStats()"><input type="range" id="statsB_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsBv','statsFillB');renderRecentStats()"></div><span class="sl-val2" id="statsBv">全部</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">RS5日</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillR5" style="left:0%;width:100%"></div><input type="range" id="statsR5_min" class="rng-min" min="-30" max="50" step="1" value="-30" oninput="dualInput(this,'statsR5v','statsFillR5');renderRecentStats()"><input type="range" id="statsR5_max" class="rng-max" min="-30" max="50" step="1" value="50" oninput="dualInput(this,'statsR5v','statsFillR5');renderRecentStats()"></div><span class="sl-val2" id="statsR5v">全部</span></div>
+    <div class="stats-sl-grp"><span class="stats-sl-lbl">RSI</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillRSI" style="left:0%;width:100%"></div><input type="range" id="statsRSI_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsRSIv','statsFillRSI');renderRecentStats()"><input type="range" id="statsRSI_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsRSIv','statsFillRSI');renderRecentStats()"></div><span class="sl-val2" id="statsRSIv">全部</span></div>
     <span style="font-size:11px;color:#94a3b8">顯示 <b id="recentStatsCount" style="color:#e2e8f0">0</b> 筆</span>
   </div>
   <div class="stats-scroll">
@@ -1115,6 +1159,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('bb_score')">BB分</th>
         <th class="stats-sort" onclick="statsSortBy('rs_score')" title="橫向排名相對強度。實測85+在T+10反而最差，50~85是甜蜜點，不是越高越好">RS分</th>
         <th class="stats-sort" onclick="statsSortBy('rs5d')" title="短期相對強度加速度。實測20+是少數獨立有正報酬的訊號，越高越好">RS5日</th>
+        <th class="stats-sort" onclick="statsSortBy('rsi14')">RSI</th>
         <th>買進收盤</th>
         <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1</th>
         <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3</th>
@@ -1123,7 +1168,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="18" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="19" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1151,21 +1196,30 @@ function statsSortBy(k){{if(_sigSort===k)_sigAsc=!_sigAsc;else{{_sigSort=k;_sigA
 function renderRecentStats(){{
   const host=document.getElementById('recentStatsBody');if(!host)return;
   const q=((document.getElementById('statsQ')||{{}}).value||'').toLowerCase();
-  const kMin=Number((document.getElementById('statsK')||{{value:0}}).value||0);
-  const cMin=Number((document.getElementById('statsC')||{{value:0}}).value||0);
-  const vMin=Number((document.getElementById('statsV')||{{value:0}}).value||0);
-  const sMin=Number((document.getElementById('statsS')||{{value:0}}).value||0);
-  const bMin=Number((document.getElementById('statsB')||{{value:0}}).value||0);
-  const r5Min=Number((document.getElementById('statsR5')||{{value:-30}}).value||-30);
+  const kMin=Number((document.getElementById('statsK_min')||{{value:0}}).value||0);
+  const kMax=Number((document.getElementById('statsK_max')||{{value:100}}).value??100);
+  const cMin=Number((document.getElementById('statsC_min')||{{value:0}}).value||0);
+  const cMax=Number((document.getElementById('statsC_max')||{{value:100}}).value??100);
+  const vMin=Number((document.getElementById('statsV_min')||{{value:0}}).value||0);
+  const vMax=Number((document.getElementById('statsV_max')||{{value:100}}).value??100);
+  const sMin=Number((document.getElementById('statsS_min')||{{value:0}}).value||0);
+  const sMax=Number((document.getElementById('statsS_max')||{{value:100}}).value??100);
+  const bMin=Number((document.getElementById('statsB_min')||{{value:0}}).value||0);
+  const bMax=Number((document.getElementById('statsB_max')||{{value:100}}).value??100);
+  const r5Min=Number((document.getElementById('statsR5_min')||{{value:-30}}).value??-30);
+  const r5Max=Number((document.getElementById('statsR5_max')||{{value:50}}).value??50);
+  const rsiMin=Number((document.getElementById('statsRSI_min')||{{value:0}}).value||0);
+  const rsiMax=Number((document.getElementById('statsRSI_max')||{{value:100}}).value??100);
   const etFilt=(document.getElementById('statsEt')||{{}}).value||'';
   let data=(STATS.recent||[]).filter(r=>{{
     if(q&&!(String(r.ticker||'').toLowerCase().includes(q)||String(r.name||'').toLowerCase().includes(q)))return false;
-    if((r.kline_score||0)<kMin)return false;
-    if((r.composite_score||0)<cMin)return false;
-    if((r.breakout_score||0)<vMin)return false;
-    if((r.swing_score||0)<sMin)return false;
-    if((r.bb_score||0)<bMin)return false;
-    if(r.rs5d!=null && r.rs5d<r5Min)return false;
+    if((r.kline_score||0)<kMin||(r.kline_score||0)>kMax)return false;
+    if((r.composite_score||0)<cMin||(r.composite_score||0)>cMax)return false;
+    if((r.breakout_score||0)<vMin||(r.breakout_score||0)>vMax)return false;
+    if((r.swing_score||0)<sMin||(r.swing_score||0)>sMax)return false;
+    if((r.bb_score||0)<bMin||(r.bb_score||0)>bMax)return false;
+    if(r.rs5d!=null && (r.rs5d<r5Min||r.rs5d>r5Max))return false;
+    if(r.rsi14!=null && (r.rsi14<rsiMin||r.rsi14>rsiMax))return false;
     if(etFilt&&!eventList(r).includes(etFilt))return false;
     return true;
   }});
@@ -1192,11 +1246,12 @@ function renderRecentStats(){{
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.bb_score||0,100)}}%;background:${{vcpCol(r.bb_score||0)}}"></div></div><span style="color:${{vcpCol(r.bb_score||0)}};font-weight:700" title="${{escAttr(BB_SETUP_LBL[r.bb_setup]||r.bb_setup||'-')}}">${{r.bb_score!=null?Math.round(r.bb_score):'-'}}</span></div></td>
     <td style="text-align:center;color:#94a3b8;font-weight:600" title="實測50~85是甜蜜點，85+在T+10反而最差">${{r.rs_score!=null?Math.round(r.rs_score):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.rs5d==null?'#94a3b8':r.rs5d>=20?'#4ade80':r.rs5d>=0?'#94a3b8':'#f87171'}}" title="實測20+代表正在加速轉強，越高越好">${{r.rs5d!=null?(r.rs5d>0?'+':'')+Number(r.rs5d).toFixed(1):'-'}}</td>
+    <td style="text-align:center;font-weight:600;color:${{r.rsi14==null?'#94a3b8':r.rsi14>=70?'#f87171':r.rsi14<=30?'#4ade80':'#94a3b8'}}">${{r.rsi14!=null?Number(r.rsi14).toFixed(1):'-'}}</td>
     <td style="color:#94a3b8">${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="18" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="19" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
@@ -1430,15 +1485,21 @@ function switchStatsTab(id,btn){{
   }},30);
 }}
 
-function updSlider2(el,vidId){{
-  const p=(el.value/el.max)*100;el.style.setProperty('--pct',p+'%');
-  document.getElementById(vidId).textContent=el.value;
-}}
-
-function updSlider(el,vidId){{
-  const pct=(el.value/el.max)*100;
-  el.style.setProperty('--pct',pct+'%');
-  document.getElementById(vidId).textContent=el.value;
+// 區間拉霸（雙滑塊）：高低值都能拖動，thumb 不可交叉
+function dualInput(el,dispId,fillId){{
+  const wrap=el.closest('.rng-wrap');
+  const minEl=wrap.querySelector('.rng-min'), maxEl=wrap.querySelector('.rng-max');
+  let lo=+minEl.value, hi=+maxEl.value;
+  if(lo>hi){{
+    if(el===minEl){{maxEl.value=lo;hi=lo;}}else{{minEl.value=hi;lo=hi;}}
+  }}
+  const rMin=+minEl.min, rMax=+minEl.max;
+  const span=(rMax-rMin)||1;
+  const loPct=((lo-rMin)/span)*100, hiPct=((hi-rMin)/span)*100;
+  const fill=document.getElementById(fillId);
+  if(fill){{fill.style.left=loPct+'%';fill.style.width=Math.max(hiPct-loPct,0)+'%';}}
+  const disp=document.getElementById(dispId);
+  if(disp)disp.textContent=(lo<=rMin&&hi>=rMax)?'全部':(lo+'–'+hi);
 }}
 
 function renderRows(data){{
@@ -1471,18 +1532,20 @@ function renderRows(data){{
 
 function applyFilter(){{
   const q=(document.getElementById('searchQ').value||'').toLowerCase();
-  const kMin=+document.getElementById('slK').value;
-  const cMin=+document.getElementById('slC').value;
-  const vMin=+document.getElementById('slV').value;
-  const sMin=+document.getElementById('slS').value;
-  const bMin=+document.getElementById('slB').value;
+  const kMin=+document.getElementById('slK_min').value, kMax=+document.getElementById('slK_max').value;
+  const cMin=+document.getElementById('slC_min').value, cMax=+document.getElementById('slC_max').value;
+  const vMin=+document.getElementById('slV_min').value, vMax=+document.getElementById('slV_max').value;
+  const sMin=+document.getElementById('slS_min').value, sMax=+document.getElementById('slS_max').value;
+  const bMin=+document.getElementById('slB_min').value, bMax=+document.getElementById('slB_max').value;
+  const rMin=+document.getElementById('slR_min').value, rMax=+document.getElementById('slR_max').value;
   let data=RAW.filter(r=>{{
     if(r.kline==null&&r.vol==null)return false;
-    if((r.kline||0)<kMin)return false;
-    if((r.comp||0)<cMin)return false;
-    if((r.vcp||0)<vMin)return false;
-    if((r.swing||0)<sMin)return false;
-    if((r.bb||0)<bMin)return false;
+    if((r.kline||0)<kMin||(r.kline||0)>kMax)return false;
+    if((r.comp||0)<cMin||(r.comp||0)>cMax)return false;
+    if((r.vcp||0)<vMin||(r.vcp||0)>vMax)return false;
+    if((r.swing||0)<sMin||(r.swing||0)>sMax)return false;
+    if((r.bb||0)<bMin||(r.bb||0)>bMax)return false;
+    if(r.rsi!=null&&(r.rsi<rMin||r.rsi>rMax))return false;
     if(q&&!r.ticker.toLowerCase().includes(q)&&!r.name.toLowerCase().includes(q))return false;
     return true;
   }});
@@ -1519,20 +1582,18 @@ function toggleLegend(){{
 // ── 強化版應用程式初始化模組 ──
 function initApp() {{
   try {{
-    // 1. 強制重置拉條數值，清除瀏覽器的 Form Auto-restore 快取
-    ['slK', 'slC', 'slV', 'slS', 'slB'].forEach(id => {{
-      const el = document.getElementById(id);
-      if (el) {{
-        el.value = 0; // 強制將真實數值歸零
-        el.style.setProperty('--pct', '0%');
+    // 1. 強制重置區間拉霸，清除瀏覽器的 Form Auto-restore 快取
+    [['slK','fillK','kvK'],['slC','fillC','kvC'],['slV','fillV','kvV'],['slS','fillS','kvS'],['slB','fillB','kvB'],['slR','fillR','kvR']].forEach(([id,fillId,dispId]) => {{
+      const minEl = document.getElementById(id+'_min'), maxEl = document.getElementById(id+'_max');
+      if (minEl && maxEl) {{
+        minEl.value = minEl.min;
+        maxEl.value = maxEl.max;
+        const fill = document.getElementById(fillId);
+        if (fill) {{ fill.style.left='0%'; fill.style.width='100%'; }}
+        const disp = document.getElementById(dispId);
+        if (disp) disp.textContent = '全部';
       }}
     }});
-    // 強制重置旁邊顯示的數字
-    document.getElementById('kvK').textContent = '0';
-    document.getElementById('kvC').textContent = '0';
-    document.getElementById('kvV').textContent = '0';
-    document.getElementById('kvS').textContent = '0';
-    document.getElementById('kvB').textContent = '0';
 
     // 2. 設定預設排序
     const thKline = document.querySelector('th[data-k="kline"]');
@@ -1545,10 +1606,18 @@ function initApp() {{
       console.error("統計面板初始化略過:", e); 
     }}
 
-    // 4. 初始化統計面板的滑桿漸層百分比
-    ['statsK', 'statsC', 'statsV', 'statsS', 'statsB'].forEach(id => {{
-      const el = document.getElementById(id);
-      if (el) el.style.setProperty('--pct', '0%');
+    // 4. 初始化統計面板的區間拉霸（實際 HTML 樣板本身已預設為全選狀態，此處僅為保險重置）
+    [['statsK','statsFillK','statsKv'],['statsC','statsFillC','statsCv'],['statsV','statsFillV','statsVv'],
+     ['statsS','statsFillS','statsSv'],['statsB','statsFillB','statsBv'],['statsR5','statsFillR5','statsR5v'],
+     ['statsRSI','statsFillRSI','statsRSIv']].forEach(([id,fillId,dispId]) => {{
+      const minEl = document.getElementById(id+'_min'), maxEl = document.getElementById(id+'_max');
+      if (minEl && maxEl) {{
+        minEl.value = minEl.min; maxEl.value = maxEl.max;
+        const fill = document.getElementById(fillId);
+        if (fill) {{ fill.style.left='0%'; fill.style.width='100%'; }}
+        const disp = document.getElementById(dispId);
+        if (disp) disp.textContent = '全部';
+      }}
     }});
 
     // 5. 執行最終過濾與渲染
