@@ -752,11 +752,11 @@ const _TICK={{color:'#94a3b8'}};
 const _BASE_SCALE={{x:{{grid:_GRID,ticks:_TICK}},y:{{grid:_GRID,ticks:_TICK}}}};
 const _NO_LEGEND={{legend:{{display:false}}}};
 
-const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分'}};
+const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分',STRAT_F_MEANREV:'策略F均值回歸'}};
 const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa','#fb923c','#2dd4bf'];
-// 五策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，最後是有結構驗證的A、B、E
-const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB'];
-const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf'}};
+// 六策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，接著是有結構驗證的A、B、E，最後是均值回歸F
+const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB','STRAT_F_MEANREV'];
+const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf',STRAT_F_MEANREV:'#60a5fa'}};
 
 function labelEvent(v){{return ETYPE_LBL[v]||v||'-';}}
 function eventList(r){{
@@ -1091,6 +1091,7 @@ function buildTabRecent(){{
       <option value="STRAT_A_BREAKOUT">策略A突破族</option><option value="STRAT_B_SWING">策略B波段族</option>
       <option value="STRAT_C_KLINE">策略C純K線</option><option value="STRAT_D_COMPOSITE">策略D純綜合分</option>
       <option value="STRAT_E_BB">策略E純BB分</option>
+      <option value="STRAT_F_MEANREV">策略F均值回歸</option>
     </select>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">K線≥</span><input type="range" id="statsK" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsKv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsKv">0</span></div>
     <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合≥</span><input type="range" id="statsC" min="0" max="100" step="1" value="0" oninput="updSlider2(this,'statsCv');renderRecentStats()" style="width:90px;"><span class="sl-val2" id="statsCv">0</span></div>
@@ -1285,7 +1286,7 @@ function buildTabStrategy(){{
   const hs=[1,3,5,7,10];
   const present=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='event_type'&&s.event_type===et));
   if(!present.length){{
-    return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含五策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
+    return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含六策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
   }}
   const rows=present.map(et=>{{
     const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
@@ -1311,7 +1312,7 @@ function buildTabStrategy(){{
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">五策略 T+1~T+10 勝率對比</div>
+      <div class="sc-title">六策略 T+1~T+10 勝率對比</div>
       <div style="position:relative;height:200px"><canvas id="chartStrategy"></canvas></div>
     </div>
   </div>
