@@ -166,6 +166,7 @@ def init_db(conn):
     _ensure_columns(conn, "signal_events", [
         ("breakout_score", "REAL"), ("breakout_bucket", "TEXT"),
         ("swing_score", "REAL"), ("swing_bucket", "TEXT"),
+        ("rsi14", "REAL"),
     ])
     _ensure_columns(conn, "watch_transitions", [
         ("watch_breakout_score", "REAL"), ("watch_swing_score", "REAL"),
@@ -497,8 +498,8 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         breakout_score, breakout_bucket, swing_score, swing_bucket,
                         entry_reference_close, entry_price_mode, status, score_version, created_at,
                         bb_score, bb_bucket, bb_setup,
-                        rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket, rsi14
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
@@ -507,6 +508,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         _num(price), "close_after_signal", "open", SCORE_VERSION, now,
                         _num(bb), bb_bucket, bb_setup,
                         _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
+                        _num(s.get("rsi14")),
                     ),
                 )
 
@@ -525,8 +527,8 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         breakout_score, breakout_bucket, swing_score, swing_bucket,
                         entry_reference_close, entry_price_mode, status, score_version, created_at,
                         bb_score, bb_bucket, bb_setup,
-                        rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket, rsi14
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         strat_event_id, trade_date, ticker, s.get("name"), strat_event_type, "strategy_combo",
@@ -535,6 +537,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
                         _num(price), "close_after_signal", "open", SCORE_VERSION, now,
                         _num(bb), bb_bucket, bb_setup,
                         _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
+                        _num(s.get("rsi14")),
                     ),
                 )
 
