@@ -583,7 +583,26 @@ def calc_bb_data(closes, period=BB_PERIOD, width_lookback=BB_WIDTH_LOOKBACK,
     mid_rising = None
     ma_valid = ma.dropna()
     if len(ma_valid) >= 6:
-        mid_rising = bool(ma_valid.iloc[-1] > ma_valid.iloc[-6])
+        # 原本用「今天」vs「6天前」單點比較，在急殺後止穩初期會跟fetch_data.py的
+        # ma20_rising犯一樣的毛病：均線還在消化更早之前的高點，單點比較容易誤判。
+        # 改用最近5天ma本身的斜率，且要求連續遞增才算數。
+        recent_ma = ma_valid.iloc[-5:]
+        mid_rising = bool(
+            len(recent_ma) == 5
+            and recent_ma.is_monotonic_increasing
+            and float(recent_ma.iloc[-1]) > float(recent_ma.iloc[0])
+        )
+
+    # 連續下跌天數：判斷「還在筆直下墜」vs「已經止穩」的關鍵防呆，
+    # _score_lower_reversal原本完全沒有這個資訊，導致還在急殺中的股票
+    # 只要當天恰好碰到下軌就可能被誤判成止跌反轉。
+    consec_down_days = 0
+    closes_recent = closes.iloc[-10:].reset_index(drop=True)
+    for i in range(len(closes_recent) - 1, 0, -1):
+        if closes_recent.iloc[i] < closes_recent.iloc[i - 1]:
+            consec_down_days += 1
+        else:
+            break
 
     pb_series = (closes - lower) / (upper - lower).replace(0, np.nan)
     recent_pb = pb_series.iloc[-min(band_walk_window, len(pb_series)):].dropna()
@@ -622,6 +641,7 @@ def calc_bb_data(closes, period=BB_PERIOD, width_lookback=BB_WIDTH_LOOKBACK,
         "bb_lower_touch_days_10": lower_touch_days,
         "bb_upper_touch_days_10": upper_touch_days,
         "bb_squeeze_persist_days": squeeze_persist_days,
+        "bb_consec_down_days": consec_down_days,
     }
 
 
@@ -642,8 +662,8 @@ def detect_bb_setup(r):
 
 def bb_gate_multiplier(r, setup):
     """
-    防呆 Gate：趨勢死亡 / band walk(沿下軌走空頭) 的下軌反轉直接砍分，
-    不讓「還在跌」被誤判成「要反彈」。
+    防呆 Gate：趨勢死亡 / band walk(沿下軌走空頭) / 還在筆直下墜，
+    三種情況都直接砍分，不讓「還在跌」被誤判成「要反彈」。
     """
     if setup != "lower_reversal":
         return 1.0
@@ -653,6 +673,13 @@ def bb_gate_multiplier(r, setup):
 
     band_walk_days = r.get("bb_lower_touch_days_10", 0) or 0
     is_band_walk = band_walk_days >= BB_BAND_WALK_MIN_TOUCHES
+
+    # 連續下跌天數：實測發現原本的lower_reversal觸發樣本裡，
+    # 有不少是月線/中軌判斷還沒反應過來、但股價其實還在筆直下墜的假反轉。
+    # 連跌4天以上，不管band walk或trend_alive怎麼判斷，都先大砍分。
+    consec_down = r.get("bb_consec_down_days", 0) or 0
+    if consec_down >= 4:
+        return 0.1
 
     if is_band_walk:
         return 0.15
@@ -708,6 +735,15 @@ def _score_lower_reversal(r):
         b["first_touch_bonus"] = 0
 
     b["mid_turn_bonus"] = 15 if r.get("bb_mid_rising") is True else 0
+
+    # 連跌天數扣分：即使還沒到Gate的4天硬門檻，2~3天連跌也該打折，
+    # 不是只有0分/滿分兩種結果，跟其他分項一樣用連續函數處理。
+    consec_down = r.get("bb_consec_down_days", 0) or 0
+    if consec_down >= 2:
+        b["consec_down_penalty"] = -round(min(consec_down, 4) * 5, 1)
+    else:
+        b["consec_down_penalty"] = 0
+
     return b
 
 
