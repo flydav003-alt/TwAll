@@ -282,7 +282,7 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .rng-wrap input[type=range]::-moz-range-thumb{{pointer-events:auto;}}
 .rng-wrap input[type=range]::-moz-range-track{{background:transparent;border:none;}}
 .rng-track{{
-  position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);
+  position:absolute;left:8px;right:8px;top:50%;transform:translateY(-50%);
   height:6px;background:var(--bdr);border-radius:3px;
 }}
 .rng-fill{{
@@ -1500,6 +1500,7 @@ function switchStatsTab(id,btn){{
 
 // 區間拉霸（雙滑塊 + 可手動輸入數字）
 const _rngTimers={{}};
+const RNG_THUMB_R=8; // 把手半徑(px)，需與 CSS 把手寬度(16px)一致，用來內縮軌道對齊把手實際可移動範圍
 function updRangeUI(groupId,fillId){{
   const minEl=document.getElementById(groupId+'_min'), maxEl=document.getElementById(groupId+'_max');
   if(!minEl||!maxEl)return;
@@ -1508,9 +1509,21 @@ function updRangeUI(groupId,fillId){{
   const lo=+minEl.value, hi=+maxEl.value;
   if(numMin)numMin.value=lo;
   if(numMax)numMax.value=hi;
-  const loPct=((lo-rMin)/span)*100, hiPct=((hi-rMin)/span)*100;
   const fill=document.getElementById(fillId);
-  if(fill){{fill.style.left=loPct+'%';fill.style.width=Math.max(hiPct-loPct,0)+'%';}}
+  if(fill){{
+    const wrap=fill.closest('.rng-wrap');
+    const w=wrap?wrap.clientWidth:0;
+    if(w>RNG_THUMB_R*2){{
+      const trackW=w-RNG_THUMB_R*2;
+      const loPx=RNG_THUMB_R+((lo-rMin)/span)*trackW;
+      const hiPx=RNG_THUMB_R+((hi-rMin)/span)*trackW;
+      fill.style.left=loPx+'px';
+      fill.style.width=Math.max(hiPx-loPx,0)+'px';
+    }}else{{
+      const loPct=((lo-rMin)/span)*100, hiPct=((hi-rMin)/span)*100;
+      fill.style.left=loPct+'%';fill.style.width=Math.max(hiPct-loPct,0)+'%';
+    }}
+  }}
 }}
 function scheduleFilter(fnName,groupId,delay){{
   clearTimeout(_rngTimers[groupId]);
