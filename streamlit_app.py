@@ -289,6 +289,19 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
   position:absolute;top:50%;transform:translateY(-50%);
   height:6px;background:var(--acc);border-radius:3px;
 }}
+.sl-num{{display:flex;align-items:center;gap:4px;}}
+.sl-num-in{{
+  font-size:13px;font-weight:500;color:var(--txt);
+  width:40px;text-align:center;
+  background:var(--bg2);border:1px solid var(--bdr);
+  border-radius:6px;padding:4px 4px;outline:none;
+  font-family:var(--sans);-moz-appearance:textfield;
+}}
+.sl-num-in:focus{{border-color:var(--acc);}}
+.sl-num-in::-webkit-outer-spin-button,.sl-num-in::-webkit-inner-spin-button{{
+  -webkit-appearance:none;margin:0;
+}}
+.sl-num-sep{{font-size:12px;color:var(--mid);}}
 
 /* ── STAT LINE ── */
 .stat{{padding:4px 24px 10px;font-size:12px;color:var(--mid);border-bottom:none;}}
@@ -514,55 +527,55 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
     <span class="sl-lbl">K線分</span>
     <div class="rng-wrap" style="width:140px">
       <div class="rng-track"></div><div class="rng-fill" id="fillK" style="left:0%;width:100%"></div>
-      <input type="range" id="slK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvK','fillK');applyFilter()">
-      <input type="range" id="slK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvK','fillK');applyFilter()">
+      <input type="range" id="slK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'slK','fillK','applyFilter')">
+      <input type="range" id="slK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'slK','fillK','applyFilter')">
     </div>
-    <span class="sl-val" id="kvK">全部</span>
+    <div class="sl-num"><input type="number" id="slK_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'slK','min','fillK','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slK_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'slK','max','fillK','applyFilter')"></div>
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">綜合分</span>
     <div class="rng-wrap" style="width:140px">
       <div class="rng-track"></div><div class="rng-fill" id="fillC" style="left:0%;width:100%"></div>
-      <input type="range" id="slC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvC','fillC');applyFilter()">
-      <input type="range" id="slC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvC','fillC');applyFilter()">
+      <input type="range" id="slC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'slC','fillC','applyFilter')">
+      <input type="range" id="slC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'slC','fillC','applyFilter')">
     </div>
-    <span class="sl-val" id="kvC">全部</span>
+    <div class="sl-num"><input type="number" id="slC_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'slC','min','fillC','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slC_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'slC','max','fillC','applyFilter')"></div>
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">突破分</span>
     <div class="rng-wrap" style="width:140px">
       <div class="rng-track"></div><div class="rng-fill" id="fillV" style="left:0%;width:100%"></div>
-      <input type="range" id="slV_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvV','fillV');applyFilter()">
-      <input type="range" id="slV_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvV','fillV');applyFilter()">
+      <input type="range" id="slV_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'slV','fillV','applyFilter')">
+      <input type="range" id="slV_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'slV','fillV','applyFilter')">
     </div>
-    <span class="sl-val" id="kvV">全部</span>
+    <div class="sl-num"><input type="number" id="slV_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'slV','min','fillV','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slV_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'slV','max','fillV','applyFilter')"></div>
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">波段分</span>
     <div class="rng-wrap" style="width:140px">
       <div class="rng-track"></div><div class="rng-fill" id="fillS" style="left:0%;width:100%"></div>
-      <input type="range" id="slS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvS','fillS');applyFilter()">
-      <input type="range" id="slS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvS','fillS');applyFilter()">
+      <input type="range" id="slS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'slS','fillS','applyFilter')">
+      <input type="range" id="slS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'slS','fillS','applyFilter')">
     </div>
-    <span class="sl-val" id="kvS">全部</span>
+    <div class="sl-num"><input type="number" id="slS_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'slS','min','fillS','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slS_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'slS','max','fillS','applyFilter')"></div>
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">BB分</span>
     <div class="rng-wrap" style="width:140px">
       <div class="rng-track"></div><div class="rng-fill" id="fillB" style="left:0%;width:100%"></div>
-      <input type="range" id="slB_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvB','fillB');applyFilter()">
-      <input type="range" id="slB_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvB','fillB');applyFilter()">
+      <input type="range" id="slB_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'slB','fillB','applyFilter')">
+      <input type="range" id="slB_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'slB','fillB','applyFilter')">
     </div>
-    <span class="sl-val" id="kvB">全部</span>
+    <div class="sl-num"><input type="number" id="slB_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'slB','min','fillB','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slB_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'slB','max','fillB','applyFilter')"></div>
   </div>
   <div class="sl-grp">
     <span class="sl-lbl">RSI</span>
     <div class="rng-wrap" style="width:140px">
       <div class="rng-track"></div><div class="rng-fill" id="fillR" style="left:0%;width:100%"></div>
-      <input type="range" id="slR_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'kvR','fillR');applyFilter()">
-      <input type="range" id="slR_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'kvR','fillR');applyFilter()">
+      <input type="range" id="slR_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'slR','fillR','applyFilter')">
+      <input type="range" id="slR_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'slR','fillR','applyFilter')">
     </div>
-    <span class="sl-val" id="kvR">全部</span>
+    <div class="sl-num"><input type="number" id="slR_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'slR','min','fillR','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slR_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'slR','max','fillR','applyFilter')"></div>
   </div>
 </div>
 
@@ -1136,13 +1149,13 @@ function buildTabRecent(){{
       <option value="STRAT_E_BB">策略E純BB分</option>
       <option value="STRAT_F_MEANREV">策略F均值回歸</option>
     </select>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">K線</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillK" style="left:0%;width:100%"></div><input type="range" id="statsK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsKv','statsFillK');renderRecentStats()"><input type="range" id="statsK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsKv','statsFillK');renderRecentStats()"></div><span class="sl-val2" id="statsKv">全部</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">綜合</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillC" style="left:0%;width:100%"></div><input type="range" id="statsC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsCv','statsFillC');renderRecentStats()"><input type="range" id="statsC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsCv','statsFillC');renderRecentStats()"></div><span class="sl-val2" id="statsCv">全部</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">突破</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillV" style="left:0%;width:100%"></div><input type="range" id="statsV_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsVv','statsFillV');renderRecentStats()"><input type="range" id="statsV_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsVv','statsFillV');renderRecentStats()"></div><span class="sl-val2" id="statsVv">全部</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">波段</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillS" style="left:0%;width:100%"></div><input type="range" id="statsS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsSv','statsFillS');renderRecentStats()"><input type="range" id="statsS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsSv','statsFillS');renderRecentStats()"></div><span class="sl-val2" id="statsSv">全部</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">BB</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillB" style="left:0%;width:100%"></div><input type="range" id="statsB_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsBv','statsFillB');renderRecentStats()"><input type="range" id="statsB_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsBv','statsFillB');renderRecentStats()"></div><span class="sl-val2" id="statsBv">全部</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">RS5日</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillR5" style="left:0%;width:100%"></div><input type="range" id="statsR5_min" class="rng-min" min="-30" max="50" step="1" value="-30" oninput="dualInput(this,'statsR5v','statsFillR5');renderRecentStats()"><input type="range" id="statsR5_max" class="rng-max" min="-30" max="50" step="1" value="50" oninput="dualInput(this,'statsR5v','statsFillR5');renderRecentStats()"></div><span class="sl-val2" id="statsR5v">全部</span></div>
-    <div class="stats-sl-grp"><span class="stats-sl-lbl">RSI</span><div class="rng-wrap" style="width:90px"><div class="rng-track"></div><div class="rng-fill" id="statsFillRSI" style="left:0%;width:100%"></div><input type="range" id="statsRSI_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dualInput(this,'statsRSIv','statsFillRSI');renderRecentStats()"><input type="range" id="statsRSI_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dualInput(this,'statsRSIv','statsFillRSI');renderRecentStats()"></div><span class="sl-val2" id="statsRSIv">全部</span></div>
+    <div class="sl-grp"><span class="sl-lbl">K線</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillK" style="left:0%;width:100%"></div><input type="range" id="statsK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsK','statsFillK','renderRecentStats')"><input type="range" id="statsK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsK','statsFillK','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsK_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsK','min','statsFillK','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsK_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsK','max','statsFillK','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl">綜合</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillC" style="left:0%;width:100%"></div><input type="range" id="statsC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsC','statsFillC','renderRecentStats')"><input type="range" id="statsC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsC','statsFillC','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsC_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsC','min','statsFillC','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsC_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsC','max','statsFillC','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl">突破</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillV" style="left:0%;width:100%"></div><input type="range" id="statsV_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsV','statsFillV','renderRecentStats')"><input type="range" id="statsV_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsV','statsFillV','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsV_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsV','min','statsFillV','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsV_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsV','max','statsFillV','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl">波段</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillS" style="left:0%;width:100%"></div><input type="range" id="statsS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsS','statsFillS','renderRecentStats')"><input type="range" id="statsS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsS','statsFillS','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsS_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsS','min','statsFillS','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsS_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsS','max','statsFillS','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl">BB</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillB" style="left:0%;width:100%"></div><input type="range" id="statsB_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsB','statsFillB','renderRecentStats')"><input type="range" id="statsB_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsB','statsFillB','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsB_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsB','min','statsFillB','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsB_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsB','max','statsFillB','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl">RS5日</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillR5" style="left:0%;width:100%"></div><input type="range" id="statsR5_min" class="rng-min" min="-30" max="50" step="1" value="-30" oninput="dragRange(this,'statsR5','statsFillR5','renderRecentStats')"><input type="range" id="statsR5_max" class="rng-max" min="-30" max="50" step="1" value="50" oninput="dragRange(this,'statsR5','statsFillR5','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsR5_numMin" class="sl-num-in" min="-30" max="50" value="-30" onchange="editNum(this,'statsR5','min','statsFillR5','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsR5_numMax" class="sl-num-in" min="-30" max="50" value="50" onchange="editNum(this,'statsR5','max','statsFillR5','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl">RSI</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillRSI" style="left:0%;width:100%"></div><input type="range" id="statsRSI_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsRSI','statsFillRSI','renderRecentStats')"><input type="range" id="statsRSI_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsRSI','statsFillRSI','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsRSI_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsRSI','min','statsFillRSI','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsRSI_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsRSI','max','statsFillRSI','renderRecentStats')"></div></div>
     <span style="font-size:11px;color:#94a3b8">顯示 <b id="recentStatsCount" style="color:#e2e8f0">0</b> 筆</span>
   </div>
   <div class="stats-scroll">
@@ -1485,21 +1498,50 @@ function switchStatsTab(id,btn){{
   }},30);
 }}
 
-// 區間拉霸（雙滑塊）：高低值都能拖動，thumb 不可交叉
-function dualInput(el,dispId,fillId){{
-  const wrap=el.closest('.rng-wrap');
-  const minEl=wrap.querySelector('.rng-min'), maxEl=wrap.querySelector('.rng-max');
-  let lo=+minEl.value, hi=+maxEl.value;
-  if(lo>hi){{
-    if(el===minEl){{maxEl.value=lo;hi=lo;}}else{{minEl.value=hi;lo=hi;}}
-  }}
-  const rMin=+minEl.min, rMax=+minEl.max;
-  const span=(rMax-rMin)||1;
+// 區間拉霸（雙滑塊 + 可手動輸入數字）
+const _rngTimers={{}};
+function updRangeUI(groupId,fillId){{
+  const minEl=document.getElementById(groupId+'_min'), maxEl=document.getElementById(groupId+'_max');
+  if(!minEl||!maxEl)return;
+  const numMin=document.getElementById(groupId+'_numMin'), numMax=document.getElementById(groupId+'_numMax');
+  const rMin=+minEl.min, rMax=+minEl.max, span=(rMax-rMin)||1;
+  const lo=+minEl.value, hi=+maxEl.value;
+  if(numMin)numMin.value=lo;
+  if(numMax)numMax.value=hi;
   const loPct=((lo-rMin)/span)*100, hiPct=((hi-rMin)/span)*100;
   const fill=document.getElementById(fillId);
   if(fill){{fill.style.left=loPct+'%';fill.style.width=Math.max(hiPct-loPct,0)+'%';}}
-  const disp=document.getElementById(dispId);
-  if(disp)disp.textContent=(lo<=rMin&&hi>=rMax)?'全部':(lo+'–'+hi);
+}}
+function scheduleFilter(fnName,groupId,delay){{
+  clearTimeout(_rngTimers[groupId]);
+  _rngTimers[groupId]=setTimeout(()=>{{window[fnName]();}},delay);
+}}
+// 拖動滑塊：即時更新畫面，篩選結果延遲(debounce)套用，避免拖動時卡頓
+function dragRange(el,groupId,fillId,fnName){{
+  const minEl=document.getElementById(groupId+'_min'), maxEl=document.getElementById(groupId+'_max');
+  let lo=+minEl.value, hi=+maxEl.value;
+  if(lo>hi){{
+    if(el===minEl){{maxEl.value=lo;}}else{{minEl.value=hi;}}
+  }}
+  updRangeUI(groupId,fillId);
+  scheduleFilter(fnName,groupId,120);
+}}
+// 手動輸入數字：確認後立即套用篩選
+function editNum(el,groupId,which,fillId,fnName){{
+  const minEl=document.getElementById(groupId+'_min'), maxEl=document.getElementById(groupId+'_max');
+  let v=parseFloat(el.value);
+  if(isNaN(v))v=which==='min'?+minEl.min:+maxEl.max;
+  v=Math.max(+minEl.min,Math.min(v,+minEl.max));
+  if(which==='min'){{
+    if(v>+maxEl.value)v=+maxEl.value;
+    minEl.value=v;
+  }}else{{
+    if(v<+minEl.value)v=+minEl.value;
+    maxEl.value=v;
+  }}
+  updRangeUI(groupId,fillId);
+  clearTimeout(_rngTimers[groupId]);
+  window[fnName]();
 }}
 
 function renderRows(data){{
@@ -1583,15 +1625,12 @@ function toggleLegend(){{
 function initApp() {{
   try {{
     // 1. 強制重置區間拉霸，清除瀏覽器的 Form Auto-restore 快取
-    [['slK','fillK','kvK'],['slC','fillC','kvC'],['slV','fillV','kvV'],['slS','fillS','kvS'],['slB','fillB','kvB'],['slR','fillR','kvR']].forEach(([id,fillId,dispId]) => {{
+    ['slK','slC','slV','slS','slB','slR'].forEach(id => {{
       const minEl = document.getElementById(id+'_min'), maxEl = document.getElementById(id+'_max');
       if (minEl && maxEl) {{
         minEl.value = minEl.min;
         maxEl.value = maxEl.max;
-        const fill = document.getElementById(fillId);
-        if (fill) {{ fill.style.left='0%'; fill.style.width='100%'; }}
-        const disp = document.getElementById(dispId);
-        if (disp) disp.textContent = '全部';
+        updRangeUI(id, 'fill'+id.slice(2));
       }}
     }});
 
@@ -1607,16 +1646,13 @@ function initApp() {{
     }}
 
     // 4. 初始化統計面板的區間拉霸（實際 HTML 樣板本身已預設為全選狀態，此處僅為保險重置）
-    [['statsK','statsFillK','statsKv'],['statsC','statsFillC','statsCv'],['statsV','statsFillV','statsVv'],
-     ['statsS','statsFillS','statsSv'],['statsB','statsFillB','statsBv'],['statsR5','statsFillR5','statsR5v'],
-     ['statsRSI','statsFillRSI','statsRSIv']].forEach(([id,fillId,dispId]) => {{
+    [['statsK','statsFillK'],['statsC','statsFillC'],['statsV','statsFillV'],
+     ['statsS','statsFillS'],['statsB','statsFillB'],['statsR5','statsFillR5'],
+     ['statsRSI','statsFillRSI']].forEach(([id,fillId]) => {{
       const minEl = document.getElementById(id+'_min'), maxEl = document.getElementById(id+'_max');
       if (minEl && maxEl) {{
         minEl.value = minEl.min; maxEl.value = maxEl.max;
-        const fill = document.getElementById(fillId);
-        if (fill) {{ fill.style.left='0%'; fill.style.width='100%'; }}
-        const disp = document.getElementById(dispId);
-        if (disp) disp.textContent = '全部';
+        updRangeUI(id, fillId);
       }}
     }});
 
