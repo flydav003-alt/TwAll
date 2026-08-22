@@ -894,6 +894,7 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(e.bb_setup) AS bb_setup,
                MAX(e.rs_score) AS rs_score,
                MAX(e.rs5d) AS rs5d,
+               MAX(e.rsi14) AS rsi14,
                MAX(e.volume_ratio) AS volume_ratio,
                MAX(e.entry_reference_close) AS entry_reference_close,
                CASE
