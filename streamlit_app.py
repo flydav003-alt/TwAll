@@ -1706,7 +1706,7 @@ setTimeout(schedResize,150);setTimeout(schedResize,700);setTimeout(schedResize,1
     est = max(
         900,
         520 + len(rows) * 40,
-        760 + recent_count * 42,
+        760 + min(recent_count, 400) * 42,
         760 + min(summary_count, 80) * 28,
     )
     components.html(page, height=est, scrolling=True)
