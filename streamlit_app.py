@@ -826,11 +826,11 @@ const _TICK={{color:'#94a3b8'}};
 const _BASE_SCALE={{x:{{grid:_GRID,ticks:_TICK}},y:{{grid:_GRID,ticks:_TICK}}}};
 const _NO_LEGEND={{legend:{{display:false}}}};
 
-const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分',STRAT_F_MEANREV:'策略F均值回歸'}};
+const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分',STRAT_F_MEANREV:'策略F均值回歸',STRAT_G_RS_PULLBACK:'策略G強勢回檔',STRAT_H_RS_VOLDRY:'策略H強勢量縮',STRAT_I_RS_MOMENTUM:'策略I中強動能'}};
 const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa','#fb923c','#2dd4bf'];
 // 六策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，接著是有結構驗證的A、B、E，最後是均值回歸F
-const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB','STRAT_F_MEANREV'];
-const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf',STRAT_F_MEANREV:'#60a5fa'}};
+const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB','STRAT_F_MEANREV','STRAT_G_RS_PULLBACK','STRAT_H_RS_VOLDRY','STRAT_I_RS_MOMENTUM'];
+const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf',STRAT_F_MEANREV:'#60a5fa',STRAT_G_RS_PULLBACK:'#fb923c',STRAT_H_RS_VOLDRY:'#e879f9',STRAT_I_RS_MOMENTUM:'#facc15'}};
 
 function labelEvent(v){{return ETYPE_LBL[v]||v||'-';}}
 function eventList(r){{
@@ -1166,6 +1166,8 @@ function buildTabRecent(){{
       <option value="STRAT_C_KLINE">策略C純K線</option><option value="STRAT_D_COMPOSITE">策略D純綜合分</option>
       <option value="STRAT_E_BB">策略E純BB分</option>
       <option value="STRAT_F_MEANREV">策略F均值回歸</option>
+      <option value="STRAT_G_RS_PULLBACK">策略G強勢回檔</option><option value="STRAT_H_RS_VOLDRY">策略H強勢量縮</option>
+      <option value="STRAT_I_RS_MOMENTUM">策略I中強動能</option>
     </select>
     <div class="sl-grp"><span class="sl-lbl">K線</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillK" style="left:0%;width:100%"></div><input type="range" id="statsK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsK','statsFillK','renderRecentStats')"><input type="range" id="statsK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsK','statsFillK','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsK_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsK','min','statsFillK','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsK_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsK','max','statsFillK','renderRecentStats')"></div></div>
     <div class="sl-grp"><span class="sl-lbl">綜合</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillC" style="left:0%;width:100%"></div><input type="range" id="statsC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsC','statsFillC','renderRecentStats')"><input type="range" id="statsC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsC','statsFillC','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsC_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsC','min','statsFillC','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsC_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsC','max','statsFillC','renderRecentStats')"></div></div>
