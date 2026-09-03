@@ -1404,7 +1404,11 @@ function buildTabStrategy(){{
     <div><b style="color:#f87171">策略C 純K線分</b>：K線分≥78，不看RS門檻——當「單一雜訊分數」的對照組</div>
     <div><b style="color:#94a3b8">策略D 純綜合分</b>：綜合分≥75，不看RS門檻——當你原本選股習慣的基準線</div>
     <div><b style="color:#2dd4bf">策略E 純BB分</b>：BB分≥60 且 setup屬於下軌反轉/擠壓蓄勢/上軌突破任一，不看RS門檻——驗證BB分單獨作為時機濾網有沒有比D基準線更早/更準</div>
-    <div style="margin-top:4px;color:#64748b">四組樣本互不互斥、各自獨立計算，A、B要打贏的對象是D，不是C。</div>
+    <div><b style="color:#60a5fa">策略F 均值回歸</b>：BB分≥40 + setup為下軌反轉 + 連跌天數<4天，故意跟A/B用相反邏輯（不要求RS≥85或高分結構），抓「已通過連跌防呆、還沒崩到危險程度」的止跌股</div>
+    <div><b style="color:#fb923c">策略G 強勢回檔</b>：RS≥85 + K線分<70 + RSI落在45~70——長期強勢股短線技術面降溫、賣壓釋放後的拉回買點，實測樣本T+5勝率90%(n=40)，樣本仍偏薄</div>
+    <div><b style="color:#e879f9">策略H 強勢量縮</b>：RS≥85 + 量比<1.0倍——長期強勢股當日量縮，代表短線賣壓萎縮、健康整理，實測跨天期(T+1~T+7)都維持55%~80%勝率，目前最穩定的一組</div>
+    <div><b style="color:#facc15">策略I 中強動能</b>：RS介於50~85（甜蜜點）+ K線分≥80——跟G/H邏輯相反，抓「尚未到極端強勢、但短線動能剛要噴出」的股票，實測T+5勝率68.3%(n=41)</div>
+    <div style="margin-top:4px;color:#64748b">九組樣本互不互斥、各自獨立計算。A、B要打贏的對象是D，不是C；G、H、I是2026/09新增，樣本仍在累積中，數字僅供參考。</div>
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
