@@ -577,6 +577,24 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
     </div>
     <div class="sl-num"><input type="number" id="slR_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'slR','min','fillR','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slR_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'slR','max','fillR','applyFilter')"></div>
   </div>
+  <div class="sl-grp">
+    <span class="sl-lbl" title="橫向排名相對強度。實測85+在T+10反而最差，50~85是甜蜜點，不是越高越好">RS分</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillRS" style="left:0%;width:100%"></div>
+      <input type="range" id="slRS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'slRS','fillRS','applyFilter')">
+      <input type="range" id="slRS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'slRS','fillRS','applyFilter')">
+    </div>
+    <div class="sl-num"><input type="number" id="slRS_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'slRS','min','fillRS','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slRS_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'slRS','max','fillRS','applyFilter')"></div>
+  </div>
+  <div class="sl-grp">
+    <span class="sl-lbl">量比</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillVR" style="left:0%;width:100%"></div>
+      <input type="range" id="slVR_min" class="rng-min" min="0" max="5" step="0.1" value="0" oninput="dragRange(this,'slVR','fillVR','applyFilter')">
+      <input type="range" id="slVR_max" class="rng-max" min="0" max="5" step="0.1" value="5" oninput="dragRange(this,'slVR','fillVR','applyFilter')">
+    </div>
+    <div class="sl-num"><input type="number" id="slVR_numMin" class="sl-num-in" min="0" max="5" step="0.1" value="0" onchange="editNum(this,'slVR','min','fillVR','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slVR_numMax" class="sl-num-in" min="0" max="5" step="0.1" value="5" onchange="editNum(this,'slVR','max','fillVR','applyFilter')"></div>
+  </div>
 </div>
 
 <div class="stat" id="statLine">載入中…</div>
@@ -1156,6 +1174,8 @@ function buildTabRecent(){{
     <div class="sl-grp"><span class="sl-lbl">BB</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillB" style="left:0%;width:100%"></div><input type="range" id="statsB_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsB','statsFillB','renderRecentStats')"><input type="range" id="statsB_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsB','statsFillB','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsB_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsB','min','statsFillB','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsB_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsB','max','statsFillB','renderRecentStats')"></div></div>
     <div class="sl-grp"><span class="sl-lbl">RS5日</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillR5" style="left:0%;width:100%"></div><input type="range" id="statsR5_min" class="rng-min" min="-30" max="50" step="1" value="-30" oninput="dragRange(this,'statsR5','statsFillR5','renderRecentStats')"><input type="range" id="statsR5_max" class="rng-max" min="-30" max="50" step="1" value="50" oninput="dragRange(this,'statsR5','statsFillR5','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsR5_numMin" class="sl-num-in" min="-30" max="50" value="-30" onchange="editNum(this,'statsR5','min','statsFillR5','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsR5_numMax" class="sl-num-in" min="-30" max="50" value="50" onchange="editNum(this,'statsR5','max','statsFillR5','renderRecentStats')"></div></div>
     <div class="sl-grp"><span class="sl-lbl">RSI</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillRSI" style="left:0%;width:100%"></div><input type="range" id="statsRSI_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsRSI','statsFillRSI','renderRecentStats')"><input type="range" id="statsRSI_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsRSI','statsFillRSI','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsRSI_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsRSI','min','statsFillRSI','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsRSI_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsRSI','max','statsFillRSI','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl" title="橫向排名相對強度。實測85+在T+10反而最差，50~85是甜蜜點，不是越高越好">RS分</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillRS" style="left:0%;width:100%"></div><input type="range" id="statsRS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsRS','statsFillRS','renderRecentStats')"><input type="range" id="statsRS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsRS','statsFillRS','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsRS_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsRS','min','statsFillRS','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsRS_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsRS','max','statsFillRS','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl">量比</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillVR" style="left:0%;width:100%"></div><input type="range" id="statsVR_min" class="rng-min" min="0" max="5" step="0.1" value="0" oninput="dragRange(this,'statsVR','statsFillVR','renderRecentStats')"><input type="range" id="statsVR_max" class="rng-max" min="0" max="5" step="0.1" value="5" oninput="dragRange(this,'statsVR','statsFillVR','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsVR_numMin" class="sl-num-in" min="0" max="5" step="0.1" value="0" onchange="editNum(this,'statsVR','min','statsFillVR','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsVR_numMax" class="sl-num-in" min="0" max="5" step="0.1" value="5" onchange="editNum(this,'statsVR','max','statsFillVR','renderRecentStats')"></div></div>
     <span style="font-size:11px;color:#94a3b8">顯示 <b id="recentStatsCount" style="color:#e2e8f0">0</b> 筆</span>
   </div>
   <div class="stats-scroll">
@@ -1223,6 +1243,10 @@ function renderRecentStats(){{
   const r5Max=Number((document.getElementById('statsR5_max')||{{value:50}}).value??50);
   const rsiMin=Number((document.getElementById('statsRSI_min')||{{value:0}}).value||0);
   const rsiMax=Number((document.getElementById('statsRSI_max')||{{value:100}}).value??100);
+  const rsMin=Number((document.getElementById('statsRS_min')||{{value:0}}).value||0);
+  const rsMax=Number((document.getElementById('statsRS_max')||{{value:100}}).value??100);
+  const vrMin=Number((document.getElementById('statsVR_min')||{{value:0}}).value||0);
+  const vrMax=Number((document.getElementById('statsVR_max')||{{value:5}}).value??5);
   const etFilt=(document.getElementById('statsEt')||{{}}).value||'';
   let data=(STATS.recent||[]).filter(r=>{{
     if(q&&!(String(r.ticker||'').toLowerCase().includes(q)||String(r.name||'').toLowerCase().includes(q)))return false;
@@ -1233,6 +1257,8 @@ function renderRecentStats(){{
     if((r.bb_score||0)<bMin||(r.bb_score||0)>bMax)return false;
     if(r.rs5d!=null && (r.rs5d<r5Min||r.rs5d>r5Max))return false;
     if(r.rsi14!=null && (r.rsi14<rsiMin||r.rsi14>rsiMax))return false;
+    if(r.rs_score!=null && (r.rs_score<rsMin||r.rs_score>rsMax))return false;
+    if(r.volume_ratio!=null && (r.volume_ratio<vrMin||r.volume_ratio>vrMax))return false;
     if(etFilt&&!eventList(r).includes(etFilt))return false;
     return true;
   }});
@@ -1593,6 +1619,8 @@ function applyFilter(){{
   const sMin=+document.getElementById('slS_min').value, sMax=+document.getElementById('slS_max').value;
   const bMin=+document.getElementById('slB_min').value, bMax=+document.getElementById('slB_max').value;
   const rMin=+document.getElementById('slR_min').value, rMax=+document.getElementById('slR_max').value;
+  const rsMin=+document.getElementById('slRS_min').value, rsMax=+document.getElementById('slRS_max').value;
+  const vrMin=+document.getElementById('slVR_min').value, vrMax=+document.getElementById('slVR_max').value;
   let data=RAW.filter(r=>{{
     if(r.kline==null&&r.vol==null)return false;
     if((r.kline||0)<kMin||(r.kline||0)>kMax)return false;
@@ -1601,6 +1629,8 @@ function applyFilter(){{
     if((r.swing||0)<sMin||(r.swing||0)>sMax)return false;
     if((r.bb||0)<bMin||(r.bb||0)>bMax)return false;
     if(r.rsi!=null&&(r.rsi<rMin||r.rsi>rMax))return false;
+    if(r.rs!=null&&(r.rs<rsMin||r.rs>rsMax))return false;
+    if(r.vol!=null&&(r.vol<vrMin||r.vol>vrMax))return false;
     if(q&&!r.ticker.toLowerCase().includes(q)&&!r.name.toLowerCase().includes(q))return false;
     return true;
   }});
@@ -1638,7 +1668,7 @@ function toggleLegend(){{
 function initApp() {{
   try {{
     // 1. 強制重置區間拉霸，清除瀏覽器的 Form Auto-restore 快取
-    ['slK','slC','slV','slS','slB','slR'].forEach(id => {{
+    ['slK','slC','slV','slS','slB','slR','slRS','slVR'].forEach(id => {{
       const minEl = document.getElementById(id+'_min'), maxEl = document.getElementById(id+'_max');
       if (minEl && maxEl) {{
         minEl.value = minEl.min;
@@ -1661,7 +1691,7 @@ function initApp() {{
     // 4. 初始化統計面板的區間拉霸（實際 HTML 樣板本身已預設為全選狀態，此處僅為保險重置）
     [['statsK','statsFillK'],['statsC','statsFillC'],['statsV','statsFillV'],
      ['statsS','statsFillS'],['statsB','statsFillB'],['statsR5','statsFillR5'],
-     ['statsRSI','statsFillRSI']].forEach(([id,fillId]) => {{
+     ['statsRSI','statsFillRSI'],['statsRS','statsFillRS'],['statsVR','statsFillVR']].forEach(([id,fillId]) => {{
       const minEl = document.getElementById(id+'_min'), maxEl = document.getElementById(id+'_max');
       if (minEl && maxEl) {{
         minEl.value = minEl.min; maxEl.value = maxEl.max;
