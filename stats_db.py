@@ -384,7 +384,8 @@ STRAT_BB_OK_SETUP = ("lower_reversal", "squeeze_consolidation", "upper_breakout"
 
 def classify_strategy_events(kline_score, composite_score, breakout_score, swing_score,
                               rs_score, vcp_status, entry_signal,
-                              bb_score=None, bb_setup=None, bb_consec_down_days=None):
+                              bb_score=None, bb_setup=None, bb_consec_down_days=None,
+                              rsi14=None, volume_ratio=None):
     events = []
     if (rs_score is not None and rs_score >= 85
             and breakout_score is not None and breakout_score >= 60
@@ -410,6 +411,22 @@ def classify_strategy_events(kline_score, composite_score, breakout_score, swing
             and bb_setup == "lower_reversal"
             and (bb_consec_down_days is None or bb_consec_down_days < 4)):
         events.append("STRAT_F_MEANREV")
+    # 策略G：RS85+順勢回檔 — 長期強勢股(RS≥85)短線K線降溫(<70)、RSI落在健康區間(45~70)，
+    # 抓「強勢股短線拉回、賣壓釋放後」的進場點。實測T+5勝率90.0%(n=40)，樣本仍偏薄，持續觀察。
+    if (rs_score is not None and rs_score >= 85
+            and kline_score is not None and kline_score < 70
+            and rsi14 is not None and 45 <= rsi14 <= 70):
+        events.append("STRAT_G_RS_PULLBACK")
+    # 策略H：RS85+量縮拉回 — 長期強勢股，當日成交量比均量還低(<1.0倍)，
+    # 代表賣壓萎縮、短線在健康整理。實測跨天期(T+1~T+7)都維持55%~80%勝率，是目前最穩定的一組。
+    if (rs_score is not None and rs_score >= 85
+            and volume_ratio is not None and volume_ratio < 1.0):
+        events.append("STRAT_H_RS_VOLDRY")
+    # 策略I：RS50-85動能發動 — 中期相對強度落在甜蜜點(50~85)，K線分已經轉強(≥80)，
+    # 跟G/H邏輯相反：抓的是「尚未到極端強勢、但短線動能剛要噴出」的股票。實測T+5勝率68.3%(n=41)。
+    if (rs_score is not None and 50 <= rs_score < 85
+            and kline_score is not None and kline_score >= 80):
+        events.append("STRAT_I_RS_MOMENTUM")
     return events
 
 
@@ -516,6 +533,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
             strat_events = classify_strategy_events(
                 kline, comp, breakout, swing, rs, vcp_status, s.get("entry_signal", ""),
                 bb, bb_setup, s.get("bb_consec_down_days"),
+                rsi14=s.get("rsi14"), volume_ratio=vol_ratio,
             )
             for strat_event_type in strat_events:
                 strat_event_id = f"{trade_date}:{ticker}:{strat_event_type}"
