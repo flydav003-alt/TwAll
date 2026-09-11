@@ -692,6 +692,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
     update_event_outcomes(conn)
     refresh_summary_stats(conn)
     refresh_monthly_strategy_stats(conn)
+    refresh_yearly_strategy_stats(conn)
     refresh_monthly_market_regime(conn)
     conn.commit()
     conn.close()
@@ -960,6 +961,63 @@ def refresh_monthly_strategy_stats(conn):
                 round(sum(v for v in vals if v <= 0) / max(1, len(vals) - len(wins)), 2) if len(vals) > len(wins) else None,
                 None, round(max(vals), 2), round(min(vals), 2),
                 ym, 1 if matured else 0, updated,
+            ),
+        )
+    conn.commit()
+
+
+def refresh_yearly_strategy_stats(conn):
+    """
+    年度策略勝率彙總：group_name='yearly_event_type'，多一個 year 欄位。
+    跟月度不同：月度是「整月熟不熟成」二選一，年度改成「逐筆事件各自看有沒有T+10結果，
+    有的就納入」——這樣今年一開始就能持續顯示已經熟成的部分，不用等到12/31才有數字，
+    是你要的「當年度直接顯示已有T+10的統計」。也因此年度數字會逐日增加樣本、逐漸逼近
+    真正的全年結果，不是一次性定案的數字，每天都可能因為新增熟成事件而微調。
+    """
+    conn.execute("DELETE FROM summary_stats WHERE group_name='yearly_event_type'")
+    updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    STRAT_TYPES = (
+        "STRAT_A_BREAKOUT", "STRAT_B_SWING", "STRAT_C_KLINE", "STRAT_D_COMPOSITE",
+        "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
+        "STRAT_I_RS_MOMENTUM",
+    )
+    rows = conn.execute(
+        """
+        SELECT substr(e.trade_date,1,4) yr, e.event_type, o.horizon,
+               MAX(o.return_close_pct) return_close_pct
+        FROM signal_events e JOIN event_outcomes o ON o.event_id = e.event_id
+        WHERE e.event_type IN ({})
+        GROUP BY e.trade_date, e.ticker, e.event_type, o.horizon
+        """.format(",".join("?" * len(STRAT_TYPES))),
+        STRAT_TYPES,
+    ).fetchall()
+
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for yr, et, h, ret in rows:
+        if ret is not None:
+            groups[(yr, et, h)].append(ret)
+
+    for (yr, et, h), vals in groups.items():
+        wins = [v for v in vals if v > 0]
+        stat_key = f"yearly_event_type:{yr}:{et}:T{h}"
+        conn.execute(
+            """
+            INSERT INTO summary_stats (
+                stat_key, group_name, event_type, horizon, sample_count, win_rate,
+                avg_return, median_return, avg_win, avg_loss, profit_factor,
+                max_return, min_return, year_month, is_matured, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                stat_key, "yearly_event_type", et, h,
+                len(vals), round(len(wins) / len(vals) * 100, 1),
+                round(sum(vals) / len(vals), 2), _median(vals),
+                round(sum(wins) / len(wins), 2) if wins else None,
+                round(sum(v for v in vals if v <= 0) / max(1, len(vals) - len(wins)), 2) if len(vals) > len(wins) else None,
+                None, round(max(vals), 2), round(min(vals), 2),
+                yr, 1, updated,  # 年度沒有「未熟成整批隱藏」的概念，is_matured固定存1，前端改用樣本數自然反映成熟度
             ),
         )
     conn.commit()
