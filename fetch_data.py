@@ -438,7 +438,7 @@ def main():
     print(f"[INFO] 符合資料庫下線（K線≥{DB_KLINE_MIN} 或 綜合分≥{DB_COMP_MIN} "
           f"或 突破分≥{DB_BREAKOUT_MIN} 或 波段分≥{DB_SWING_MIN} 或 BB分≥{DB_BB_MIN} "
           f"或 均值回歸bb_score≥{DB_MEANREV_MIN}）：{len(qualified)} 檔")
-    save_daily_run(qualified, generated_at=ts)
+    save_daily_run(qualified, generated_at=ts, market_info=market_info)
     print(f"[INFO] 已更新統計資料庫 → {os.path.join(DATA_DIR, 'stats.db')}")
 
 
