@@ -1054,8 +1054,8 @@ function buildTabMatrix(){{
   </div>`;
 }}
 // ── 十大組合總覽：五分數兩兩都在最高分位時的表現，直接回答「哪個組合最有效」──
-const CROSS_TOP_BUCKET={{kline:'A_78UP',composite:'A_88UP',breakout:'A_70UP',swing:'A_70UP',bb:'A_70UP'}};
-const CROSS_PAIR_LIST=[['kline','composite'],['kline','breakout'],['kline','swing'],['kline','bb'],['composite','breakout'],['composite','swing'],['composite','bb'],['breakout','swing'],['breakout','bb'],['swing','bb']];
+const CROSS_TOP_BUCKET={{kline:'A_78UP',composite:'A_88UP',breakout:'A_70UP',swing:'A_70UP',bb:'A_70UP',rs:'A_85UP',rs5d:'A_20UP',volume_ratio:'A_2P5UP'}};
+const CROSS_PAIR_LIST=[['kline','composite'],['kline','breakout'],['kline','swing'],['kline','bb'],['composite','breakout'],['composite','swing'],['composite','bb'],['breakout','swing'],['breakout','bb'],['swing','bb'],['rs5d','volume_ratio'],['rs','kline']];
 function buildCrossOverview(){{
   const hs=[1,3,5,7,10];
   const rows=CROSS_PAIR_LIST.map(([a,b])=>{{
@@ -1086,11 +1086,11 @@ function buildCrossOverview(){{
   return`
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">十大組合總覽 — 兩兩都在最高分位時的 T+1~T+10 勝率（依T+5排名）</div>
+      <div class="sc-title">十二組合總覽 — 兩兩都在最高分位時的 T+1~T+10 勝率（依T+5排名）</div>
       <div style="position:relative;height:200px"><canvas id="chartCrossOverview"></canvas></div>
     </div>
   </div>
-  <div style="padding:8px 14px 0;font-size:11px;color:#94a3b8">例如「K線高×突破高」代表 K線分≥78 且 突破分≥70 同時成立那批股票的實際表現。突破×波段這組樣本通常很小是正常的——因為這兩個分數本來就代表不同階段的股票，很少同時都在最高分位，這正好驗證了兩者是互補而非重複的訊號。BB分是統計法(標準差)算的進場時機濾網，跟其他四項分數理論上重疊最少，這四組「X高×BB高」的樣本量與勝率特別值得關注。</div>
+  <div style="padding:8px 14px 0;font-size:11px;color:#94a3b8">例如「K線高×突破高」代表 K線分≥78 且 突破分≥70 同時成立那批股票的實際表現。突破×波段這組樣本通常很小是正常的——因為這兩個分數本來就代表不同階段的股票，很少同時都在最高分位，這正好驗證了兩者是互補而非重複的訊號。BB分是統計法(標準差)算的進場時機濾網，跟其他四項分數理論上重疊最少，這四組「X高×BB高」的樣本量與勝率特別值得關注。「RS高×K線高」「RS5日高×量比高」是2026/09新增的交叉組合，樣本仍在累積中；且RS分/RS5日/量比這三個維度本身「最高分位是否真的最好」尚未驗證確定（RS分實測85+在部分天期反而較差、量比2.5倍以上不一定優於溫和放量），這裡的「最高分位」純粹是數值最高，不代表已驗證為最優，判讀時請對照下方「各RS分/RS5日/量比區間黃金出場」表格的完整分布再下結論。</div>
   <div class="stats-scroll" style="padding:6px 0 14px">
     <table class="stats-table"><thead><tr><th>組合（兩兩皆最高分位）</th><th style="text-align:center">樣本</th>
       ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}</tr></thead>
