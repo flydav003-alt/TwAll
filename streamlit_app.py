@@ -953,9 +953,12 @@ const DIM_DEFS={{
   breakout:{{label:'突破分',field:'breakout_bucket',buckets:[{{k:'A_70UP',lbl:'破≥70'}},{{k:'B_50_69',lbl:'破50~69'}},{{k:'C_30_49',lbl:'破30~49'}},{{k:'D_LT30',lbl:'破<30'}}]}},
   swing:{{label:'波段分',field:'swing_bucket',buckets:[{{k:'A_70UP',lbl:'波≥70'}},{{k:'B_50_69',lbl:'波50~69'}},{{k:'C_30_49',lbl:'波30~49'}},{{k:'D_LT30',lbl:'波<30'}}]}},
   bb:{{label:'BB分',field:'bb_bucket',buckets:[{{k:'A_70UP',lbl:'BB≥70'}},{{k:'B_50_69',lbl:'BB50~69'}},{{k:'C_30_49',lbl:'BB30~49'}},{{k:'D_LT30',lbl:'BB<30'}}]}},
+  rs:{{label:'RS分',field:'rs_bucket',note:'實測樣本尚薄：85+在部分天期反而較差，非越高越好，仍持續累積驗證中',buckets:[{{k:'A_85UP',lbl:'RS≥85'}},{{k:'B_70_84',lbl:'RS70~84'}},{{k:'C_50_69',lbl:'RS50~69'}},{{k:'D_LT50',lbl:'RS<50'}}]}},
+  rs5d:{{label:'RS5日分',field:'rs5d_bucket',note:'短期相對強度加速度，理論上越高代表轉強越快，樣本仍薄，尚待驗證',buckets:[{{k:'A_20UP',lbl:'≥20(加速)'}},{{k:'B_10_19',lbl:'10~19'}},{{k:'C_0_9',lbl:'0~9'}},{{k:'D_LT0',lbl:'<0'}}]}},
+  volume_ratio:{{label:'量比',field:'volume_ratio_bucket',note:'實測樣本尚薄：2.5倍以上(真爆量)初步觀察不一定優於溫和放量，仍持續累積驗證中',buckets:[{{k:'A_2P5UP',lbl:'≥2.5倍'}},{{k:'B_1P5_2P4',lbl:'1.5~2.4倍'}},{{k:'C_1_1P4',lbl:'1~1.4倍'}},{{k:'D_LT1',lbl:'<1倍'}}]}},
 }};
-const DIM_ORDER=['kline','composite','breakout','swing','bb'];
-const DIM_COLORS={{kline:'#f87171',composite:'#fbbf24',breakout:'#60a5fa',swing:'#c084fc',bb:'#2dd4bf'}};
+const DIM_ORDER=['kline','composite','breakout','swing','bb','rs','rs5d','volume_ratio'];
+const DIM_COLORS={{kline:'#f87171',composite:'#fbbf24',breakout:'#60a5fa',swing:'#c084fc',bb:'#2dd4bf',rs:'#fb923c',rs5d:'#e879f9',volume_ratio:'#facc15'}};
 function crossGroupName(a,b){{return DIM_ORDER.indexOf(a)<=DIM_ORDER.indexOf(b)?`cross_${{a}}_${{b}}`:`cross_${{b}}_${{a}}`;}}
 function hmColor(v,mode){{
   if(v==null)return{{bg:'#06111e',txt:'#64748b'}};
@@ -1195,7 +1198,6 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('rs_score')" title="橫向排名相對強度。實測85+在T+10反而最差，50~85是甜蜜點，不是越高越好">RS分</th>
         <th class="stats-sort" onclick="statsSortBy('rs5d')" title="短期相對強度加速度。實測20+是少數獨立有正報酬的訊號，越高越好">RS5日</th>
         <th class="stats-sort" onclick="statsSortBy('rsi14')">RSI</th>
-        <th class="stats-sort" onclick="statsSortBy('volume_ratio')" title="當日成交量/20日均量。實測≥2.5倍(真爆量)勝率反而最差">量比</th>
         <th>買進收盤</th>
         <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1</th>
         <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3</th>
@@ -1204,7 +1206,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="20" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="19" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1289,12 +1291,11 @@ function renderRecentStats(){{
     <td style="text-align:center;color:#94a3b8;font-weight:600" title="實測50~85是甜蜜點，85+在T+10反而最差">${{r.rs_score!=null?Math.round(r.rs_score):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.rs5d==null?'#94a3b8':r.rs5d>=20?'#4ade80':r.rs5d>=0?'#94a3b8':'#f87171'}}" title="實測20+代表正在加速轉強，越高越好">${{r.rs5d!=null?(r.rs5d>0?'+':'')+Number(r.rs5d).toFixed(1):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.rsi14==null?'#94a3b8':r.rsi14>=70?'#f87171':r.rsi14<=30?'#4ade80':'#94a3b8'}}">${{r.rsi14!=null?Number(r.rsi14).toFixed(1):'-'}}</td>
-    <td style="text-align:center;font-weight:600;color:${{r.volume_ratio==null?'#94a3b8':r.volume_ratio>=2.5?'#f87171':r.volume_ratio<1.0?'#94a3b8':'#4ade80'}}" title="${{r.volume_ratio!=null&&r.volume_ratio>=2.5?'實測真爆量(≥2.5倍)反而勝率最差':''}}">${{r.volume_ratio!=null?Number(r.volume_ratio).toFixed(2):'-'}}</td>
     <td style="color:#94a3b8">${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="20" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="19" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
@@ -1334,7 +1335,10 @@ function buildTabPeak(){{
   </div>
   ${{buildPeakByDim('breakout','突破分')}}
   ${{buildPeakByDim('swing','波段分')}}
-  ${{buildPeakByDim('bb','BB分')}}`;
+  ${{buildPeakByDim('bb','BB分')}}
+  ${{buildPeakByDim('rs','RS分')}}
+  ${{buildPeakByDim('rs5d','RS5日分')}}
+  ${{buildPeakByDim('volume_ratio','量比')}}`;
 }}
 function buildPeakByDim(dimKey,title){{
   const sum=STATS.summary||[];
@@ -1355,6 +1359,7 @@ function buildPeakByDim(dimKey,title){{
   if(!rows.length)return'';
   return`
   <div class="sc-title" style="padding:14px 14px 0">各${{title}}區間黃金出場</div>
+  ${{D.note?`<div style="padding:2px 14px 0;font-size:11px;color:#fbbf24">⚠ ${{D.note}}</div>`:''}}
   <div class="stats-scroll" style="padding:0 0 14px">
     <table class="stats-table"><thead><tr><th>${{title}}區間</th><th style="text-align:center">樣本</th>
       ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}
@@ -1407,9 +1412,9 @@ function buildTabStrategy(){{
     <div><b style="color:#94a3b8">策略D 純綜合分</b>：綜合分≥75，不看RS門檻——當你原本選股習慣的基準線</div>
     <div><b style="color:#2dd4bf">策略E 純BB分</b>：BB分≥60 且 setup屬於下軌反轉/擠壓蓄勢/上軌突破任一，不看RS門檻——驗證BB分單獨作為時機濾網有沒有比D基準線更早/更準</div>
     <div><b style="color:#60a5fa">策略F 均值回歸</b>：BB分≥40 + setup為下軌反轉 + 連跌天數<4天，故意跟A/B用相反邏輯（不要求RS≥85或高分結構），抓「已通過連跌防呆、還沒崩到危險程度」的止跌股</div>
-    <div><b style="color:#fb923c">策略G 強勢回檔</b>：RS≥85 + K線分<70 + RSI落在45~70——長期強勢股短線技術面降溫、賣壓釋放後的拉回買點，實測樣本T+5勝率90%(n=40)，樣本仍偏薄</div>
-    <div><b style="color:#e879f9">策略H 強勢量縮</b>：RS≥85 + 量比<1.0倍——長期強勢股當日量縮，代表短線賣壓萎縮、健康整理，實測跨天期(T+1~T+7)都維持55%~80%勝率，目前最穩定的一組</div>
-    <div><b style="color:#facc15">策略I 中強動能</b>：RS介於50~85（甜蜜點）+ K線分≥80——跟G/H邏輯相反，抓「尚未到極端強勢、但短線動能剛要噴出」的股票，實測T+5勝率68.3%(n=41)</div>
+    <div><b style="color:#fb923c">策略G 強勢回檔</b>：RS≥85 + K線分<70 + RSI落在45~70——長期強勢股短線技術面降溫、賣壓釋放後的拉回買點，樣本仍在累積中，實際勝率請看下方表格即時數字</div>
+    <div><b style="color:#e879f9">策略H 強勢量縮</b>：RS≥85 + 量比<1.0倍——長期強勢股當日量縮，代表短線賣壓萎縮、健康整理，樣本仍在累積中，實際勝率請看下方表格即時數字</div>
+    <div><b style="color:#facc15">策略I 中強動能</b>：RS介於50~85（甜蜜點）+ K線分≥80——跟G/H邏輯相反，抓「尚未到極端強勢、但短線動能剛要噴出」的股票，樣本仍在累積中，實際勝率請看下方表格即時數字</div>
     <div style="margin-top:4px;color:#64748b">九組樣本互不互斥、各自獨立計算。A、B要打贏的對象是D，不是C；G、H、I是2026/09新增，樣本仍在累積中，數字僅供參考。</div>
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
