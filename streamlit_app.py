@@ -1198,6 +1198,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('rs_score')" title="橫向排名相對強度。實測85+在T+10反而最差，50~85是甜蜜點，不是越高越好">RS分</th>
         <th class="stats-sort" onclick="statsSortBy('rs5d')" title="短期相對強度加速度。實測20+是少數獨立有正報酬的訊號，越高越好">RS5日</th>
         <th class="stats-sort" onclick="statsSortBy('rsi14')">RSI</th>
+        <th class="stats-sort" onclick="statsSortBy('volume_ratio')" title="當日成交量/20日均量。實測≥2.5倍(真爆量)勝率反而最差">量比</th>
         <th>買進收盤</th>
         <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1</th>
         <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3</th>
@@ -1206,7 +1207,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="19" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="20" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1291,11 +1292,12 @@ function renderRecentStats(){{
     <td style="text-align:center;color:#94a3b8;font-weight:600" title="實測50~85是甜蜜點，85+在T+10反而最差">${{r.rs_score!=null?Math.round(r.rs_score):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.rs5d==null?'#94a3b8':r.rs5d>=20?'#4ade80':r.rs5d>=0?'#94a3b8':'#f87171'}}" title="實測20+代表正在加速轉強，越高越好">${{r.rs5d!=null?(r.rs5d>0?'+':'')+Number(r.rs5d).toFixed(1):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.rsi14==null?'#94a3b8':r.rsi14>=70?'#f87171':r.rsi14<=30?'#4ade80':'#94a3b8'}}">${{r.rsi14!=null?Number(r.rsi14).toFixed(1):'-'}}</td>
+    <td style="text-align:center;font-weight:600;color:${{r.volume_ratio==null?'#94a3b8':r.volume_ratio>=2.5?'#f87171':r.volume_ratio<1.0?'#94a3b8':'#4ade80'}}" title="${{r.volume_ratio!=null&&r.volume_ratio>=2.5?'實測真爆量(≥2.5倍)反而勝率最差':''}}">${{r.volume_ratio!=null?Number(r.volume_ratio).toFixed(2):'-'}}</td>
     <td style="color:#94a3b8">${{r.entry_reference_close!=null?Number(r.entry_reference_close).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="19" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="20" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
