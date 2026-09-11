@@ -206,6 +206,118 @@ def init_db(conn):
     _ensure_columns(conn, "summary_stats", [
         ("rs_bucket", "TEXT"), ("rs5d_bucket", "TEXT"), ("volume_ratio_bucket", "TEXT"),
     ])
+
+    # ── 新增欄位：月度策略統計要用的年月 + 熟成狀態 ──
+    # 不塞進event_type複合字串，用獨立欄位查詢/排序才不容易出錯。
+    _ensure_columns(conn, "summary_stats", [
+        ("year_month", "TEXT"), ("is_matured", "INTEGER"),
+    ])
+
+    # ── 新增資料表：大盤每日歷史 + 月度趨勢彙總 ──
+    # market_data.json 每天只存「當天這一筆」，隔天就被覆蓋，過去完全沒有留下歷史，
+    # 導致沒辦法回頭判斷「6月是漲是跌」。fetch_twii_data() 其實每天都有算出
+    # ret5d/rsi/price/below_ma20 這些值，只是原本只寫進會被覆蓋的json，從今天起
+    # 額外存進這張表，之後月份才有真正的大盤歷史可以拿來標記趨勢。
+    # 過去(這張表還沒開始記錄前)的月份沒有資料可回溯，月度報表會顯示「資料不足」，
+    # 不會用個股平均漲跌幅這種有偏誤的代理值硬湊，那樣算出來的數字不可靠。
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS market_daily_history (
+            trade_date TEXT PRIMARY KEY,
+            twii_price REAL,
+            twii_ret5d REAL,
+            twii_rsi REAL,
+            twii_ma20 REAL,
+            below_ma20 INTEGER,
+            created_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS monthly_market_regime (
+            year_month TEXT PRIMARY KEY,
+            trading_days INTEGER,
+            month_return_pct REAL,
+            avg_rsi REAL,
+            pct_days_below_ma20 REAL,
+            regime TEXT,
+            updated_at TEXT
+        );
+        """
+    )
+    conn.commit()
+
+
+def save_market_daily(conn, trade_date, market_info):
+    """把當天的大盤快照(fetch_twii_data()的回傳值)存進歷史表，可重複執行(當天資料會被覆蓋更新，
+    不會重複累積)。market_info為None時(抓取失敗)略過不寫，避免用空值污染歷史。"""
+    if not market_info:
+        return
+    conn.execute(
+        """
+        INSERT INTO market_daily_history (trade_date, twii_price, twii_ret5d, twii_rsi, twii_ma20, below_ma20, created_at)
+        VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(trade_date) DO UPDATE SET
+            twii_price=excluded.twii_price, twii_ret5d=excluded.twii_ret5d,
+            twii_rsi=excluded.twii_rsi, twii_ma20=excluded.twii_ma20,
+            below_ma20=excluded.below_ma20, created_at=excluded.created_at
+        """,
+        (
+            trade_date, _num(market_info.get("price")), _num(market_info.get("ret5d")),
+            _num(market_info.get("rsi")), _num(market_info.get("ma20")),
+            1 if market_info.get("below_ma20") else 0,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        ),
+    )
+    conn.commit()
+
+
+def classify_regime(month_return_pct, pct_days_below_ma20):
+    """月度大盤趨勢判定：用「當月累計報酬」定方向，「站上/跌破MA20的天數比例」定是否為
+    有方向性的趨勢還是來回震盪。門檻是常見的技術分析經驗值(月漲跌5%作為多空分界、
+    MA20天數比例30%/70%作為震盪/趨勢分界)，不是從這份資料庫回測驗證出來的最適門檻——
+    等累積更多月份資料後，應該回頭比對「不同門檻切出的規則(月)組，策略勝率差異大不大」
+    來調整，而不是把這幾個數字當成已驗證的定論。"""
+    if month_return_pct is None or pct_days_below_ma20 is None:
+        return "NA"
+    if month_return_pct >= 5:
+        return "UP" if pct_days_below_ma20 <= 30 else "UP_CHOPPY"
+    if month_return_pct <= -5:
+        return "DOWN" if pct_days_below_ma20 >= 70 else "DOWN_CHOPPY"
+    return "RANGE"
+
+
+def refresh_monthly_market_regime(conn):
+    """從 market_daily_history 重建每月的趨勢標記。只有這張表有資料的月份才會產生列，
+    在這張表開始記錄之前的月份(6~9月)不會出現，前端要顯示「資料不足」而不是留白或亂猜。"""
+    conn.execute("DELETE FROM monthly_market_regime")
+    rows = conn.execute(
+        """
+        SELECT substr(trade_date,1,7) ym, trade_date, twii_price, twii_rsi, below_ma20
+        FROM market_daily_history ORDER BY trade_date
+        """
+    ).fetchall()
+    from collections import defaultdict
+    by_month = defaultdict(list)
+    for ym, trade_date, price, rsi, below in rows:
+        by_month[ym].append((trade_date, price, rsi, below))
+    updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for ym, items in by_month.items():
+        prices = [p for _, p, _, _ in items if p is not None]
+        rsis = [r for _, _, r, _ in items if r is not None]
+        belows = [b for _, _, _, b in items if b is not None]
+        if len(prices) < 2:
+            continue
+        month_ret = round((prices[-1] / prices[0] - 1) * 100, 2)
+        avg_rsi = round(sum(rsis) / len(rsis), 1) if rsis else None
+        pct_below = round(sum(belows) / len(belows) * 100, 1) if belows else None
+        regime = classify_regime(month_ret, pct_below)
+        conn.execute(
+            """
+            INSERT INTO monthly_market_regime
+                (year_month, trading_days, month_return_pct, avg_rsi, pct_days_below_ma20, regime, updated_at)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (ym, len(items), month_ret, avg_rsi, pct_below, regime, updated),
+        )
     conn.commit()
 
 
@@ -440,12 +552,13 @@ def _change_pct(price, prev):
     return round((price - prev) / prev * 100, 2)
 
 
-def save_daily_run(results, generated_at=None, db_path=DB_PATH):
+def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None):
     generated_at = generated_at or datetime.now().strftime("%Y-%m-%d %H:%M")
     trade_date = generated_at[:10]
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = connect(db_path)
     init_db(conn)
+    save_market_daily(conn, trade_date, market_info)
 
     for s in results:
         ticker = str(s.get("ticker", "")).strip()
@@ -578,6 +691,8 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH):
     update_watch_transitions(conn, trade_date)
     update_event_outcomes(conn)
     refresh_summary_stats(conn)
+    refresh_monthly_strategy_stats(conn)
+    refresh_monthly_market_regime(conn)
     conn.commit()
     conn.close()
 
@@ -767,6 +882,87 @@ def backfill_rs_fields(conn):
         updated += 1
     conn.commit()
     return updated
+
+
+def refresh_monthly_strategy_stats(conn):
+    """
+    月度策略勝率彙總：group_name='monthly_event_type'，多一個 year_month 欄位。
+    只統計 STRAT_A~I 這幾個「策略組合回測」用的分類(不含ENTRY/BOTH_STRONG等舊版雙分訊號)，
+    月度視角本來就是要比較策略優劣，混入其他分類只會讓表格失焦。
+
+    「這個月能不能顯示」的規則：不是看今天日期有沒有過完這個月，是看「這個月最後一筆訊號的
+    T+10結果是不是已經存在」——例如9月要等到9/30那天(若為交易日)發出的訊號也跑完10個交易日
+    的event_outcomes才算「熟了」，不然9月的T+10欄位會因為月底那幾筆還沒到期而被拖累失真，
+    跟你要求的「9/30資料跑完到+10再一起顯示9月」是同一件事。
+    """
+    conn.execute("DELETE FROM summary_stats WHERE group_name='monthly_event_type'")
+    updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    STRAT_TYPES = (
+        "STRAT_A_BREAKOUT", "STRAT_B_SWING", "STRAT_C_KLINE", "STRAT_D_COMPOSITE",
+        "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
+        "STRAT_I_RS_MOMENTUM",
+    )
+
+    # 每個月「最後一筆訊號」的日期，用來判斷該月是否已經熟成
+    last_signal_per_month = dict(conn.execute(
+        """
+        SELECT substr(trade_date,1,7) ym, MAX(trade_date)
+        FROM signal_events WHERE event_type IN ({})
+        GROUP BY ym
+        """.format(",".join("?" * len(STRAT_TYPES))),
+        STRAT_TYPES,
+    ).fetchall())
+
+    rows = conn.execute(
+        """
+        SELECT substr(e.trade_date,1,7) ym, e.event_type, o.horizon,
+               MAX(o.return_close_pct) return_close_pct
+        FROM signal_events e JOIN event_outcomes o ON o.event_id = e.event_id
+        WHERE e.event_type IN ({})
+        GROUP BY e.trade_date, e.ticker, e.event_type, o.horizon
+        """.format(",".join("?" * len(STRAT_TYPES))),
+        STRAT_TYPES,
+    ).fetchall()
+
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for ym, et, h, ret in rows:
+        groups[(ym, et, h)].append(ret)
+
+    for (ym, et, h), vals in groups.items():
+        last_date = last_signal_per_month.get(ym)
+        if last_date is None:
+            continue
+        # 該月「最晚一筆訊號」是否已經有 horizon=10 的結果 → 代表這個月已經熟成，可以顯示
+        matured = conn.execute(
+            "SELECT COUNT(*) FROM event_outcomes o JOIN signal_events e ON e.event_id=o.event_id "
+            "WHERE e.trade_date=? AND o.horizon=10", (last_date,)
+        ).fetchone()[0] > 0
+        vals = [v for v in vals if v is not None]
+        if not vals:
+            continue
+        wins = [v for v in vals if v > 0]
+        stat_key = f"monthly_event_type:{ym}:{et}:T{h}"
+        conn.execute(
+            """
+            INSERT INTO summary_stats (
+                stat_key, group_name, event_type, horizon, sample_count, win_rate,
+                avg_return, median_return, avg_win, avg_loss, profit_factor,
+                max_return, min_return, year_month, is_matured, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                stat_key, "monthly_event_type", et, h,
+                len(vals), round(len(wins) / len(vals) * 100, 1),
+                round(sum(vals) / len(vals), 2), _median(vals),
+                round(sum(wins) / len(wins), 2) if wins else None,
+                round(sum(v for v in vals if v <= 0) / max(1, len(vals) - len(wins)), 2) if len(vals) > len(wins) else None,
+                None, round(max(vals), 2), round(min(vals), 2),
+                ym, 1 if matured else 0, updated,
+            ),
+        )
+    conn.commit()
 
 
 def refresh_summary_stats(conn):
@@ -1014,6 +1210,9 @@ def export_stats_payload(db_path=DB_PATH):
         ORDER BY count DESC
         """
     ).fetchall()]
+    monthly_regime = [dict(r) for r in conn.execute(
+        "SELECT * FROM monthly_market_regime ORDER BY year_month"
+    ).fetchall()]
     conn.close()
     return {
         "ready": True,
@@ -1022,4 +1221,5 @@ def export_stats_payload(db_path=DB_PATH):
         "recent": recent,
         "threshold_stats": threshold_stats,
         "watch": watch,
+        "monthly_regime": monthly_regime,
     }
