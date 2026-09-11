@@ -872,6 +872,79 @@ function kCol(v){{return v>=78?'#f87171':v>=70?'#fbbf24':v>=60?'#4ade80':'#64748
 function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
 function vcpCol(v){{return v>=70?'#f87171':v>=50?'#fbbf24':v>=30?'#4ade80':'#64748b';}}
 
+// ── Tab: 月度分析 ──────────────────────────────────────────────
+const REGIME_LBL={{UP:'📈 上漲趨勢',UP_CHOPPY:'📈 上漲(震盪走高)',DOWN:'📉 下跌趨勢',DOWN_CHOPPY:'📉 下跌(震盪走低)',RANGE:'↔️ 區間震盪',NA:'資料不足'}};
+const REGIME_COLOR={{UP:'#4ade80',UP_CHOPPY:'#86efac',DOWN:'#f87171',DOWN_CHOPPY:'#fca5a5',RANGE:'#fbbf24',NA:'#64748b'}};
+function regimeBadge(regime){{
+  const r=regime||'NA';
+  return`<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${{REGIME_COLOR[r]}}22;color:${{REGIME_COLOR[r]}};border:1px solid ${{REGIME_COLOR[r]}}55">${{REGIME_LBL[r]||r}}</span>`;
+}}
+function buildTabMonthly(){{
+  const sum=STATS.summary||[];
+  const regimes=STATS.monthly_regime||[];
+  const hs=[1,3,5,7,10];
+  const months=[...new Set(sum.filter(x=>x.group_name==='monthly_event_type').map(x=>x.year_month))].sort();
+  if(!months.length){{
+    return'<div style="padding:20px;color:#94a3b8">尚無月度資料——需要累積至少一個完整月份的訊號並跑完T+10才會顯示，請稍候幾週。</div>';
+  }}
+  const regimeByMonth={{}};
+  regimes.forEach(r=>{{regimeByMonth[r.year_month]=r;}});
+
+  // 大盤趨勢橫幅：每個月一張小卡，讓「這個月是漲是跌」一眼看到，不用逐行看策略表才找得到
+  const regimeCards=months.map(ym=>{{
+    const r=regimeByMonth[ym];
+    const hasRegime=r&&r.regime&&r.regime!=='NA';
+    return`<div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:10px 14px;min-width:150px">
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${{ym}}</div>
+      ${{hasRegime?`
+        <div style="margin-bottom:4px">${{regimeBadge(r.regime)}}</div>
+        <div style="font-size:11px;color:#64748b">月報酬 <span style="color:${{r.month_return_pct>=0?'#f87171':'#4ade80'}};font-weight:600">${{r.month_return_pct>=0?'+':''}}${{r.month_return_pct}}%</span> · 站上MA20 ${{(100-r.pct_days_below_ma20).toFixed(0)}}%天數</div>
+      `:`<div style="font-size:11px;color:#64748b">${{regimeBadge('NA')}}<br><span style="font-size:10px">此月份大盤歷史尚未開始記錄</span></div>`}}
+    </div>`;
+  }}).join('');
+
+  // 每個月一張獨立表格：策略 × T+1~T+10，未熟成的月份整張表用警示條蓋頂，避免誤讀成「這個月已經跑完」
+  const monthTables=months.map(ym=>{{
+    const rowsForMonth=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='monthly_event_type'&&s.year_month===ym&&s.event_type===et));
+    if(!rowsForMonth.length)return'';
+    const matured=sum.find(s=>s.group_name==='monthly_event_type'&&s.year_month===ym)?.is_matured;
+    const tableRows=rowsForMonth.map(et=>{{
+      const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='monthly_event_type'&&s.year_month===ym&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+      if(!pts.length)return'';
+      const best=pts.reduce((a,b)=>b.wr>a.wr?b:a);
+      const wrCells=hs.map(h=>{{
+        const p=pts.find(x=>x.h===h);
+        if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
+        return wrCell(p.wr,p.n,p.h===best.h);
+      }});
+      return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}</tr>`;
+    }}).filter(Boolean);
+    const r=regimeByMonth[ym];
+    return`
+    <div class="sc-box" style="margin-bottom:14px">
+      <div class="sc-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>${{ym}} 各策略勝率</span>
+        ${{r&&r.regime&&r.regime!=='NA'?regimeBadge(r.regime):''}}
+        ${{!matured?'<span style="font-size:11px;color:#fbbf24">⏳ 本月尚未熟成，數字會隨月底訊號陸續跑完T+10而變動</span>':'<span style="font-size:11px;color:#4ade80">✓ 已熟成</span>'}}
+      </div>
+      <div class="stats-scroll" style="padding:0 0 10px">
+        <table class="stats-table"><thead><tr><th>策略</th><th style="text-align:center">樣本</th>
+          ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}</tr></thead>
+        <tbody>${{tableRows.join('')}}</tbody></table>
+      </div>
+    </div>`;
+  }}).filter(Boolean).join('');
+
+  return`
+  <div style="padding:14px 14px 6px;font-size:12px;color:#94a3b8;line-height:1.7">
+    <div>每月大盤趨勢：月報酬≥5%記為上漲、≤-5%記為下跌，中間為區間震盪；再依站上/跌破MA20的天數比例細分是否走勢乾脆。<b style="color:#fbbf24">這組門檻是技術分析常見經驗值，尚未針對本系統回測驗證過最適切點</b>，先求有客觀依據可看，之後應隨資料量增加回頭檢視。</div>
+    <div style="margin-top:4px">大盤歷史從系統啟用當天才開始記錄，<b style="color:#f87171">過去月份沒有資料可回溯</b>，會顯示「資料不足」而非用其他方式推算，避免用不可靠的代理指標誤導判斷。</div>
+    <div style="margin-top:4px">「本月尚未熟成」代表當月最後一筆訊號還沒跑完T+10天，數字僅供參考，等熟成後才是完整結果——這是刻意的設計，不是資料缺漏。</div>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;padding:0 14px 14px">${{regimeCards}}</div>
+  <div style="padding:0 14px 14px">${{monthTables||'<div style="color:#94a3b8;padding:14px 0">尚無足夠樣本的月份。</div>'}}</div>`;
+}}
+
 // ── Tab: 門檻分析 ──────────────────────────────────────────────
 function buildTabThreshold(){{
   const ts=STATS.threshold_stats||[];
@@ -1509,6 +1582,7 @@ function renderStats(){{
     </div>
     <div class="stats-inner-tabs">
       <button class="sit sa" onclick="switchStatsTab('srec',this)">📋 近期訊號</button>
+      <button class="sit" onclick="switchStatsTab('smon',this)">📅 月度分析</button>
       <button class="sit" onclick="switchStatsTab('sth',this)">🎯 門檻分析</button>
       <button class="sit" onclick="switchStatsTab('smat',this)">🔥 分數熱圖</button>
       <button class="sit" onclick="switchStatsTab('speak',this)">🏆 黃金出場</button>
@@ -1516,6 +1590,7 @@ function renderStats(){{
       <button class="sit" onclick="switchStatsTab('sstrat',this)">🧪 策略組合回測</button>
     </div>
     <div class="sp sa" id="srec">${{buildTabRecent()}}</div>
+    <div class="sp" id="smon">${{buildTabMonthly()}}</div>
     <div class="sp" id="sth">${{buildTabThreshold()}}</div>
     <div class="sp" id="smat">${{buildTabMatrix()}}</div>
     <div class="sp" id="speak">${{buildTabPeak()}}</div>
