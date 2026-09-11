@@ -883,12 +883,44 @@ function buildTabMonthly(){{
   const sum=STATS.summary||[];
   const regimes=STATS.monthly_regime||[];
   const hs=[1,3,5,7,10];
-  const months=[...new Set(sum.filter(x=>x.group_name==='monthly_event_type').map(x=>x.year_month))].sort();
+  // 新月份排最上面：資料越多，最新一個月才是最常被查看的，不用一直往下捲
+  const months=[...new Set(sum.filter(x=>x.group_name==='monthly_event_type').map(x=>x.year_month))].sort().reverse();
+  const years=[...new Set(sum.filter(x=>x.group_name==='yearly_event_type').map(x=>x.year_month))].sort().reverse();
   if(!months.length){{
     return'<div style="padding:20px;color:#94a3b8">尚無月度資料——需要累積至少一個完整月份的訊號並跑完T+10才會顯示，請稍候幾週。</div>';
   }}
   const regimeByMonth={{}};
   regimes.forEach(r=>{{regimeByMonth[r.year_month]=r;}});
+
+  // 年度表格：跟月度不同，不是整年熟不熟成二選一，是逐筆事件各自看有沒有T+10結果，
+  // 有的就納入，所以今年一開始就會持續顯示已熟成的部分，樣本量會隨時間增加，數字也會微調
+  const yearTables=years.map(yr=>{{
+    const rowsForYear=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='yearly_event_type'&&s.year_month===yr&&s.event_type===et));
+    if(!rowsForYear.length)return'';
+    const tableRows=rowsForYear.map(et=>{{
+      const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='yearly_event_type'&&s.year_month===yr&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+      if(!pts.length)return'';
+      const best=pts.reduce((a,b)=>b.wr>a.wr?b:a);
+      const wrCells=hs.map(h=>{{
+        const p=pts.find(x=>x.h===h);
+        if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
+        return wrCell(p.wr,p.n,p.h===best.h);
+      }});
+      return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}</tr>`;
+    }}).filter(Boolean);
+    return`
+    <div class="sc-box" style="margin-bottom:14px;border-color:#8b5cf655">
+      <div class="sc-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>📆 ${{yr}}年 累計各策略勝率</span>
+        <span style="font-size:11px;color:#a78bfa">持續累積中——樣本會隨當年度新事件跑完T+10而增加，數字會逐漸逼近全年真實結果</span>
+      </div>
+      <div class="stats-scroll" style="padding:0 0 10px">
+        <table class="stats-table"><thead><tr><th>策略</th><th style="text-align:center">樣本</th>
+          ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}</tr></thead>
+        <tbody>${{tableRows.join('')}}</tbody></table>
+      </div>
+    </div>`;
+  }}).filter(Boolean).join('');
 
   // 大盤趨勢橫幅：每個月一張小卡，讓「這個月是漲是跌」一眼看到，不用逐行看策略表才找得到
   const regimeCards=months.map(ym=>{{
@@ -941,6 +973,7 @@ function buildTabMonthly(){{
     <div style="margin-top:4px">大盤歷史從系統啟用當天才開始記錄，<b style="color:#f87171">過去月份沒有資料可回溯</b>，會顯示「資料不足」而非用其他方式推算，避免用不可靠的代理指標誤導判斷。</div>
     <div style="margin-top:4px">「本月尚未熟成」代表當月最後一筆訊號還沒跑完T+10天，數字僅供參考，等熟成後才是完整結果——這是刻意的設計，不是資料缺漏。</div>
   </div>
+  ${{yearTables?`<div style="padding:0 14px 14px">${{yearTables}}</div>`:''}}
   <div style="display:flex;gap:10px;flex-wrap:wrap;padding:0 14px 14px">${{regimeCards}}</div>
   <div style="padding:0 14px 14px">${{monthTables||'<div style="color:#94a3b8;padding:14px 0">尚無足夠樣本的月份。</div>'}}</div>`;
 }}
