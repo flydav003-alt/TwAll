@@ -826,11 +826,11 @@ const _TICK={{color:'#94a3b8'}};
 const _BASE_SCALE={{x:{{grid:_GRID,ticks:_TICK}},y:{{grid:_GRID,ticks:_TICK}}}};
 const _NO_LEGEND={{legend:{{display:false}}}};
 
-const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分',STRAT_F_MEANREV:'策略F均值回歸',STRAT_G_RS_PULLBACK:'策略G強勢回檔',STRAT_H_RS_VOLDRY:'策略H強勢量縮',STRAT_I_RS_MOMENTUM:'策略I中強動能'}};
+const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分',STRAT_F_MEANREV:'策略F均值回歸',STRAT_G_RS_PULLBACK:'策略G強勢回檔',STRAT_H_RS_VOLDRY:'策略H強勢量縮',STRAT_I_RS_MOMENTUM:'策略I中強動能',STRAT_J_RS_COOLDOWN:'策略J中強降溫'}};
 const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa','#fb923c','#2dd4bf'];
 // 六策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，接著是有結構驗證的A、B、E，最後是均值回歸F
-const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB','STRAT_F_MEANREV','STRAT_G_RS_PULLBACK','STRAT_H_RS_VOLDRY','STRAT_I_RS_MOMENTUM'];
-const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf',STRAT_F_MEANREV:'#60a5fa',STRAT_G_RS_PULLBACK:'#fb923c',STRAT_H_RS_VOLDRY:'#e879f9',STRAT_I_RS_MOMENTUM:'#facc15'}};
+const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB','STRAT_F_MEANREV','STRAT_G_RS_PULLBACK','STRAT_H_RS_VOLDRY','STRAT_I_RS_MOMENTUM','STRAT_J_RS_COOLDOWN'];
+const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf',STRAT_F_MEANREV:'#60a5fa',STRAT_G_RS_PULLBACK:'#fb923c',STRAT_H_RS_VOLDRY:'#e879f9',STRAT_I_RS_MOMENTUM:'#facc15',STRAT_J_RS_COOLDOWN:'#38bdf8'}};
 
 function labelEvent(v){{return ETYPE_LBL[v]||v||'-';}}
 function eventList(r){{
@@ -1277,6 +1277,7 @@ function buildTabRecent(){{
       <option value="STRAT_F_MEANREV">策略F均值回歸</option>
       <option value="STRAT_G_RS_PULLBACK">策略G強勢回檔</option><option value="STRAT_H_RS_VOLDRY">策略H強勢量縮</option>
       <option value="STRAT_I_RS_MOMENTUM">策略I中強動能</option>
+      <option value="STRAT_J_RS_COOLDOWN">策略J中強降溫</option>
     </select>
     <div class="sl-grp"><span class="sl-lbl">K線</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillK" style="left:0%;width:100%"></div><input type="range" id="statsK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsK','statsFillK','renderRecentStats')"><input type="range" id="statsK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsK','statsFillK','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsK_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsK','min','statsFillK','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsK_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsK','max','statsFillK','renderRecentStats')"></div></div>
     <div class="sl-grp"><span class="sl-lbl">綜合</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillC" style="left:0%;width:100%"></div><input type="range" id="statsC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsC','statsFillC','renderRecentStats')"><input type="range" id="statsC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsC','statsFillC','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsC_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsC','min','statsFillC','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsC_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsC','max','statsFillC','renderRecentStats')"></div></div>
@@ -1523,7 +1524,8 @@ function buildTabStrategy(){{
     <div><b style="color:#fb923c">策略G 強勢回檔</b>：RS≥85 + K線分<70 + RSI落在45~70——長期強勢股短線技術面降溫、賣壓釋放後的拉回買點，樣本仍在累積中，實際勝率請看下方表格即時數字</div>
     <div><b style="color:#e879f9">策略H 強勢量縮</b>：RS≥85 + 量比<1.0倍——長期強勢股當日量縮，代表短線賣壓萎縮、健康整理，樣本仍在累積中，實際勝率請看下方表格即時數字</div>
     <div><b style="color:#facc15">策略I 中強動能</b>：RS介於50~85（甜蜜點）+ K線分≥80——跟G/H邏輯相反，抓「尚未到極端強勢、但短線動能剛要噴出」的股票，樣本仍在累積中，實際勝率請看下方表格即時數字</div>
-    <div style="margin-top:4px;color:#64748b">九組樣本互不互斥、各自獨立計算。A、B要打贏的對象是D，不是C；G、H、I是2026/09新增，樣本仍在累積中，數字僅供參考。</div>
+    <div><b style="color:#38bdf8">策略J 中強降溫</b>：RS介於70~84 + K線分<60——中期相對強度偏強、短線技術面降溫，抓法跟G類似但RS門檻略寬、K線分門檻更嚴。初步樣本(僅涵蓋2026/08/19~09/10這段市場轉強期)T+1~T+7勝率48~61%、報酬轉正，但完全沒經過震盪期考驗，不能排除只是搭上這波多頭順風車，實際勝率請看下方表格即時數字，不要只看這段描述</div>
+    <div style="margin-top:4px;color:#64748b">十組樣本互不互斥、各自獨立計算。A、B要打贏的對象是D，不是C；G、H、I、J是2026/09新增，樣本仍在累積中，數字僅供參考。</div>
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
