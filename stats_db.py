@@ -167,8 +167,29 @@ def init_db(conn):
     _ensure_columns(conn, "signal_events", [
         ("breakout_score", "REAL"), ("breakout_bucket", "TEXT"),
         ("swing_score", "REAL"), ("swing_bucket", "TEXT"),
-        ("rsi14", "REAL"), ("vcp_status", "TEXT"),
+        ("rsi14", "REAL"), ("vcp_status", "TEXT"), ("entry_signal", "TEXT"),
     ])
+    # 舊事件尚未保存今日訊號時，從同日的每日快照安全回填；新事件則在寫入時直接保存。
+    conn.execute(
+        """
+        UPDATE signal_events
+        SET entry_signal = (
+            SELECT d.entry_signal
+            FROM daily_stock_snapshot d
+            WHERE d.trade_date = signal_events.trade_date
+              AND d.ticker = signal_events.ticker
+        )
+        WHERE (entry_signal IS NULL OR entry_signal = '')
+          AND EXISTS (
+            SELECT 1
+            FROM daily_stock_snapshot d
+            WHERE d.trade_date = signal_events.trade_date
+              AND d.ticker = signal_events.ticker
+              AND d.entry_signal IS NOT NULL
+              AND d.entry_signal <> ''
+          )
+        """
+    )
     _ensure_columns(conn, "watch_transitions", [
         ("watch_breakout_score", "REAL"), ("watch_swing_score", "REAL"),
         ("confirm_breakout_score", "REAL"), ("confirm_swing_score", "REAL"),
@@ -652,8 +673,8 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         entry_reference_close, entry_price_mode, status, score_version, created_at,
                         bb_score, bb_bucket, bb_setup,
                         rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket, rsi14,
-                        vcp_status
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        vcp_status, entry_signal
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
@@ -662,7 +683,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         _num(price), "next_open", "open", SCORE_VERSION, now,
                         _num(bb), bb_bucket, bb_setup,
                         _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
-                        _num(s.get("rsi14")), vcp_status,
+                        _num(s.get("rsi14")), vcp_status, s.get("entry_signal", ""),
                     ),
                 )
 
@@ -683,8 +704,8 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         entry_reference_close, entry_price_mode, status, score_version, created_at,
                         bb_score, bb_bucket, bb_setup,
                         rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket, rsi14,
-                        vcp_status
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        vcp_status, entry_signal
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         strat_event_id, trade_date, ticker, s.get("name"), strat_event_type, "strategy_combo",
@@ -693,7 +714,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         _num(price), "next_open", "open", SCORE_VERSION, now,
                         _num(bb), bb_bucket, bb_setup,
                         _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
-                        _num(s.get("rsi14")), vcp_status,
+                        _num(s.get("rsi14")), vcp_status, s.get("entry_signal", ""),
                     ),
                 )
 
@@ -1333,6 +1354,7 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(e.composite_score) AS composite_score,
                MAX(e.breakout_score) AS breakout_score,
                MAX(e.vcp_status) AS vcp_status,
+               MAX(e.entry_signal) AS entry_signal,
                MAX(e.swing_score) AS swing_score,
                MAX(e.bb_score) AS bb_score,
                MAX(e.bb_setup) AS bb_setup,
