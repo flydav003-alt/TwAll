@@ -167,7 +167,7 @@ def init_db(conn):
     _ensure_columns(conn, "signal_events", [
         ("breakout_score", "REAL"), ("breakout_bucket", "TEXT"),
         ("swing_score", "REAL"), ("swing_bucket", "TEXT"),
-        ("rsi14", "REAL"),
+        ("rsi14", "REAL"), ("vcp_status", "TEXT"),
     ])
     _ensure_columns(conn, "watch_transitions", [
         ("watch_breakout_score", "REAL"), ("watch_swing_score", "REAL"),
@@ -1330,6 +1330,7 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(e.kline_score) AS kline_score,
                MAX(e.composite_score) AS composite_score,
                MAX(e.breakout_score) AS breakout_score,
+               MAX(e.vcp_status) AS vcp_status,
                MAX(e.swing_score) AS swing_score,
                MAX(e.bb_score) AS bb_score,
                MAX(e.bb_setup) AS bb_setup,
