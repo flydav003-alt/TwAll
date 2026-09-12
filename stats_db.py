@@ -524,21 +524,30 @@ def classify_strategy_events(kline_score, composite_score, breakout_score, swing
             and (bb_consec_down_days is None or bb_consec_down_days < 4)):
         events.append("STRAT_F_MEANREV")
     # 策略G：RS85+順勢回檔 — 長期強勢股(RS≥85)短線K線降溫(<70)、RSI落在健康區間(45~70)，
-    # 抓「強勢股短線拉回、賣壓釋放後」的進場點。實測T+5勝率90.0%(n=40)，樣本仍偏薄，持續觀察。
+    # 抓「強勢股短線拉回、賣壓釋放後」的進場點。樣本仍在累積中，實際勝率請看資料庫統計即時數字，
+    # 不在註解寫死具體數字——RS相關欄位2026/08/19才上線，樣本尚未涵蓋完整市場週期，數字會持續變動。
     if (rs_score is not None and rs_score >= 85
             and kline_score is not None and kline_score < 70
             and rsi14 is not None and 45 <= rsi14 <= 70):
         events.append("STRAT_G_RS_PULLBACK")
     # 策略H：RS85+量縮拉回 — 長期強勢股，當日成交量比均量還低(<1.0倍)，
-    # 代表賣壓萎縮、短線在健康整理。實測跨天期(T+1~T+7)都維持55%~80%勝率，是目前最穩定的一組。
+    # 代表賣壓萎縮、短線在健康整理。樣本仍在累積中，實際勝率請看資料庫統計即時數字。
     if (rs_score is not None and rs_score >= 85
             and volume_ratio is not None and volume_ratio < 1.0):
         events.append("STRAT_H_RS_VOLDRY")
     # 策略I：RS50-85動能發動 — 中期相對強度落在甜蜜點(50~85)，K線分已經轉強(≥80)，
-    # 跟G/H邏輯相反：抓的是「尚未到極端強勢、但短線動能剛要噴出」的股票。實測T+5勝率68.3%(n=41)。
+    # 跟G/H邏輯相反：抓的是「尚未到極端強勢、但短線動能剛要噴出」的股票。樣本仍在累積中，
+    # 實際勝率請看資料庫統計即時數字。
     if (rs_score is not None and 50 <= rs_score < 85
             and kline_score is not None and kline_score >= 80):
         events.append("STRAT_I_RS_MOMENTUM")
+    # 策略J：RS70-84+K線降溫 — 中期相對強度偏強(70-84，比G/H的85+門檻略寬)、短線K線分<60
+    # (比G的<70更嚴，要求短線降溫更明顯)。2026/09實測初步樣本(n=86~173，僅涵蓋8/19~9/10這段
+    # 市場轉強期)T+1~T+7勝率48~61%、報酬轉正，數字亮眼，但跟G/H/I一樣完全沒經過震盪期考驗，
+    # 不能排除只是搭上這波多頭順風車——這點務必看資料庫統計的即時數字判斷，不能只看這段註解。
+    if (rs_score is not None and 70 <= rs_score < 85
+            and kline_score is not None and kline_score < 60):
+        events.append("STRAT_J_RS_COOLDOWN")
     return events
 
 
@@ -794,14 +803,18 @@ def update_event_outcomes(conn):
     ).fetchall()
     filled_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for e in events:
-        entry = e["entry_reference_close"]
-        if not entry:
-            continue
         hist = _history_after_signal(e["ticker"], e["trade_date"], e["market"])
         if hist is None:
             continue
         future = hist[hist["date_str"] > e["trade_date"]].copy()
         if future.empty:
+            continue
+        # 進場價改成「隔日開盤價」，不再用訊號當天收盤價(entry_reference_close)。
+        # 原本用訊號當天收盤價當進場價，等於假設訊號出來當下就能成交，但訊號其實是收盤後
+        # 才跑批次算出來的，實際上最快只能在隔天開盤才進場，用收盤價回測會系統性高估績效。
+        # entry_reference_close欄位保留供顯示「當時觸發訊號時的價位」參考，不再用於報酬計算。
+        entry = float(future.iloc[0]["Open"])
+        if not entry:
             continue
         filled = 0
         for horizon in HORIZONS:
@@ -841,6 +854,76 @@ def update_event_outcomes(conn):
             conn.execute("UPDATE signal_events SET status='matured' WHERE event_id=?", (e["event_id"],))
         elif done > 0 or filled > 0:
             conn.execute("UPDATE signal_events SET status='partial' WHERE event_id=?", (e["event_id"],))
+
+
+def backfill_entry_price_to_next_open(conn):
+    """
+    一次性回補：把現有全部event_outcomes(不論狀態是matured/partial/open)，用「隔日開盤價」
+    重新計算進場價與所有報酬指標，取代原本「訊號當天收盤價」的算法。這是應user要求的全面改版
+    ——不保留舊算法的對照數字，全部統一用新定義重算，所以是直接覆蓋(INSERT OR REPLACE)而非新增
+    欄位。跑完這個函式後，summary_stats/monthly_event_type/yearly_event_type都需要重新refresh，
+    因為底層的event_outcomes數字全部變了。
+
+    只需要執行一次(部署這版程式碼後手動呼叫一次)，之後update_event_outcomes()日常運作時
+    就會自動用新邏輯(隔日開盤價)處理新產生的事件，不需要重複呼叫這個回補函式。
+    """
+    events = conn.execute(
+        """
+        SELECT e.*, d.market
+        FROM signal_events e
+        LEFT JOIN daily_stock_snapshot d
+          ON d.trade_date = e.trade_date AND d.ticker = e.ticker
+        ORDER BY e.trade_date
+        """
+    ).fetchall()
+    filled_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    total = len(events)
+    updated_events = 0
+    skipped_no_history = 0
+    for idx, e in enumerate(events):
+        hist = _history_after_signal(e["ticker"], e["trade_date"], e["market"])
+        if hist is None:
+            skipped_no_history += 1
+            continue
+        future = hist[hist["date_str"] > e["trade_date"]].copy()
+        if future.empty:
+            skipped_no_history += 1
+            continue
+        entry = float(future.iloc[0]["Open"])
+        if not entry:
+            skipped_no_history += 1
+            continue
+        for horizon in HORIZONS:
+            if len(future) < horizon:
+                continue
+            window = future.iloc[:horizon]
+            target = future.iloc[horizon - 1]
+            target_close = float(target["Close"])
+            ret = round((target_close / entry - 1) * 100, 2)
+            max_gain = round((float(window["High"].max()) / entry - 1) * 100, 2)
+            max_drawdown = round((float(window["Low"].min()) / entry - 1) * 100, 2)
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO event_outcomes (
+                    event_id, ticker, signal_date, horizon, target_date, target_close,
+                    target_high, target_low, return_close_pct, max_gain_pct,
+                    max_drawdown_pct, is_win, is_big_win, is_big_loss, filled_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    e["event_id"], e["ticker"], e["trade_date"], horizon,
+                    target["date_str"], target_close, float(target["High"]), float(target["Low"]),
+                    ret, max_gain, max_drawdown, 1 if ret > 0 else 0,
+                    1 if ret >= 3 else 0, 1 if ret <= -3 else 0, filled_at,
+                ),
+            )
+        updated_events += 1
+        if (idx + 1) % 200 == 0:
+            conn.commit()
+            print(f"[回補進度] {idx + 1}/{total}")
+    conn.commit()
+    print(f"[回補完成] 總事件數={total}, 成功重算={updated_events}, 因無歷史股價跳過={skipped_no_history}")
+    return updated_events, skipped_no_history
 
 
 def _median(vals):
@@ -902,7 +985,7 @@ def refresh_monthly_strategy_stats(conn):
     STRAT_TYPES = (
         "STRAT_A_BREAKOUT", "STRAT_B_SWING", "STRAT_C_KLINE", "STRAT_D_COMPOSITE",
         "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
-        "STRAT_I_RS_MOMENTUM",
+        "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
     )
 
     # 每個月「最後一筆訊號」的日期，用來判斷該月是否已經熟成
@@ -980,7 +1063,7 @@ def refresh_yearly_strategy_stats(conn):
     STRAT_TYPES = (
         "STRAT_A_BREAKOUT", "STRAT_B_SWING", "STRAT_C_KLINE", "STRAT_D_COMPOSITE",
         "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
-        "STRAT_I_RS_MOMENTUM",
+        "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
     )
     rows = conn.execute(
         """
