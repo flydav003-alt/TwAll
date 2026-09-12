@@ -1297,6 +1297,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('ticker')">代號</th>
         <th class="stats-sort" onclick="statsSortBy('name')">名稱</th>
         <th class="stats-sort" style="max-width:130px" onclick="statsSortBy('event_type')">訊號</th>
+        <th class="stats-sort" onclick="statsSortBy('entry_signal')">今日訊號</th>
         <th class="stats-sort" onclick="statsSortBy('kline_score')">K線分</th>
         <th class="stats-sort" onclick="statsSortBy('composite_score')">綜合分</th>
         <th class="stats-sort" onclick="statsSortBy('breakout_score')">突破分</th>
@@ -1315,7 +1316,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="21" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="22" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1392,6 +1393,7 @@ function renderRecentStats(){{
     <td style="color:#6366f1;font-weight:700">${{r.ticker||'-'}}</td>
     <td>${{r.name||'-'}}</td>
     <td style="color:#93c5fd;font-size:11px;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr(labelEventList(r))}}">${{labelEventList(r)}}${{(r.volume_ratio||0)>=2.5?` <span title="量比${{Number(r.volume_ratio).toFixed(1)}}倍，實測真爆量(≥2.5倍)反而勝率最差" style="color:#f87171">🔺</span>`:''}}</td>
+    <td>${{fSig(r.entry_signal)}}</td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.kline_score||0,100)}}%;background:${{kCol(r.kline_score||0)}}"></div></div><span style="color:${{kCol(r.kline_score||0)}};font-weight:700">${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.composite_score||0,100)}}%;background:${{cCol(r.composite_score||0)}}"></div></div><span style="color:${{cCol(r.composite_score||0)}};font-weight:700">${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.breakout_score||0,100)}}%;background:${{vcpCol(r.breakout_score||0)}}"></div></div><span style="color:${{vcpCol(r.breakout_score||0)}};font-weight:700">${{r.breakout_score!=null?Math.round(r.breakout_score):'-'}}</span></div></td>
@@ -1406,7 +1408,7 @@ function renderRecentStats(){{
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="21" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="22" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
