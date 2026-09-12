@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import sqlite3
 from datetime import datetime, timedelta
@@ -202,6 +203,8 @@ def init_db(conn):
         ("rs_score", "REAL"), ("rs_bucket", "TEXT"),
         ("rs5d", "REAL"), ("rs5d_bucket", "TEXT"),
         ("volume_ratio", "REAL"), ("volume_ratio_bucket", "TEXT"),
+        # 訊號日收盤價與實際回測進場價分開保存。前者僅供回看訊號，後者一律是隔日開盤。
+        ("entry_price", "REAL"), ("entry_date", "TEXT"),
     ])
     _ensure_columns(conn, "summary_stats", [
         ("rs_bucket", "TEXT"), ("rs5d_bucket", "TEXT"), ("volume_ratio_bucket", "TEXT"),
@@ -240,6 +243,17 @@ def init_db(conn):
             pct_days_below_ma20 REAL,
             regime TEXT,
             updated_at TEXT
+        );
+        """
+    )
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS backfill_failures (
+            event_id TEXT PRIMARY KEY,
+            ticker TEXT NOT NULL,
+            signal_date TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            recorded_at TEXT NOT NULL
         );
         """
     )
@@ -644,7 +658,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
                         _num(kline), _num(comp), k_bucket, c_bucket,
                         _num(breakout), b_bucket, _num(swing), sw_bucket,
-                        _num(price), "close_after_signal", "open", SCORE_VERSION, now,
+                        _num(price), "next_open", "open", SCORE_VERSION, now,
                         _num(bb), bb_bucket, bb_setup,
                         _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
                         _num(s.get("rsi14")),
@@ -674,7 +688,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         strat_event_id, trade_date, ticker, s.get("name"), strat_event_type, "strategy_combo",
                         _num(kline), _num(comp), k_bucket, c_bucket,
                         _num(breakout), b_bucket, _num(swing), sw_bucket,
-                        _num(price), "close_after_signal", "open", SCORE_VERSION, now,
+                        _num(price), "next_open", "open", SCORE_VERSION, now,
                         _num(bb), bb_bucket, bb_setup,
                         _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
                         _num(s.get("rsi14")),
@@ -742,7 +756,7 @@ def update_watch_transitions(conn, trade_date):
                     bucket_composite(r["today_comp"]),
                     r["today_breakout"], bucket_breakout(r["today_breakout"]),
                     r["today_swing"], bucket_swing(r["today_swing"]),
-                    r["today_close"], "close_after_signal",
+                    r["today_close"], "next_open",
                     "open", SCORE_VERSION, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     r["today_bb"], bucket_bb(r["today_bb"]), r["today_bb_setup"],
                 ),
@@ -780,7 +794,8 @@ def _history_after_signal(ticker, signal_date, market=None):
     end = (datetime.fromisoformat(signal_date) + timedelta(days=35)).strftime("%Y-%m-%d")
     for symbol in (_ticker_symbol(ticker, market), f"{ticker}.TW", f"{ticker}.TWO"):
         try:
-            hist = yf.Ticker(symbol).history(start=start, end=end)
+            # 明確不復權，避免用未復權 Open 搭配復權 Close，造成報酬失真。
+            hist = yf.Ticker(symbol).history(start=start, end=end, auto_adjust=False)
             if hist is not None and len(hist) >= 2:
                 hist = hist.reset_index()
                 hist["date_str"] = hist["Date"].dt.strftime("%Y-%m-%d")
@@ -788,6 +803,62 @@ def _history_after_signal(ticker, signal_date, market=None):
         except Exception:
             continue
     return None
+
+
+def _history_for_range(ticker, market, start_date, end_date):
+    """同一標的一次抓完整回補期間；失敗時才切換 TW/TWO 後綴。"""
+    symbols = tuple(dict.fromkeys((_ticker_symbol(ticker, market), f"{ticker}.TW", f"{ticker}.TWO")))
+    for symbol in symbols:
+        try:
+            hist = yf.Ticker(symbol).history(
+                start=start_date, end=end_date, auto_adjust=False,
+            )
+            if hist is not None and not hist.empty:
+                hist = hist.reset_index()
+                hist["date_str"] = hist["Date"].dt.strftime("%Y-%m-%d")
+                return hist, None
+        except Exception as exc:
+            last_error = type(exc).__name__
+    return None, locals().get("last_error", "no_history")
+
+
+def _valid_price(value):
+    try:
+        return value is not None and math.isfinite(float(value)) and float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _outcome_rows(event, future, entry, filled_at):
+    """隔日開盤進場：future[0] 當日收盤就是 T+1。"""
+    rows = []
+    for horizon in HORIZONS:
+        if len(future) < horizon:
+            continue
+        window = future.iloc[:horizon]
+        target = future.iloc[horizon - 1]
+        if not all(_valid_price(target[k]) for k in ("Close", "High", "Low")):
+            continue
+        target_close = float(target["Close"])
+        max_gain = round((float(window["High"].max()) / entry - 1) * 100, 2)
+        max_drawdown = round((float(window["Low"].min()) / entry - 1) * 100, 2)
+        ret = round((target_close / entry - 1) * 100, 2)
+        rows.append((
+            event["event_id"], event["ticker"], event["trade_date"], horizon,
+            target["date_str"], target_close, float(target["High"]), float(target["Low"]),
+            ret, max_gain, max_drawdown, 1 if ret > 0 else 0,
+            1 if ret >= 3 else 0, 1 if ret <= -3 else 0, filled_at,
+        ))
+    return rows
+
+
+OUTCOME_INSERT_SQL = """
+    INSERT OR REPLACE INTO event_outcomes (
+        event_id, ticker, signal_date, horizon, target_date, target_close,
+        target_high, target_low, return_close_pct, max_gain_pct,
+        max_drawdown_pct, is_win, is_big_win, is_big_loss, filled_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+"""
 
 
 def update_event_outcomes(conn):
@@ -813,39 +884,20 @@ def update_event_outcomes(conn):
         # 原本用訊號當天收盤價當進場價，等於假設訊號出來當下就能成交，但訊號其實是收盤後
         # 才跑批次算出來的，實際上最快只能在隔天開盤才進場，用收盤價回測會系統性高估績效。
         # entry_reference_close欄位保留供顯示「當時觸發訊號時的價位」參考，不再用於報酬計算。
-        entry = float(future.iloc[0]["Open"])
-        if not entry:
+        if not _valid_price(future.iloc[0]["Open"]):
             continue
+        entry = float(future.iloc[0]["Open"])
+        entry_date = future.iloc[0]["date_str"]
+        conn.execute(
+            "UPDATE signal_events SET entry_price=?, entry_date=?, entry_price_mode='next_open' WHERE event_id=?",
+            (entry, entry_date, e["event_id"]),
+        )
         filled = 0
-        for horizon in HORIZONS:
-            exists = conn.execute(
-                "SELECT 1 FROM event_outcomes WHERE event_id=? AND horizon=?",
-                (e["event_id"], horizon),
-            ).fetchone()
-            if exists or len(future) < horizon:
-                continue
-            window = future.iloc[:horizon]
-            target = future.iloc[horizon - 1]
-            target_close = float(target["Close"])
-            ret = round((target_close / entry - 1) * 100, 2)
-            max_gain = round((float(window["High"].max()) / entry - 1) * 100, 2)
-            max_drawdown = round((float(window["Low"].min()) / entry - 1) * 100, 2)
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO event_outcomes (
-                    event_id, ticker, signal_date, horizon, target_date, target_close,
-                    target_high, target_low, return_close_pct, max_gain_pct,
-                    max_drawdown_pct, is_win, is_big_win, is_big_loss, filled_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    e["event_id"], e["ticker"], e["trade_date"], horizon,
-                    target["date_str"], target_close, float(target["High"]), float(target["Low"]),
-                    ret, max_gain, max_drawdown, 1 if ret > 0 else 0,
-                    1 if ret >= 3 else 0, 1 if ret <= -3 else 0, filled_at,
-                ),
-            )
-            filled += 1
+        for row in _outcome_rows(e, future, entry, filled_at):
+            exists = conn.execute("SELECT 1 FROM event_outcomes WHERE event_id=? AND horizon=?", (e["event_id"], row[3])).fetchone()
+            if not exists:
+                conn.execute(OUTCOME_INSERT_SQL, row)
+                filled += 1
         done = conn.execute(
             "SELECT COUNT(*) AS c FROM event_outcomes WHERE event_id=?",
             (e["event_id"],),
@@ -876,54 +928,85 @@ def backfill_entry_price_to_next_open(conn):
         ORDER BY e.trade_date
         """
     ).fetchall()
-    filled_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    total = len(events)
-    updated_events = 0
-    skipped_no_history = 0
-    for idx, e in enumerate(events):
-        hist = _history_after_signal(e["ticker"], e["trade_date"], e["market"])
+    if not events:
+        return {"events": 0, "success": 0, "failed": 0, "backup": None}
+
+    # 先抓完所有資料，確認後才動資料庫；中途斷線不會留下半套新舊混合結果。
+    groups = {}
+    for event in events:
+        groups.setdefault((event["ticker"], event["market"]), []).append(event)
+    total_groups = len(groups)
+    history_by_group, fetch_failures = {}, {}
+    for index, (key, group_events) in enumerate(groups.items(), 1):
+        ticker, market = key
+        first_date = min(e["trade_date"] for e in group_events)
+        start = (datetime.fromisoformat(first_date) - timedelta(days=1)).strftime("%Y-%m-%d")
+        end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        hist, reason = _history_for_range(ticker, market, start, end)
         if hist is None:
-            skipped_no_history += 1
+            fetch_failures[key] = f"history_unavailable:{reason}"
+        else:
+            history_by_group[key] = hist
+        if index % 50 == 0 or index == total_groups:
+            print(f"[回補下載] 股票 {index}/{total_groups}")
+
+    # SQLite 的 backup API 會建立一致性備份；需要還原時直接以此檔案覆蓋資料庫即可。
+    conn.commit()
+    db_path = next((row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"), "")
+    backup_path = None
+    if db_path:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = f"{db_path}.before_next_open_{stamp}.bak"
+        backup_conn = sqlite3.connect(backup_path)
+        try:
+            conn.backup(backup_conn)
+        finally:
+            backup_conn.close()
+
+    filled_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    outcome_rows, event_updates, failures = [], [], []
+    for event in events:
+        key = (event["ticker"], event["market"])
+        hist = history_by_group.get(key)
+        reason = fetch_failures.get(key)
+        future = hist[hist["date_str"] > event["trade_date"]].copy() if hist is not None else None
+        if future is None or future.empty:
+            failures.append((event["event_id"], event["ticker"], event["trade_date"], reason or "no_next_trading_day", filled_at))
+            event_updates.append(("missing_next_open", None, None, event["event_id"]))
             continue
-        future = hist[hist["date_str"] > e["trade_date"]].copy()
-        if future.empty:
-            skipped_no_history += 1
+        if not _valid_price(future.iloc[0]["Open"]):
+            failures.append((event["event_id"], event["ticker"], event["trade_date"], "invalid_next_open", filled_at))
+            event_updates.append(("missing_next_open", None, None, event["event_id"]))
             continue
         entry = float(future.iloc[0]["Open"])
-        if not entry:
-            skipped_no_history += 1
-            continue
-        for horizon in HORIZONS:
-            if len(future) < horizon:
-                continue
-            window = future.iloc[:horizon]
-            target = future.iloc[horizon - 1]
-            target_close = float(target["Close"])
-            ret = round((target_close / entry - 1) * 100, 2)
-            max_gain = round((float(window["High"].max()) / entry - 1) * 100, 2)
-            max_drawdown = round((float(window["Low"].min()) / entry - 1) * 100, 2)
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO event_outcomes (
-                    event_id, ticker, signal_date, horizon, target_date, target_close,
-                    target_high, target_low, return_close_pct, max_gain_pct,
-                    max_drawdown_pct, is_win, is_big_win, is_big_loss, filled_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    e["event_id"], e["ticker"], e["trade_date"], horizon,
-                    target["date_str"], target_close, float(target["High"]), float(target["Low"]),
-                    ret, max_gain, max_drawdown, 1 if ret > 0 else 0,
-                    1 if ret >= 3 else 0, 1 if ret <= -3 else 0, filled_at,
-                ),
-            )
-        updated_events += 1
-        if (idx + 1) % 200 == 0:
-            conn.commit()
-            print(f"[回補進度] {idx + 1}/{total}")
+        rows = _outcome_rows(event, future, entry, filled_at)
+        status = "matured" if len(rows) == len(HORIZONS) else "partial"
+        outcome_rows.extend(rows)
+        event_updates.append((status, entry, future.iloc[0]["date_str"], event["event_id"]))
+
+    # 唯一寫入階段：先完全清除舊口徑，再一次寫入新口徑，絕不混用收盤與隔日開盤結果。
+    with conn:
+        conn.execute("DELETE FROM event_outcomes")
+        conn.execute("DELETE FROM backfill_failures")
+        conn.execute("UPDATE signal_events SET entry_price_mode='next_open', entry_price=NULL, entry_date=NULL, status='open'")
+        conn.executemany(OUTCOME_INSERT_SQL, outcome_rows)
+        conn.executemany(
+            "UPDATE signal_events SET status=?, entry_price=?, entry_date=? WHERE event_id=?",
+            event_updates,
+        )
+        conn.executemany(
+            "INSERT INTO backfill_failures (event_id, ticker, signal_date, reason, recorded_at) VALUES (?,?,?,?,?)",
+            failures,
+        )
+
+    refresh_summary_stats(conn)
+    refresh_monthly_strategy_stats(conn)
+    refresh_yearly_strategy_stats(conn)
     conn.commit()
-    print(f"[回補完成] 總事件數={total}, 成功重算={updated_events}, 因無歷史股價跳過={skipped_no_history}")
-    return updated_events, skipped_no_history
+    result = {"events": len(events), "success": len(events) - len(failures), "failed": len(failures), "backup": backup_path}
+    print(f"[回補完成] 總事件數={result['events']}, 成功={result['success']}, 失敗={result['failed']}")
+    print(f"[回補備份] {backup_path or '未建立（記憶體資料庫）'}")
+    return result
 
 
 def _median(vals):
@@ -1255,6 +1338,8 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(e.rsi14) AS rsi14,
                MAX(e.volume_ratio) AS volume_ratio,
                MAX(e.entry_reference_close) AS entry_reference_close,
+               MAX(e.entry_price) AS entry_price,
+               MAX(e.entry_date) AS entry_date,
                CASE
                  WHEN SUM(CASE WHEN e.status = 'open' THEN 1 ELSE 0 END) > 0 THEN 'open'
                  WHEN SUM(CASE WHEN e.status = 'partial' THEN 1 ELSE 0 END) > 0 THEN 'partial'
