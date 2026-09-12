@@ -1295,30 +1295,31 @@ function buildTabRecent(){{
   <div class="stats-scroll">
     <table class="stats-table">
       <thead><tr>
-        <th class="stats-sort" style="width:78px;min-width:78px;white-space:nowrap" onclick="statsSortBy('trade_date')">日期</th>
+        <th class="stats-sort" style="width:59px;min-width:59px;white-space:nowrap;font-size:10px;letter-spacing:-0.3px" onclick="statsSortBy('trade_date')">日期</th>
         <th class="stats-sort" onclick="statsSortBy('ticker')">代號</th>
         <th class="stats-sort" style="width:80px;max-width:80px" onclick="statsSortBy('name')">名稱</th>
-        <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('event_type')">訊號</th>
-        <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('entry_signal')">今日訊號</th>
         <th class="stats-sort" onclick="statsSortBy('kline_score')">K線分</th>
         <th class="stats-sort" onclick="statsSortBy('composite_score')">綜合分</th>
         <th class="stats-sort" onclick="statsSortBy('breakout_score')">突破分</th>
-        <th class="stats-sort" onclick="statsSortBy('vcp_status')">VCP狀態</th>
         <th class="stats-sort" onclick="statsSortBy('swing_score')">波段分</th>
         <th class="stats-sort" onclick="statsSortBy('bb_score')">BB分</th>
         <th class="stats-sort" onclick="statsSortBy('rs_score')" title="橫向排名相對強度。實測85+在T+10反而最差，50~85是甜蜜點，不是越高越好">RS分</th>
         <th class="stats-sort" onclick="statsSortBy('rs5d')" title="短期相對強度加速度。實測20+是少數獨立有正報酬的訊號，越高越好">RS5日</th>
         <th class="stats-sort" onclick="statsSortBy('rsi14')">RSI</th>
         <th class="stats-sort" onclick="statsSortBy('volume_ratio')" title="當日成交量/20日均量。實測≥2.5倍(真爆量)勝率反而最差">量比</th>
+        <th class="stats-sort" onclick="statsSortBy('inst_buy_days')">法人</th>
         <th style="width:54px;min-width:54px;white-space:nowrap">入場價</th>
         <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1</th>
         <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3</th>
         <th class="stats-sort" onclick="statsSortBy('t5_return')">T+5</th>
         <th class="stats-sort" onclick="statsSortBy('t7_return')">T+7</th>
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
+        <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('event_type')">訊號</th>
+        <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('entry_signal')">今日訊號</th>
+        <th class="stats-sort" onclick="statsSortBy('vcp_status')">VCP狀態</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="22" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="23" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1391,26 +1392,27 @@ function renderRecentStats(){{
     return`<span class="${{cls}}">${{s||'-'}}</span>`;
   }};
   host.innerHTML=data.map(r=>`<tr>
-    <td style="color:#94a3b8;width:78px;min-width:78px;white-space:nowrap">${{r.trade_date||'-'}}</td>
+    <td style="color:#94a3b8;width:59px;min-width:59px;white-space:nowrap;font-size:10px;letter-spacing:-0.3px">${{r.trade_date||'-'}}</td>
     <td><a class="tk" href="https://flydav003-alt.github.io/k-line/?stock=${{encodeURIComponent(r.ticker||'')}}" target="_blank" rel="noopener noreferrer">${{r.ticker||'-'}}</a></td>
     <td style="width:80px;max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr(r.name||'')}}">${{r.name||'-'}}</td>
-    <td style="color:#93c5fd;font-size:11px;width:75px;max-width:75px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr(labelEventList(r))}}">${{labelEventList(r)}}${{(r.volume_ratio||0)>=2.5?` <span title="量比${{Number(r.volume_ratio).toFixed(1)}}倍，實測真爆量(≥2.5倍)反而勝率最差" style="color:#f87171">🔺</span>`:''}}</td>
-    <td class="recent-entry-signal">${{fSig(r.entry_signal)}}</td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.kline_score||0,100)}}%;background:${{kCol(r.kline_score||0)}}"></div></div><span style="color:${{kCol(r.kline_score||0)}};font-weight:700">${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.composite_score||0,100)}}%;background:${{cCol(r.composite_score||0)}}"></div></div><span style="color:${{cCol(r.composite_score||0)}};font-weight:700">${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.breakout_score||0,100)}}%;background:${{vcpCol(r.breakout_score||0)}}"></div></div><span style="color:${{vcpCol(r.breakout_score||0)}};font-weight:700">${{r.breakout_score!=null?Math.round(r.breakout_score):'-'}}</span></div></td>
-    <td style="text-align:center">${{vcpStatusCell(r)}}</td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.swing_score||0,100)}}%;background:${{vcpCol(r.swing_score||0)}}"></div></div><span style="color:${{vcpCol(r.swing_score||0)}};font-weight:700">${{r.swing_score!=null?Math.round(r.swing_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.bb_score||0,100)}}%;background:${{vcpCol(r.bb_score||0)}}"></div></div><span style="color:${{vcpCol(r.bb_score||0)}};font-weight:700" title="${{escAttr(BB_SETUP_LBL[r.bb_setup]||r.bb_setup||'-')}}">${{r.bb_score!=null?Math.round(r.bb_score):'-'}}</span></div></td>
     <td style="text-align:center;color:#94a3b8;font-weight:600" title="實測50~85是甜蜜點，85+在T+10反而最差">${{r.rs_score!=null?Math.round(r.rs_score):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.rs5d==null?'#94a3b8':r.rs5d>=20?'#4ade80':r.rs5d>=0?'#94a3b8':'#f87171'}}" title="實測20+代表正在加速轉強，越高越好">${{r.rs5d!=null?(r.rs5d>0?'+':'')+Number(r.rs5d).toFixed(1):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.rsi14==null?'#94a3b8':r.rsi14>=70?'#f87171':r.rsi14<=30?'#4ade80':'#94a3b8'}}">${{r.rsi14!=null?Number(r.rsi14).toFixed(1):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.volume_ratio==null?'#94a3b8':r.volume_ratio>=2.5?'#f87171':r.volume_ratio<1.0?'#94a3b8':'#4ade80'}}" title="${{r.volume_ratio!=null&&r.volume_ratio>=2.5?'實測真爆量(≥2.5倍)反而勝率最差':''}}">${{r.volume_ratio!=null?Number(r.volume_ratio).toFixed(2):'-'}}</td>
+    <td style="text-align:center">${{fInst(r.inst_buy_days)}}</td>
     <td style="color:#94a3b8;width:54px;min-width:54px;white-space:nowrap" title="${{r.entry_date ? '進場日：'+r.entry_date : '尚未取得下一個交易日開盤價'}}">${{r.entry_price!=null?Number(r.entry_price).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
+    <td style="color:#93c5fd;font-size:11px;width:75px;max-width:75px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr(labelEventList(r))}}">${{labelEventList(r)}}${{(r.volume_ratio||0)>=2.5?` <span title="量比${{Number(r.volume_ratio).toFixed(1)}}倍，實測真爆量(≥2.5倍)反而勝率最差" style="color:#f87171">🔺</span>`:''}}</td>
+    <td class="recent-entry-signal">${{fSig(r.entry_signal)}}</td>
+    <td style="text-align:center">${{vcpStatusCell(r)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="22" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="23" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
