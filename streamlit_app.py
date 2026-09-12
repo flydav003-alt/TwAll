@@ -1253,12 +1253,12 @@ function buildTabRecent(){{
   return`
   <div class="sc-grid" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">T+5 報酬分布</div>
-      <div style="position:relative;height:160px"><canvas id="chartRetDist"></canvas></div>
-    </div>
-    <div class="sc-box">
       <div class="sc-title">各訊號 T+5 勝率對比</div>
       <div style="position:relative;height:160px"><canvas id="chartEvWR"></canvas></div>
+    </div>
+    <div class="sc-box">
+      <div class="sc-title">T+5 報酬分布</div>
+      <div style="position:relative;height:160px"><canvas id="chartRetDist"></canvas></div>
     </div>
   </div>
   <div class="stats-tools">
