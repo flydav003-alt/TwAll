@@ -1300,6 +1300,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('kline_score')">K線分</th>
         <th class="stats-sort" onclick="statsSortBy('composite_score')">綜合分</th>
         <th class="stats-sort" onclick="statsSortBy('breakout_score')">突破分</th>
+        <th class="stats-sort" onclick="statsSortBy('vcp_status')">VCP狀態</th>
         <th class="stats-sort" onclick="statsSortBy('swing_score')">波段分</th>
         <th class="stats-sort" onclick="statsSortBy('bb_score')">BB分</th>
         <th class="stats-sort" onclick="statsSortBy('rs_score')" title="橫向排名相對強度。實測85+在T+10反而最差，50~85是甜蜜點，不是越高越好">RS分</th>
@@ -1314,7 +1315,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="20" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="21" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1394,6 +1395,7 @@ function renderRecentStats(){{
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.kline_score||0,100)}}%;background:${{kCol(r.kline_score||0)}}"></div></div><span style="color:${{kCol(r.kline_score||0)}};font-weight:700">${{r.kline_score!=null?Math.round(r.kline_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.composite_score||0,100)}}%;background:${{cCol(r.composite_score||0)}}"></div></div><span style="color:${{cCol(r.composite_score||0)}};font-weight:700">${{r.composite_score!=null?Math.round(r.composite_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.breakout_score||0,100)}}%;background:${{vcpCol(r.breakout_score||0)}}"></div></div><span style="color:${{vcpCol(r.breakout_score||0)}};font-weight:700">${{r.breakout_score!=null?Math.round(r.breakout_score):'-'}}</span></div></td>
+    <td style="text-align:center">${{vcpStatusCell(r)}}</td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.swing_score||0,100)}}%;background:${{vcpCol(r.swing_score||0)}}"></div></div><span style="color:${{vcpCol(r.swing_score||0)}};font-weight:700">${{r.swing_score!=null?Math.round(r.swing_score):'-'}}</span></div></td>
     <td><div class="sc-bar"><div class="sc-track"><div class="sc-fill" style="width:${{Math.min(r.bb_score||0,100)}}%;background:${{vcpCol(r.bb_score||0)}}"></div></div><span style="color:${{vcpCol(r.bb_score||0)}};font-weight:700" title="${{escAttr(BB_SETUP_LBL[r.bb_setup]||r.bb_setup||'-')}}">${{r.bb_score!=null?Math.round(r.bb_score):'-'}}</span></div></td>
     <td style="text-align:center;color:#94a3b8;font-weight:600" title="實測50~85是甜蜜點，85+在T+10反而最差">${{r.rs_score!=null?Math.round(r.rs_score):'-'}}</td>
@@ -1404,7 +1406,7 @@ function renderRecentStats(){{
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="20" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="21" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
