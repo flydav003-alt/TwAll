@@ -6,7 +6,7 @@ streamlit_app.py — 台股半導體 Screener
 import json, os, streamlit as st
 import streamlit.components.v1 as components
 from tw_screener_core import yahoo_tw_url
-from stats_db import export_stats_payload
+from stats_db import export_stats_payload, classify_signal, classify_strategy_events
 
 st.set_page_config(page_title="台股半導體 Screener", page_icon="📈",
                    layout="wide", initial_sidebar_state="collapsed")
@@ -120,6 +120,19 @@ def main():
         prev    = live.get("prev_close") or s.get("prev_close")
         chg     = round((price-prev)/prev*100,2) if price and prev and prev!=0 else None
         pat_r = max((PAT_RANK.get(c,0) for _,c in s.get("patterns",[])), default=0)
+        # 與資料庫「近期訊號」採用相同的分類規則；策略訊號可重疊，因此保留完整清單供首頁顯示與篩選。
+        event_type, _ = classify_signal(
+            s.get("kline_score"), s.get("composite"), s.get("vcp_score"),
+            s.get("swing_score"), s.get("bb_score"),
+        )
+        event_types = [] if event_type == "NEUTRAL" else [event_type]
+        event_types.extend(classify_strategy_events(
+            s.get("kline_score"), s.get("composite"), s.get("vcp_score"),
+            s.get("swing_score"), s.get("rs_score"), s.get("vcp_status"),
+            s.get("entry_signal", ""), s.get("bb_score"), s.get("bb_setup"),
+            s.get("bb_consec_down_days"), rsi14=s.get("rsi14"),
+            volume_ratio=s.get("volume_ratio"),
+        ))
         rows.append({
             "ticker":   s["ticker"],
             "name":     s.get("name", s["ticker"]),
@@ -156,6 +169,7 @@ def main():
             "inst":     s.get("inst_buy_days",0) or 0,
             "signal":   s.get("entry_signal",""),
             "sig_rank": SIG_RANK.get(s.get("entry_signal",""),0),
+            "event_types": event_types,
             "patterns": [[n,c] for n,c in s.get("patterns",[])],
             "pat_rank": pat_r,
             "yahoo_url":yahoo_tw_url(s["ticker"], s.get("market","TW")),
@@ -247,6 +261,11 @@ body{{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13
 }}
 .srch input:focus{{border-color:var(--acc);}}
 .srch input::placeholder{{color:var(--mid);}}
+.daily-signal-select{{
+  min-width:150px;background:var(--bg2);border:1px solid var(--bdr);color:var(--txt);
+  border-radius:6px;padding:6px 28px 6px 10px;font:13px var(--sans);outline:none;
+}}
+.daily-signal-select:focus{{border-color:var(--acc);}}
 
 /* 滑桿群組 */
 .sl-grp{{display:flex;align-items:center;gap:8px;}}
@@ -525,6 +544,19 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
     <span class="srch-ico">🔍</span>
     <input type="text" id="searchQ" placeholder="代號 / 名稱" oninput="applyFilter()">
   </div>
+  <select id="dailySignalFilter" class="daily-signal-select" onchange="applyFilter()">
+    <option value="">全部訊號</option>
+    <option value="BOTH_STRONG">雙強</option><option value="ENTRY">雙分進場</option>
+    <option value="K_STRONG_COMP_LOW">K強綜低</option><option value="COMP_STRONG_K_LOW">綜強K低</option>
+    <option value="COMP_HIGH_K_LOW">綜高K低</option><option value="K_HIGH_COMP_LOW">K高綜低</option>
+    <option value="BREAKOUT_SWING_STRONG">突破波段雙強</option><option value="BREAKOUT_STRONG">突破強</option>
+    <option value="SWING_STRONG">波段強</option><option value="BB_CONFIRMED_STRONG">BB確認強</option><option value="BB_STRONG">BB強</option>
+    <option value="STRAT_A_BREAKOUT">策略A突破族</option><option value="STRAT_B_SWING">策略B波段族</option>
+    <option value="STRAT_C_KLINE">策略C純K線</option><option value="STRAT_D_COMPOSITE">策略D純綜合分</option>
+    <option value="STRAT_E_BB">策略E純BB分</option><option value="STRAT_F_MEANREV">策略F均值回歸</option>
+    <option value="STRAT_G_RS_PULLBACK">策略G強勢回檔</option><option value="STRAT_H_RS_VOLDRY">策略H強勢量縮</option>
+    <option value="STRAT_I_RS_MOMENTUM">策略I中強動能</option><option value="STRAT_J_RS_COOLDOWN">策略J中強降溫</option>
+  </select>
   <div class="sl-grp">
     <span class="sl-lbl">K線分</span>
     <div class="rng-wrap" style="width:140px">
@@ -618,6 +650,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <th class="sortable" data-k="rs5d">RS(5日)<span class="arr"></span></th>
   <th class="sortable" data-k="rs">RS分<span class="arr"></span></th>
   <th class="sortable" data-k="inst">法人<span class="arr"></span></th>
+  <th>訊號</th>
   <th class="sortable" data-k="sig_rank">今日訊號<span class="arr"></span></th>
   <th class="sortable" data-k="vcp_status_rank">VCP狀態<span class="arr"></span></th>
   <th class="sortable" data-k="pat_rank">型態<span class="arr"></span></th>
@@ -1719,7 +1752,7 @@ function editNum(el,groupId,which,fillId,fnName){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="17" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="18" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
@@ -1738,6 +1771,7 @@ function renderRows(data){{
     <td>${{fRs(r.rs5d)}}</td>
     <td>${{fRsi(r.rs)}}</td>
     <td>${{fInst(r.inst)}}</td>
+    <td style="color:#93c5fd;font-size:11px;max-width:132px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr((r.event_types||[]).map(labelEvent).join(' / ')||'—')}}">${{(r.event_types||[]).map(labelEvent).join(' / ')||'—'}}</td>
     <td>${{fSig(r.signal)}}</td>
     <td>${{vcpStatusCell(r)}}</td>
     <td>${{fPat(r.patterns)}}</td>
@@ -1746,6 +1780,7 @@ function renderRows(data){{
 
 function applyFilter(){{
   const q=(document.getElementById('searchQ').value||'').toLowerCase();
+  const eventFilter=(document.getElementById('dailySignalFilter').value||'');
   const kMin=+document.getElementById('slK_min').value, kMax=+document.getElementById('slK_max').value;
   const cMin=+document.getElementById('slC_min').value, cMax=+document.getElementById('slC_max').value;
   const vMin=+document.getElementById('slV_min').value, vMax=+document.getElementById('slV_max').value;
@@ -1764,6 +1799,7 @@ function applyFilter(){{
     if(r.rsi!=null&&(r.rsi<rMin||r.rsi>rMax))return false;
     if(r.rs!=null&&(r.rs<rsMin||r.rs>rsMax))return false;
     if(r.vol!=null&&(r.vol<vrMin||r.vol>vrMax))return false;
+    if(eventFilter&&!(r.event_types||[]).includes(eventFilter))return false;
     if(q&&!r.ticker.toLowerCase().includes(q)&&!r.name.toLowerCase().includes(q))return false;
     return true;
   }});
