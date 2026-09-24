@@ -15,7 +15,11 @@ stats_db.init_db(conn)      # 確保 schema 已升級到最新（含 excess_retu
 
 print("[1/2] 回補超額報酬 (backfill_excess_return) ...")
 result = stats_db.backfill_excess_return(conn)
-print("      結果：", result)
+print("      結果：", {k: v for k, v in result.items() if k != "skip_samples"})
+if result.get("skip_samples"):
+    print("      略過樣本(供排查原因)：")
+    for s in result["skip_samples"]:
+        print("       ", s)
 
 print("[2/2] 重新整理統計彙總表 ...")
 stats_db.refresh_summary_stats(conn)
