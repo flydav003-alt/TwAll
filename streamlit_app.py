@@ -1053,7 +1053,7 @@ function buildTabThreshold(){{
   const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?Number(x.win_rate):0;}});
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
 
-  const hdr = '<tr><th style="min-width:160px">條件</th><th>樣本</th>' + hs.map(h => `<th>T+${{h}} 勝率</th><th>T+${{h}} 報酬</th>`).join('') + '<th title="扣除大盤同期報酬後的真實選股貢獻">T+5 超額報酬</th></tr>';
+  const hdr = '<tr><th style="min-width:160px">條件</th><th>樣本</th>' + hs.map(h => `<th>T+${{h}} 勝率</th><th>T+${{h}} 報酬</th>`).join('') + '</tr>';
   const rows=rules.map(r=>{{
     const rd=ts.filter(x=>x.rule===r);
     const n=rd[0]?.sample_count||0;
@@ -1062,11 +1062,7 @@ function buildTabThreshold(){{
       if(!x)return'<td>—</td><td>—</td>';
       return`<td>${{wrBadge(x.win_rate,x.sample_count)}}</td><td class="${{(x.avg_return||0)>=0?'pos':'neg'}}">${{pct(x.avg_return)}}</td>`;
     }});
-    const t5=rd.find(d=>d.horizon===5);
-    const excessCell=t5&&t5.avg_excess_return!=null
-      ?`<td class="${{t5.avg_excess_return>=0?'pos':'neg'}}" title="超額勝率${{t5.excess_win_rate}}%">${{pct(t5.avg_excess_return)}}</td>`
-      :'<td style="color:#64748b">—</td>';
-    return`<tr><td style="color:#93c5fd;font-weight:600">${{r}}</td><td style="color:#94a3b8">${{n}}</td>${{cells.join('')}}${{excessCell}}</tr>`;
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{r}}</td><td style="color:#94a3b8">${{n}}</td>${{cells.join('')}}</tr>`;
   }});
 
   return`${{kpiCards}}
@@ -1557,11 +1553,23 @@ function buildTabStrategy(){{
       if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
       return wrCell(p.wr,p.n,p.h===best.h);
     }});
-    const t5=pts.find(x=>x.h===5);
-    const excessCell=t5&&t5.ewr!=null
-      ?`<td style="text-align:center" title="T+5超額勝率${{t5.ewr}}%（扣除大盤同期報酬後仍為正的比例）"><span class="${{t5.ear>=0?'pos':'neg'}}">${{t5.ear>=0?'+':''}}${{t5.ear.toFixed(2)}}%</span></td>`
-      :`<td style="text-align:center;color:#64748b" title="尚未回補大盤對照資料">—</td>`;
-    return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td>${{excessCell}}</tr>`;
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
+  }}).filter(Boolean);
+
+  // 超額報酬明細表（T+1~T+10全部天期），跟主表區隔開來獨立一張，
+  // 因為超額報酬是「扣除大盤方向後的alpha」，性質跟上面的絕對勝率/報酬不同，
+  // 混在同一張表容易讓人誤以為兩者可以直接比大小。
+  const excessRows=present.map(et=>{{
+    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x&&x.avg_excess_return!=null?{{h,ewr:Number(x.excess_win_rate),ear:Number(x.avg_excess_return),n:Number(x.sample_count)}}:null;}});
+    if(pts.every(p=>!p))return'';
+    const cells=hs.map((h,i)=>{{
+      const p=pts[i];
+      if(!p)return`<td style="text-align:center;color:#475569">—</td>`;
+      const cls=p.ear>=0?'pos':'neg';
+      return`<td style="text-align:center" title="超額勝率${{p.ewr}}%（n=${{p.n}}）"><span class="${{cls}}">${{p.ear>=0?'+':''}}${{p.ear.toFixed(2)}}%</span></td>`;
+    }});
+    const anyN=pts.find(p=>p)?.n||0;
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{anyN}}</td>${{cells.join('')}}</tr>`;
   }}).filter(Boolean);
 
   return`
@@ -1577,7 +1585,6 @@ function buildTabStrategy(){{
     <div><b style="color:#facc15">策略I 中強動能</b>：RS介於50~85（甜蜜點）+ K線分≥80——跟G/H邏輯相反，抓「尚未到極端強勢、但短線動能剛要噴出」的股票，樣本仍在累積中，實際勝率請看下方表格即時數字</div>
     <div><b style="color:#38bdf8">策略J 中強降溫</b>：RS介於70~84 + K線分<60——中期相對強度偏強、短線技術面降溫，抓法跟G類似但RS門檻略寬、K線分門檻更嚴。初步樣本(僅涵蓋2026/08/19~09/10這段市場轉強期)T+1~T+7勝率48~61%、報酬轉正，但完全沒經過震盪期考驗，不能排除只是搭上這波多頭順風車，實際勝率請看下方表格即時數字，不要只看這段描述</div>
     <div style="margin-top:4px;color:#64748b">十組樣本互不互斥、各自獨立計算。A、B要打贏的對象是D，不是C；G、H、I、J是2026/09新增，樣本仍在累積中，數字僅供參考。</div>
-    <div style="margin-top:6px;color:#facc15">「T+5超額報酬」= 個股T+5報酬 − 大盤(TWII)同期間報酬，用來扣掉「大盤本身漲跌」對勝率的共同影響，只留下真正的選股貢獻(alpha)。這欄是「—」代表舊資料還沒補上大盤對照，之後幾天會逐漸補齊。</div>
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
@@ -1585,13 +1592,28 @@ function buildTabStrategy(){{
       <div style="position:relative;height:200px"><canvas id="chartStrategy"></canvas></div>
     </div>
   </div>
-  <div style="padding:8px 14px 4px;font-size:11px;color:#94a3b8">🏆 = 該策略歷史上勝率最高的持有天數 ・ 超額報酬欄位僅顯示T+5</div>
+  <div style="padding:8px 14px 4px;font-size:11px;color:#94a3b8">🏆 = 該策略歷史上勝率最高的持有天數</div>
   <div class="stats-scroll" style="padding:0 0 14px">
     <table class="stats-table"><thead><tr><th>策略</th><th style="text-align:center">樣本</th>
       ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}
-      <th>黃金出場</th><th style="text-align:center">最佳報酬</th><th style="text-align:center" title="扣除大盤同期報酬後的真實選股貢獻">超額(T+5)</th></tr></thead>
+      <th>黃金出場</th><th style="text-align:center">最佳報酬</th></tr></thead>
     <tbody>${{rows.join('')}}</tbody></table>
-  </div>`;
+  </div>
+  ${{excessRows.length?`
+  <div class="sc-title" style="padding:0 14px 4px;display:flex;align-items:center;gap:8px">
+    <span style="background:#1e2a1a;border:1px solid #365928;color:#86efac;border-radius:4px;padding:1px 8px;font-size:10px;letter-spacing:.5px">ALPHA</span>
+    <span>超額報酬(扣除大盤同期報酬) — 各策略 T+1~T+10</span>
+  </div>
+  <div style="padding:0 14px 4px;font-size:11px;color:#94a3b8">個股報酬 − 大盤(TWII)同期間報酬，代表扣掉「大盤本身漲跌」共同影響後的真實選股貢獻。「—」代表該筆尚未回補大盤對照資料。</div>
+  <div class="stats-scroll" style="padding:0 0 14px">
+    <table class="stats-table" style="border:1px solid #1a3324">
+      <thead><tr style="background:#0c160f">
+        <th>策略</th><th style="text-align:center">樣本</th>
+        ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}
+      </tr></thead>
+      <tbody>${{excessRows.join('')}}</tbody>
+    </table>
+  </div>`:''}}`;
 }}
 function afterStrategy(){{
   const sum=STATS.summary||[];
