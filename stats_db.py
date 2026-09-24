@@ -1146,7 +1146,7 @@ def backfill_entry_price_to_next_open(conn):
     return result
 
 
-def backfill_excess_return(conn):
+def backfill_excess_return(conn, verbose=True):
     """
     一次性回補：幫既有 event_outcomes 補上 excess_return_pct(超額報酬，扣除大盤同期報酬)。
     只需要大盤(^TWII)一次歷史資料，不用重抓每檔個股，比 backfill_entry_price_to_next_open
@@ -1156,6 +1156,12 @@ def backfill_excess_return(conn):
     entry_date 用 event_outcomes 對應的 signal_events.entry_date(隔日開盤進場日)當大盤基準，
     沒有 entry_date 的舊資料(理論上不該發生，entry_price_mode都已經是next_open)才退回用
     signal_events.trade_date 當基準，避免漏掉任何一筆。
+
+    抓大盤歷史的區間刻意比事件涵蓋範圍多抓前後各10天(而非1~2天)，因為：
+    (1) 大盤在國定假日/交易所公告的臨時休市可能跟個股不完全同步，需要更寬的緩衝找到
+        「最近的前一個大盤交易日」；(2) 若target_date剛好是資料庫寫入當下最新的交易日，
+        避免因為時區/收盤時間差1天而抓不到當天大盤資料。
+    verbose=True 時，對前幾筆抓不到大盤資料的事件印出原因，方便排查究竟是哪個日期缺漏。
     """
     rows = conn.execute(
         """
@@ -1169,15 +1175,20 @@ def backfill_excess_return(conn):
     if not rows:
         return {"updated": 0, "skipped": 0}
 
-    earliest = min(r["entry_date"] for r in rows if r["entry_date"])
-    latest = max(r["target_date"] for r in rows if r["target_date"])
-    start = (datetime.fromisoformat(earliest) - timedelta(days=1)).strftime("%Y-%m-%d")
-    end = (datetime.fromisoformat(latest) + timedelta(days=2)).strftime("%Y-%m-%d")
+    valid_entry = [r["entry_date"] for r in rows if r["entry_date"]]
+    valid_target = [r["target_date"] for r in rows if r["target_date"]]
+    if not valid_entry or not valid_target:
+        return {"updated": 0, "skipped": len(rows), "reason": "no_valid_dates"}
+    earliest = min(valid_entry)
+    latest = max(valid_target)
+    start = (datetime.fromisoformat(earliest) - timedelta(days=10)).strftime("%Y-%m-%d")
+    end = (datetime.fromisoformat(latest) + timedelta(days=10)).strftime("%Y-%m-%d")
     twii_hist = _twii_history(start, end)
     if twii_hist is None:
         return {"updated": 0, "skipped": len(rows), "reason": "twii_history_unavailable"}
 
     updated, skipped = 0, 0
+    skip_samples = []
     for r in rows:
         if not r["entry_date"] or not r["target_date"]:
             skipped += 1
@@ -1187,6 +1198,12 @@ def backfill_excess_return(conn):
         )
         if excess is None:
             skipped += 1
+            if verbose and len(skip_samples) < 10:
+                skip_samples.append({
+                    "event_id": r["event_id"], "horizon": r["horizon"],
+                    "entry_date": r["entry_date"], "target_date": r["target_date"],
+                    "twii_entry_found": twii_entry_px, "twii_target_found": twii_target_px,
+                })
             continue
         conn.execute(
             "UPDATE event_outcomes SET excess_return_pct=?, twii_entry_price=?, twii_target_price=? "
@@ -1201,7 +1218,11 @@ def backfill_excess_return(conn):
         refresh_yearly_strategy_stats(conn)
         conn.commit()
     print(f"[超額報酬回補完成] 更新={updated}, 略過(缺大盤或日期資料)={skipped}")
-    return {"updated": updated, "skipped": skipped}
+    if verbose and skip_samples:
+        print(f"[略過樣本前{len(skip_samples)}筆，供排查原因]")
+        for s in skip_samples:
+            print(" ", s)
+    return {"updated": updated, "skipped": skipped, "skip_samples": skip_samples}
 
 
 def _median(vals):
