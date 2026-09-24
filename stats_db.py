@@ -113,6 +113,9 @@ def init_db(conn):
             PRIMARY KEY (event_id, horizon)
         );
 
+        -- excess_return_pct / twii_entry_price / twii_target_price 用 ALTER TABLE 於下方補上，
+        -- 讓舊資料庫升級時不用重建表。
+
         CREATE TABLE IF NOT EXISTS watch_transitions (
             watch_id TEXT PRIMARY KEY,
             watch_date TEXT NOT NULL,
@@ -297,6 +300,23 @@ def init_db(conn):
         );
         """
     )
+
+    # ── 新增欄位：超額報酬（扣除大盤同期報酬後的個股報酬）──
+    # 個股報酬(return_close_pct)本身混雜了「大盤系統性風險(beta)」跟「選股是否真的挑對」
+    # 兩個來源，光看絕對報酬/絕對勝率，遇到大盤急漲急跌時會被regime效果完全淹沒
+    # （實測驗證：同一段大盤急拉期間，連最原始的純K線分/純綜合分基準線策略勝率都會
+    # 從30幾%暴衝到70幾%，代表策略間的高低差距有很大一部分只是共同暴露在同一個大盤方向上，
+    # 不是策略本身的選股能力）。excess_return_pct = 個股報酬 − 大盤(TWII)同期間報酬，
+    # 把共同的大盤方向效果先扣掉，才能看出策略真正的相對選股能力（alpha）。
+    # twii_entry_price / twii_target_price 保留原始值方便除錯核對，不是必要欄位但成本很低。
+    _ensure_columns(conn, "event_outcomes", [
+        ("excess_return_pct", "REAL"), ("twii_entry_price", "REAL"), ("twii_target_price", "REAL"),
+    ])
+    _ensure_columns(conn, "summary_stats", [
+        ("avg_excess_return", "REAL"), ("median_excess_return", "REAL"),
+        ("excess_win_rate", "REAL"),
+    ])
+
     conn.commit()
 
 
@@ -755,6 +775,9 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
 
     update_watch_transitions(conn, trade_date)
     update_event_outcomes(conn)
+    # 補齊尚未有超額報酬(excess_return_pct)的舊資料。只需要一次 ^TWII 歷史抓取，
+    # 沒有缺漏時(rows為空)會直接跳過，不會在每天正常執行時額外造成負擔。
+    backfill_excess_return(conn)
     refresh_summary_stats(conn)
     refresh_monthly_strategy_stats(conn)
     refresh_yearly_strategy_stats(conn)
@@ -831,6 +854,54 @@ def _ticker_symbol(ticker, market=None):
     return f"{ticker}.TW"
 
 
+_TWII_HIST_CACHE = {}
+
+
+def _twii_history(start_date, end_date):
+    """抓取 ^TWII 大盤歷史，用 (start,end) 當 key 做簡易快取，避免同一次
+    save_daily_run/backfill 流程裡對每一筆事件都重複打 yfinance API。
+    一次抓完整個回測需要的期間範圍即可，呼叫端只需要傳最寬的區間。"""
+    key = (start_date, end_date)
+    if key in _TWII_HIST_CACHE:
+        return _TWII_HIST_CACHE[key]
+    try:
+        hist = yf.Ticker("^TWII").history(start=start_date, end=end_date, auto_adjust=False)
+        if hist is not None and not hist.empty:
+            hist = hist.reset_index()
+            hist["date_str"] = hist["Date"].dt.strftime("%Y-%m-%d")
+        else:
+            hist = None
+    except Exception:
+        hist = None
+    _TWII_HIST_CACHE[key] = hist
+    return hist
+
+
+def _twii_close_on_or_before(twii_hist, date_str):
+    """取 twii_hist 中 <= date_str 的最後一筆收盤價，用來對齊個股的進場日/結算日
+    （大盤跟個股的交易日應該一致，這裡容錯一下避免因為抓取時間差1天而整筆對不上）。"""
+    if twii_hist is None or twii_hist.empty:
+        return None
+    sub = twii_hist[twii_hist["date_str"] <= date_str]
+    if sub.empty:
+        return None
+    row = sub.iloc[-1]
+    return float(row["Close"]) if _valid_price(row["Close"]) else None
+
+
+def _calc_excess_return(twii_hist, entry_date, target_date, stock_ret_pct):
+    """算超額報酬：個股報酬 − 大盤同期間報酬。任一邊大盤資料缺失就回傳 None，
+    不用0或個股報酬本身頂替，避免把「沒有大盤資料」誤標成「超額報酬為0」。"""
+    if stock_ret_pct is None:
+        return None, None, None
+    twii_entry = _twii_close_on_or_before(twii_hist, entry_date)
+    twii_target = _twii_close_on_or_before(twii_hist, target_date)
+    if not _valid_price(twii_entry) or not _valid_price(twii_target):
+        return None, twii_entry, twii_target
+    twii_ret = (twii_target / twii_entry - 1) * 100
+    return round(stock_ret_pct - twii_ret, 2), twii_entry, twii_target
+
+
 def _history_after_signal(ticker, signal_date, market=None):
     start = (datetime.fromisoformat(signal_date) - timedelta(days=1)).strftime("%Y-%m-%d")
     end = (datetime.fromisoformat(signal_date) + timedelta(days=35)).strftime("%Y-%m-%d")
@@ -871,9 +942,13 @@ def _valid_price(value):
         return False
 
 
-def _outcome_rows(event, future, entry, filled_at):
-    """隔日開盤進場：future[0] 當日收盤就是 T+1。"""
+def _outcome_rows(event, future, entry, filled_at, twii_hist=None, entry_date=None):
+    """隔日開盤進場：future[0] 當日收盤就是 T+1。
+    twii_hist 有提供時，額外算 excess_return_pct(超額報酬) = 個股報酬 − 大盤同期報酬，
+    用個股實際的進場日(entry_date，next_open那天)對齊大盤進場日的收盤價當基準，
+    不是用訊號當天，因為個股報酬本身也是用隔日開盤價當進場基準。"""
     rows = []
+    entry_date = entry_date or event["trade_date"]
     for horizon in HORIZONS:
         if len(future) < horizon:
             continue
@@ -885,11 +960,15 @@ def _outcome_rows(event, future, entry, filled_at):
         max_gain = round((float(window["High"].max()) / entry - 1) * 100, 2)
         max_drawdown = round((float(window["Low"].min()) / entry - 1) * 100, 2)
         ret = round((target_close / entry - 1) * 100, 2)
+        excess, twii_entry_px, twii_target_px = _calc_excess_return(
+            twii_hist, entry_date, target["date_str"], ret
+        ) if twii_hist is not None else (None, None, None)
         rows.append((
             event["event_id"], event["ticker"], event["trade_date"], horizon,
             target["date_str"], target_close, float(target["High"]), float(target["Low"]),
             ret, max_gain, max_drawdown, 1 if ret > 0 else 0,
             1 if ret >= 3 else 0, 1 if ret <= -3 else 0, filled_at,
+            excess, twii_entry_px, twii_target_px,
         ))
     return rows
 
@@ -898,8 +977,9 @@ OUTCOME_INSERT_SQL = """
     INSERT OR REPLACE INTO event_outcomes (
         event_id, ticker, signal_date, horizon, target_date, target_close,
         target_high, target_low, return_close_pct, max_gain_pct,
-        max_drawdown_pct, is_win, is_big_win, is_big_loss, filled_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        max_drawdown_pct, is_win, is_big_win, is_big_loss, filled_at,
+        excess_return_pct, twii_entry_price, twii_target_price
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 """
 
 
@@ -915,6 +995,15 @@ def update_event_outcomes(conn):
         """
     ).fetchall()
     filled_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 一次抓涵蓋全部待結算事件的大盤區間，供底下逐筆事件共用，避免每筆事件各打一次API。
+    twii_hist = None
+    if events:
+        earliest = min(e["trade_date"] for e in events)
+        start = (datetime.fromisoformat(earliest) - timedelta(days=1)).strftime("%Y-%m-%d")
+        end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        twii_hist = _twii_history(start, end)
+
     for e in events:
         hist = _history_after_signal(e["ticker"], e["trade_date"], e["market"])
         if hist is None:
@@ -935,7 +1024,7 @@ def update_event_outcomes(conn):
             (entry, entry_date, e["event_id"]),
         )
         filled = 0
-        for row in _outcome_rows(e, future, entry, filled_at):
+        for row in _outcome_rows(e, future, entry, filled_at, twii_hist=twii_hist, entry_date=entry_date):
             exists = conn.execute("SELECT 1 FROM event_outcomes WHERE event_id=? AND horizon=?", (e["event_id"], row[3])).fetchone()
             if not exists:
                 conn.execute(OUTCOME_INSERT_SQL, row)
@@ -1006,6 +1095,11 @@ def backfill_entry_price_to_next_open(conn):
             backup_conn.close()
 
     filled_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    earliest = min(e["trade_date"] for e in events)
+    twii_start = (datetime.fromisoformat(earliest) - timedelta(days=1)).strftime("%Y-%m-%d")
+    twii_end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    twii_hist = _twii_history(twii_start, twii_end)
+
     outcome_rows, event_updates, failures = [], [], []
     for event in events:
         key = (event["ticker"], event["market"])
@@ -1021,7 +1115,8 @@ def backfill_entry_price_to_next_open(conn):
             event_updates.append(("missing_next_open", None, None, event["event_id"]))
             continue
         entry = float(future.iloc[0]["Open"])
-        rows = _outcome_rows(event, future, entry, filled_at)
+        entry_date = future.iloc[0]["date_str"]
+        rows = _outcome_rows(event, future, entry, filled_at, twii_hist=twii_hist, entry_date=entry_date)
         status = "matured" if len(rows) == len(HORIZONS) else "partial"
         outcome_rows.extend(rows)
         event_updates.append((status, entry, future.iloc[0]["date_str"], event["event_id"]))
@@ -1049,6 +1144,64 @@ def backfill_entry_price_to_next_open(conn):
     print(f"[回補完成] 總事件數={result['events']}, 成功={result['success']}, 失敗={result['failed']}")
     print(f"[回補備份] {backup_path or '未建立（記憶體資料庫）'}")
     return result
+
+
+def backfill_excess_return(conn):
+    """
+    一次性回補：幫既有 event_outcomes 補上 excess_return_pct(超額報酬，扣除大盤同期報酬)。
+    只需要大盤(^TWII)一次歷史資料，不用重抓每檔個股，比 backfill_entry_price_to_next_open
+    快很多，可獨立執行。只補目前 excess_return_pct 還是 NULL 的列，可重複執行，
+    不會動到已經有值的列(包含之後 update_event_outcomes 正常寫入的新資料)。
+
+    entry_date 用 event_outcomes 對應的 signal_events.entry_date(隔日開盤進場日)當大盤基準，
+    沒有 entry_date 的舊資料(理論上不該發生，entry_price_mode都已經是next_open)才退回用
+    signal_events.trade_date 當基準，避免漏掉任何一筆。
+    """
+    rows = conn.execute(
+        """
+        SELECT o.event_id, o.horizon, o.target_date, o.return_close_pct,
+               COALESCE(e.entry_date, e.trade_date) AS entry_date
+        FROM event_outcomes o
+        JOIN signal_events e ON e.event_id = o.event_id
+        WHERE o.excess_return_pct IS NULL AND o.return_close_pct IS NOT NULL
+        """
+    ).fetchall()
+    if not rows:
+        return {"updated": 0, "skipped": 0}
+
+    earliest = min(r["entry_date"] for r in rows if r["entry_date"])
+    latest = max(r["target_date"] for r in rows if r["target_date"])
+    start = (datetime.fromisoformat(earliest) - timedelta(days=1)).strftime("%Y-%m-%d")
+    end = (datetime.fromisoformat(latest) + timedelta(days=2)).strftime("%Y-%m-%d")
+    twii_hist = _twii_history(start, end)
+    if twii_hist is None:
+        return {"updated": 0, "skipped": len(rows), "reason": "twii_history_unavailable"}
+
+    updated, skipped = 0, 0
+    for r in rows:
+        if not r["entry_date"] or not r["target_date"]:
+            skipped += 1
+            continue
+        excess, twii_entry_px, twii_target_px = _calc_excess_return(
+            twii_hist, r["entry_date"], r["target_date"], r["return_close_pct"]
+        )
+        if excess is None:
+            skipped += 1
+            continue
+        conn.execute(
+            "UPDATE event_outcomes SET excess_return_pct=?, twii_entry_price=?, twii_target_price=? "
+            "WHERE event_id=? AND horizon=?",
+            (excess, twii_entry_px, twii_target_px, r["event_id"], r["horizon"]),
+        )
+        updated += 1
+    conn.commit()
+    if updated:
+        refresh_summary_stats(conn)
+        refresh_monthly_strategy_stats(conn)
+        refresh_yearly_strategy_stats(conn)
+        conn.commit()
+    print(f"[超額報酬回補完成] 更新={updated}, 略過(缺大盤或日期資料)={skipped}")
+    return {"updated": updated, "skipped": skipped}
 
 
 def _median(vals):
@@ -1247,7 +1400,7 @@ def refresh_summary_stats(conn):
 
     rows_by_event_type = conn.execute(
         """
-        SELECT o.horizon, o.return_close_pct, o.max_gain_pct, o.max_drawdown_pct,
+        SELECT o.horizon, o.return_close_pct, o.max_gain_pct, o.max_drawdown_pct, o.excess_return_pct,
                e.event_type, e.kline_bucket, e.composite_bucket, e.breakout_bucket,
                e.swing_bucket, e.bb_bucket
         FROM event_outcomes o
@@ -1260,6 +1413,7 @@ def refresh_summary_stats(conn):
                MAX(o.return_close_pct) AS return_close_pct,
                MAX(o.max_gain_pct) AS max_gain_pct,
                MAX(o.max_drawdown_pct) AS max_drawdown_pct,
+               MAX(o.excess_return_pct) AS excess_return_pct,
                MAX(e.kline_bucket) AS kline_bucket, MAX(e.composite_bucket) AS composite_bucket,
                MAX(e.breakout_bucket) AS breakout_bucket, MAX(e.swing_bucket) AS swing_bucket,
                MAX(e.bb_bucket) AS bb_bucket, MAX(e.rs_bucket) AS rs_bucket,
@@ -1319,6 +1473,10 @@ def refresh_summary_stats(conn):
         losses = [v for v in vals if v <= 0]
         gross_win = sum(wins)
         gross_loss = abs(sum(losses))
+        # 超額報酬（扣除大盤同期報酬）：舊資料還沒回補時 excess_return_pct 會是 None，
+        # 這裡只用已經有值的樣本算，欄位本身允許比 sample_count 更少（不強制對齊）。
+        excess_vals = [float(x["excess_return_pct"]) for x in items if x["excess_return_pct"] is not None]
+        excess_wins = [v for v in excess_vals if v > 0]
         stat_key = f"{group_name}:{event_type}:{kb}:{cb}:{brk_b}:{sw_b}:{bb_b}:{rs_b}:{rs5d_b}:{vr_b}:T{horizon}"
         conn.execute(
             """
@@ -1328,8 +1486,9 @@ def refresh_summary_stats(conn):
                 rs_bucket, rs5d_bucket, volume_ratio_bucket,
                 horizon, sample_count, win_rate, avg_return, median_return,
                 avg_win, avg_loss, profit_factor, max_return, min_return,
-                avg_max_gain, avg_max_drawdown, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                avg_max_gain, avg_max_drawdown,
+                avg_excess_return, median_excess_return, excess_win_rate, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 stat_key, group_name, event_type, kb, cb, brk_b, sw_b, bb_b,
@@ -1342,6 +1501,9 @@ def refresh_summary_stats(conn):
                 round(max(vals), 2), round(min(vals), 2),
                 round(sum(float(x["max_gain_pct"]) for x in items if x["max_gain_pct"] is not None) / len(items), 2),
                 round(sum(float(x["max_drawdown_pct"]) for x in items if x["max_drawdown_pct"] is not None) / len(items), 2),
+                round(sum(excess_vals) / len(excess_vals), 2) if excess_vals else None,
+                _median(excess_vals) if excess_vals else None,
+                round(len(excess_wins) / len(excess_vals) * 100, 1) if excess_vals else None,
                 updated,
             ),
         )
@@ -1394,7 +1556,12 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(CASE WHEN o.horizon=3 THEN o.return_close_pct END) AS t3_return,
                MAX(CASE WHEN o.horizon=5 THEN o.return_close_pct END) AS t5_return,
                MAX(CASE WHEN o.horizon=7 THEN o.return_close_pct END) AS t7_return,
-               MAX(CASE WHEN o.horizon=10 THEN o.return_close_pct END) AS t10_return
+               MAX(CASE WHEN o.horizon=10 THEN o.return_close_pct END) AS t10_return,
+               MAX(CASE WHEN o.horizon=1 THEN o.excess_return_pct END) AS t1_excess,
+               MAX(CASE WHEN o.horizon=3 THEN o.excess_return_pct END) AS t3_excess,
+               MAX(CASE WHEN o.horizon=5 THEN o.excess_return_pct END) AS t5_excess,
+               MAX(CASE WHEN o.horizon=7 THEN o.excess_return_pct END) AS t7_excess,
+               MAX(CASE WHEN o.horizon=10 THEN o.excess_return_pct END) AS t10_excess
         FROM signal_events e
         LEFT JOIN event_outcomes o ON o.event_id=e.event_id
         WHERE e.trade_date >= date('now', '-90 days')
@@ -1454,12 +1621,15 @@ def export_stats_payload(db_path=DB_PATH):
                    ROUND(AVG(CASE WHEN return_close_pct > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) AS win_rate,
                    ROUND(AVG(return_close_pct), 2) AS avg_return,
                    ROUND(AVG(max_gain_pct), 2) AS avg_max_gain,
-                   ROUND(AVG(max_drawdown_pct), 2) AS avg_max_drawdown
+                   ROUND(AVG(max_drawdown_pct), 2) AS avg_max_drawdown,
+                   ROUND(AVG(excess_return_pct), 2) AS avg_excess_return,
+                   ROUND(AVG(CASE WHEN excess_return_pct > 0 THEN 1.0 ELSE 0.0 END) * 100, 1) AS excess_win_rate
             FROM (
                 SELECT e.trade_date, e.ticker, o.horizon,
                        MAX(o.return_close_pct) AS return_close_pct,
                        MAX(o.max_gain_pct) AS max_gain_pct,
-                       MAX(o.max_drawdown_pct) AS max_drawdown_pct
+                       MAX(o.max_drawdown_pct) AS max_drawdown_pct,
+                       MAX(o.excess_return_pct) AS excess_return_pct
                 FROM event_outcomes o
                 JOIN signal_events e ON e.event_id = o.event_id
                 WHERE {where_sql}
