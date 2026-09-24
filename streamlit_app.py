@@ -1053,7 +1053,7 @@ function buildTabThreshold(){{
   const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?Number(x.win_rate):0;}});
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
 
-  const hdr = '<tr><th style="min-width:160px">條件</th><th>樣本</th>' + hs.map(h => `<th>T+${{h}} 勝率</th><th>T+${{h}} 報酬</th>`).join('') + '</tr>';
+  const hdr = '<tr><th style="min-width:160px">條件</th><th>樣本</th>' + hs.map(h => `<th>T+${{h}} 勝率</th><th>T+${{h}} 報酬</th>`).join('') + '<th title="扣除大盤同期報酬後的真實選股貢獻">T+5 超額報酬</th></tr>';
   const rows=rules.map(r=>{{
     const rd=ts.filter(x=>x.rule===r);
     const n=rd[0]?.sample_count||0;
@@ -1062,7 +1062,11 @@ function buildTabThreshold(){{
       if(!x)return'<td>—</td><td>—</td>';
       return`<td>${{wrBadge(x.win_rate,x.sample_count)}}</td><td class="${{(x.avg_return||0)>=0?'pos':'neg'}}">${{pct(x.avg_return)}}</td>`;
     }});
-    return`<tr><td style="color:#93c5fd;font-weight:600">${{r}}</td><td style="color:#94a3b8">${{n}}</td>${{cells.join('')}}</tr>`;
+    const t5=rd.find(d=>d.horizon===5);
+    const excessCell=t5&&t5.avg_excess_return!=null
+      ?`<td class="${{t5.avg_excess_return>=0?'pos':'neg'}}" title="超額勝率${{t5.excess_win_rate}}%">${{pct(t5.avg_excess_return)}}</td>`
+      :'<td style="color:#64748b">—</td>';
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{r}}</td><td style="color:#94a3b8">${{n}}</td>${{cells.join('')}}${{excessCell}}</tr>`;
   }});
 
   return`${{kpiCards}}
@@ -1347,12 +1351,13 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('t5_return')">T+5</th>
         <th class="stats-sort" onclick="statsSortBy('t7_return')">T+7</th>
         <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
+        <th class="stats-sort" onclick="statsSortBy('t5_excess')" title="個股T+5報酬 − 大盤(TWII)同期間報酬，扣除大盤方向後的真實選股貢獻">超額(T+5)</th>
         <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('event_type')">訊號</th>
         <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('entry_signal')">今日訊號</th>
         <th class="stats-sort" onclick="statsSortBy('vcp_status')">VCP狀態</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="23" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="24" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1441,11 +1446,12 @@ function renderRecentStats(){{
     <td style="color:#94a3b8;width:54px;min-width:54px;white-space:nowrap" title="${{r.entry_date ? '進場日：'+r.entry_date : '尚未取得下一個交易日開盤價'}}">${{r.entry_price!=null?Number(r.entry_price).toFixed(1):'-'}}</td>
     <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
     <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
+    <td title="個股T+5報酬 − 大盤同期間報酬">${{r.t5_excess!=null?statCell(r.t5_excess):'<span class="iz">—</span>'}}</td>
     <td style="color:#93c5fd;font-size:11px;width:75px;max-width:75px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr(labelEventList(r))}}">${{labelEventList(r)}}${{(r.volume_ratio||0)>=2.5?` <span title="量比${{Number(r.volume_ratio).toFixed(1)}}倍，實測真爆量(≥2.5倍)反而勝率最差" style="color:#f87171">🔺</span>`:''}}</td>
     <td class="recent-entry-signal">${{fSig(r.entry_signal)}}</td>
     <td style="text-align:center">${{vcpStatusCell(r)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="23" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="24" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
@@ -1542,7 +1548,7 @@ function buildTabStrategy(){{
     return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含六策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
   }}
   const rows=present.map(et=>{{
-    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count),ewr:x.excess_win_rate!=null?Number(x.excess_win_rate):null,ear:x.avg_excess_return!=null?Number(x.avg_excess_return):null}}:null;}}).filter(Boolean);
     if(!pts.length)return'';
     const best=pts.reduce((a,b)=>b.wr>a.wr?b:a);
     const bestAr=pts.reduce((a,b)=>b.ar>a.ar?b:a);
@@ -1551,7 +1557,11 @@ function buildTabStrategy(){{
       if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
       return wrCell(p.wr,p.n,p.h===best.h);
     }});
-    return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
+    const t5=pts.find(x=>x.h===5);
+    const excessCell=t5&&t5.ewr!=null
+      ?`<td style="text-align:center" title="T+5超額勝率${{t5.ewr}}%（扣除大盤同期報酬後仍為正的比例）"><span class="${{t5.ear>=0?'pos':'neg'}}">${{t5.ear>=0?'+':''}}${{t5.ear.toFixed(2)}}%</span></td>`
+      :`<td style="text-align:center;color:#64748b" title="尚未回補大盤對照資料">—</td>`;
+    return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td>${{excessCell}}</tr>`;
   }}).filter(Boolean);
 
   return`
@@ -1567,6 +1577,7 @@ function buildTabStrategy(){{
     <div><b style="color:#facc15">策略I 中強動能</b>：RS介於50~85（甜蜜點）+ K線分≥80——跟G/H邏輯相反，抓「尚未到極端強勢、但短線動能剛要噴出」的股票，樣本仍在累積中，實際勝率請看下方表格即時數字</div>
     <div><b style="color:#38bdf8">策略J 中強降溫</b>：RS介於70~84 + K線分<60——中期相對強度偏強、短線技術面降溫，抓法跟G類似但RS門檻略寬、K線分門檻更嚴。初步樣本(僅涵蓋2026/08/19~09/10這段市場轉強期)T+1~T+7勝率48~61%、報酬轉正，但完全沒經過震盪期考驗，不能排除只是搭上這波多頭順風車，實際勝率請看下方表格即時數字，不要只看這段描述</div>
     <div style="margin-top:4px;color:#64748b">十組樣本互不互斥、各自獨立計算。A、B要打贏的對象是D，不是C；G、H、I、J是2026/09新增，樣本仍在累積中，數字僅供參考。</div>
+    <div style="margin-top:6px;color:#facc15">「T+5超額報酬」= 個股T+5報酬 − 大盤(TWII)同期間報酬，用來扣掉「大盤本身漲跌」對勝率的共同影響，只留下真正的選股貢獻(alpha)。這欄是「—」代表舊資料還沒補上大盤對照，之後幾天會逐漸補齊。</div>
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
@@ -1574,11 +1585,11 @@ function buildTabStrategy(){{
       <div style="position:relative;height:200px"><canvas id="chartStrategy"></canvas></div>
     </div>
   </div>
-  <div style="padding:8px 14px 4px;font-size:11px;color:#94a3b8">🏆 = 該策略歷史上勝率最高的持有天數</div>
+  <div style="padding:8px 14px 4px;font-size:11px;color:#94a3b8">🏆 = 該策略歷史上勝率最高的持有天數 ・ 超額報酬欄位僅顯示T+5</div>
   <div class="stats-scroll" style="padding:0 0 14px">
     <table class="stats-table"><thead><tr><th>策略</th><th style="text-align:center">樣本</th>
       ${{hs.map(h=>`<th style="text-align:center">T+${{h}}</th>`).join('')}}
-      <th>黃金出場</th><th style="text-align:center">最佳報酬</th></tr></thead>
+      <th>黃金出場</th><th style="text-align:center">最佳報酬</th><th style="text-align:center" title="扣除大盤同期報酬後的真實選股貢獻">超額(T+5)</th></tr></thead>
     <tbody>${{rows.join('')}}</tbody></table>
   </div>`;
 }}
