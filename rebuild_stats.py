@@ -9,7 +9,7 @@ rebuild_stats.py
 """
 
 import stats_db
-conn = stats_db.connect(); conn.execute("UPDATE event_outcomes SET excess_return_pct=NULL, market_return_pct=NULL"); conn.commit()
+conn = stats_db.connect()   # 預設讀 data/stats.db
 stats_db.init_db(conn)      # 確保 schema 已升級到最新（含 excess_return_pct 等新欄位）
 
 print("[1/2] 回補超額報酬 (backfill_excess_return) ...")
