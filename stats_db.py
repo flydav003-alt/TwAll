@@ -877,25 +877,37 @@ def _twii_history(start_date, end_date):
     return hist
 
 
-def _twii_close_on_or_before(twii_hist, date_str):
-    """取 twii_hist 中 <= date_str 的最後一筆收盤價，用來對齊個股的進場日/結算日
-    （大盤跟個股的交易日應該一致，這裡容錯一下避免因為抓取時間差1天而整筆對不上）。"""
+def _twii_price_on_or_before(twii_hist, date_str, col="Close"):
+    """取 twii_hist 中 <= date_str 的最後一筆指定欄位價位(Open/Close)，用來對齊個股的
+    進場日/結算日（大盤跟個股的交易日應該一致，這裡容錯一下避免因為抓取時間差1天而整筆對不上）。"""
     if twii_hist is None or twii_hist.empty:
         return None
     sub = twii_hist[twii_hist["date_str"] <= date_str]
     if sub.empty:
         return None
     row = sub.iloc[-1]
-    return float(row["Close"]) if _valid_price(row["Close"]) else None
+    return float(row[col]) if _valid_price(row[col]) else None
+
+
+def _twii_close_on_or_before(twii_hist, date_str):
+    """向下相容用的舊名稱，等同 _twii_price_on_or_before(..., col='Close')。"""
+    return _twii_price_on_or_before(twii_hist, date_str, col="Close")
 
 
 def _calc_excess_return(twii_hist, entry_date, target_date, stock_ret_pct):
     """算超額報酬：個股報酬 − 大盤同期間報酬。任一邊大盤資料缺失就回傳 None，
-    不用0或個股報酬本身頂替，避免把「沒有大盤資料」誤標成「超額報酬為0」。"""
+    不用0或個股報酬本身頂替，避免把「沒有大盤資料」誤標成「超額報酬為0」。
+
+    大盤基準的時間點必須跟個股報酬的計算基準完全對齊，否則會產生系統性偏誤：
+    個股報酬是「entry_date開盤買進 → target_date收盤賣出」，如果大盤基準用
+    entry_date的「收盤價」當起點，等於漏掉了entry_date當天大盤自己的漲跌
+    （開盤→收盤那一段），會讓excess_return_pct系統性偏高或偏低，看當天大盤方向而定。
+    所以這裡用entry_date的「開盤價」對齊個股的進場點，target_date維持用收盤價
+    （跟個股出場價一致，個股也是收盤價出場）。"""
     if stock_ret_pct is None:
         return None, None, None
-    twii_entry = _twii_close_on_or_before(twii_hist, entry_date)
-    twii_target = _twii_close_on_or_before(twii_hist, target_date)
+    twii_entry = _twii_price_on_or_before(twii_hist, entry_date, col="Open")
+    twii_target = _twii_price_on_or_before(twii_hist, target_date, col="Close")
     if not _valid_price(twii_entry) or not _valid_price(twii_target):
         return None, twii_entry, twii_target
     twii_ret = (twii_target / twii_entry - 1) * 100
