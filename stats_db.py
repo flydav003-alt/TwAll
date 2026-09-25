@@ -1312,7 +1312,7 @@ def refresh_monthly_strategy_stats(conn):
     rows = conn.execute(
         """
         SELECT substr(e.trade_date,1,7) ym, e.event_type, o.horizon,
-               MAX(o.return_close_pct) return_close_pct
+               MAX(o.return_close_pct) return_close_pct, MAX(o.excess_return_pct) excess_return_pct
         FROM signal_events e JOIN event_outcomes o ON o.event_id = e.event_id
         WHERE e.event_type IN ({})
         GROUP BY e.trade_date, e.ticker, e.event_type, o.horizon
@@ -1322,8 +1322,11 @@ def refresh_monthly_strategy_stats(conn):
 
     from collections import defaultdict
     groups = defaultdict(list)
-    for ym, et, h, ret in rows:
+    excess_groups = defaultdict(list)
+    for ym, et, h, ret, excess in rows:
         groups[(ym, et, h)].append(ret)
+        if excess is not None:
+            excess_groups[(ym, et, h)].append(excess)
 
     for (ym, et, h), vals in groups.items():
         last_date = last_signal_per_month.get(ym)
@@ -1338,14 +1341,17 @@ def refresh_monthly_strategy_stats(conn):
         if not vals:
             continue
         wins = [v for v in vals if v > 0]
+        excess_vals = excess_groups.get((ym, et, h), [])
+        excess_wins = [v for v in excess_vals if v > 0]
         stat_key = f"monthly_event_type:{ym}:{et}:T{h}"
         conn.execute(
             """
             INSERT INTO summary_stats (
                 stat_key, group_name, event_type, horizon, sample_count, win_rate,
                 avg_return, median_return, avg_win, avg_loss, profit_factor,
-                max_return, min_return, year_month, is_matured, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                max_return, min_return, year_month, is_matured,
+                avg_excess_return, median_excess_return, excess_win_rate, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 stat_key, "monthly_event_type", et, h,
@@ -1354,7 +1360,11 @@ def refresh_monthly_strategy_stats(conn):
                 round(sum(wins) / len(wins), 2) if wins else None,
                 round(sum(v for v in vals if v <= 0) / max(1, len(vals) - len(wins)), 2) if len(vals) > len(wins) else None,
                 None, round(max(vals), 2), round(min(vals), 2),
-                ym, 1 if matured else 0, updated,
+                ym, 1 if matured else 0,
+                round(sum(excess_vals) / len(excess_vals), 2) if excess_vals else None,
+                _median(excess_vals) if excess_vals else None,
+                round(len(excess_wins) / len(excess_vals) * 100, 1) if excess_vals else None,
+                updated,
             ),
         )
     conn.commit()
@@ -1379,7 +1389,7 @@ def refresh_yearly_strategy_stats(conn):
     rows = conn.execute(
         """
         SELECT substr(e.trade_date,1,4) yr, e.event_type, o.horizon,
-               MAX(o.return_close_pct) return_close_pct
+               MAX(o.return_close_pct) return_close_pct, MAX(o.excess_return_pct) excess_return_pct
         FROM signal_events e JOIN event_outcomes o ON o.event_id = e.event_id
         WHERE e.event_type IN ({})
         GROUP BY e.trade_date, e.ticker, e.event_type, o.horizon
@@ -1389,20 +1399,26 @@ def refresh_yearly_strategy_stats(conn):
 
     from collections import defaultdict
     groups = defaultdict(list)
-    for yr, et, h, ret in rows:
+    excess_groups = defaultdict(list)
+    for yr, et, h, ret, excess in rows:
         if ret is not None:
             groups[(yr, et, h)].append(ret)
+        if excess is not None:
+            excess_groups[(yr, et, h)].append(excess)
 
     for (yr, et, h), vals in groups.items():
         wins = [v for v in vals if v > 0]
+        excess_vals = excess_groups.get((yr, et, h), [])
+        excess_wins = [v for v in excess_vals if v > 0]
         stat_key = f"yearly_event_type:{yr}:{et}:T{h}"
         conn.execute(
             """
             INSERT INTO summary_stats (
                 stat_key, group_name, event_type, horizon, sample_count, win_rate,
                 avg_return, median_return, avg_win, avg_loss, profit_factor,
-                max_return, min_return, year_month, is_matured, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                max_return, min_return, year_month, is_matured,
+                avg_excess_return, median_excess_return, excess_win_rate, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 stat_key, "yearly_event_type", et, h,
@@ -1411,7 +1427,11 @@ def refresh_yearly_strategy_stats(conn):
                 round(sum(wins) / len(wins), 2) if wins else None,
                 round(sum(v for v in vals if v <= 0) / max(1, len(vals) - len(wins)), 2) if len(vals) > len(wins) else None,
                 None, round(max(vals), 2), round(min(vals), 2),
-                yr, 1, updated,  # 年度沒有「未熟成整批隱藏」的概念，is_matured固定存1，前端改用樣本數自然反映成熟度
+                yr, 1,  # 年度沒有「未熟成整批隱藏」的概念，is_matured固定存1，前端改用樣本數自然反映成熟度
+                round(sum(excess_vals) / len(excess_vals), 2) if excess_vals else None,
+                _median(excess_vals) if excess_vals else None,
+                round(len(excess_wins) / len(excess_vals) * 100, 1) if excess_vals else None,
+                updated,
             ),
         )
     conn.commit()
