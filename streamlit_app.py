@@ -342,6 +342,10 @@ input[type=range]::-webkit-slider-thumb:hover{{box-shadow:0 0 0 4px rgba(99,102,
 .stats-head{{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #2d4060;gap:12px;background:linear-gradient(90deg,#0f2040,#0d1a30);}}
 .stats-title{{font-size:15px;font-weight:700;color:#e2e8f0;letter-spacing:.5px;}}
 .stats-note{{font-size:12px;color:#94a3b8;}}
+.mode-toggle-btn{{transition:background .15s,color .15s;}}
+.mode-toggle-btn.active{{background:#6366f1!important;color:#fff!important;border-color:#6366f1!important;}}
+.mode-toggle-btn:not(.active){{background:transparent!important;color:#94a3b8!important;}}
+.mode-toggle-btn:hover{{border-color:#6366f1!important;}}
 /* KPI cards */
 .stats-kpi-row{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#1a2e4a;border-bottom:1px solid #1a2e4a;}}
 .stat-card{{background:#0d1a2e;padding:16px 18px;position:relative;overflow:hidden;}}
@@ -533,6 +537,12 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <div class="stats-head">
     <div class="stats-title">資料庫統計</div>
     <div class="stats-note" id="statsHeadNote">每日真實訊號 + T+1 / T+3 / T+5 / T+7 / T+10 事後績效</div>
+    <div class="mode-toggle-wrap" style="display:flex;gap:6px;">
+      <button type="button" class="mode-toggle-btn active" data-mode="abs" onclick="setStatsMode('abs')"
+        style="border:1px solid #334155;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">絕對報酬</button>
+      <button type="button" class="mode-toggle-btn" data-mode="excess" onclick="setStatsMode('excess')"
+        style="border:1px solid #334155;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">超額報酬(扣大盤)</button>
+    </div>
   </div>
   <div id="statsContent" class="stats-empty">統計資料載入中...</div>
 </div>
@@ -694,6 +704,56 @@ const RAW = {rows_json};
 const STATS = {stats_json};
 let sortKey='kline', sortAsc=false;
 let statsSortKey='trade_date', statsSortAsc=false;
+// ── 絕對報酬 / 超額報酬(扣大盤) 切換 ──
+// 超額報酬 = 個股報酬 - 大盤(加權指數)同期報酬，用來拆解「勝率是大盤帶起來的」
+// 還是「選股本身真的選對了」。切換只改變讀哪個欄位顯示，兩種數字都已經存在資料庫裡。
+let STATS_MODE='abs';
+function wrOf(x){{
+  if(!x)return null;
+  const v=(STATS_MODE==='excess')?x.excess_win_rate:x.win_rate;
+  return (v==null||Number.isNaN(Number(v)))?null:Number(v);
+}}
+function arOf(x){{
+  if(!x)return null;
+  const v=(STATS_MODE==='excess')?x.avg_excess_return:x.avg_return;
+  return (v==null||Number.isNaN(Number(v)))?null:Number(v);
+}}
+function retOf(r,h){{
+  const v=(STATS_MODE==='excess')?r['t'+h+'_excess']:r['t'+h+'_return'];
+  return (v==null||Number.isNaN(Number(v)))?null:Number(v);
+}}
+function setStatsMode(m){{
+  if(STATS_MODE===m)return;
+  STATS_MODE=m;
+  document.querySelectorAll('.mode-toggle-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
+  const matured=(STATS.recent||[]).filter(r=>retOf(r,5)!=null);
+  const wr5=matured.length?((matured.filter(r=>retOf(r,5)>0).length/matured.length)*100).toFixed(1):null;
+  const kpiLabel=document.getElementById('statsKpiT5Label');
+  const kpiVal=document.getElementById('statsKpiT5Value');
+  const kpiSub=document.getElementById('statsKpiT5Sub');
+  if(kpiLabel)kpiLabel.textContent = m==='excess' ? 'T+5 整體超額勝率' : 'T+5 整體勝率';
+  if(kpiVal){{
+    kpiVal.textContent = wr5!=null ? wr5+'%' : '—';
+    kpiVal.style.color = (wr5!=null && wr5>=50) ? '#f87171' : '#4ade80';
+  }}
+  if(kpiSub)kpiSub.textContent = `樣本 ${{matured.length}} 筆`;
+  const activeTab=document.querySelector('.sit.sa');
+  const id=activeTab?activeTab.getAttribute('onclick').match(/'([a-z]+)'/)[1]:'srec';
+  const builders={{
+    srec: buildTabRecent, smon: buildTabMonthly, sth: buildTabThreshold,
+    smat: buildTabMatrix, speak: buildTabPeak, shot: buildTabHot, sstrat: buildTabStrategy,
+  }};
+  const panel=document.getElementById(id);
+  if(panel && builders[id]) panel.innerHTML = builders[id]();
+  setTimeout(()=>{{
+    if(id==='sth')afterThreshold();
+    if(id==='smat')afterMatrix();
+    if(id==='srec')afterRecent();
+    if(id==='speak')afterPeak();
+    if(id==='sstrat')afterStrategy();
+    schedResize();
+  }},30);
+}}
 const SC={{"💥突破放量":"s1","🚀主力進場":"s2","✅洗盤結束":"s3","📉量縮整理":"s4"}};
 const PC={{"pat-a":"pa","pat-b":"pb","pat-c":"pc"}};
 
@@ -933,7 +993,7 @@ function buildTabMonthly(){{
     const rowsForYear=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='yearly_event_type'&&s.year_month===yr&&s.event_type===et));
     if(!rowsForYear.length)return'';
     const tableRows=rowsForYear.map(et=>{{
-      const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='yearly_event_type'&&s.year_month===yr&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+      const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='yearly_event_type'&&s.year_month===yr&&s.event_type===et&&s.horizon===h);return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
       if(!pts.length)return'';
       const best=pts.reduce((a,b)=>b.wr>a.wr?b:a);
       const wrCells=hs.map(h=>{{
@@ -976,7 +1036,7 @@ function buildTabMonthly(){{
     if(!rowsForMonth.length)return'';
     const matured=sum.find(s=>s.group_name==='monthly_event_type'&&s.year_month===ym)?.is_matured;
     const tableRows=rowsForMonth.map(et=>{{
-      const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='monthly_event_type'&&s.year_month===ym&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+      const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='monthly_event_type'&&s.year_month===ym&&s.event_type===et&&s.horizon===h);return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
       if(!pts.length)return'';
       const best=pts.reduce((a,b)=>b.wr>a.wr?b:a);
       const wrCells=hs.map(h=>{{
@@ -1022,16 +1082,16 @@ function buildTabThreshold(){{
 
   // ── KPI 計算 ──
   const t5rows=ts.filter(x=>x.horizon===5&&(x.sample_count||0)>=5);
-  const bestWr=t5rows.length?[...t5rows].sort((a,b)=>b.win_rate-a.win_rate)[0]:null;
+  const bestWr=t5rows.length?[...t5rows].sort((a,b)=>(wrOf(b)??-1)-(wrOf(a)??-1))[0]:null;
   const mostN=t5rows.length?[...t5rows].sort((a,b)=>b.sample_count-a.sample_count)[0]:null;
-  const avgRet=t5rows.length?(t5rows.reduce((s,x)=>s+Number(x.avg_return),0)/t5rows.length):null;
+  const avgRet=t5rows.length?(t5rows.reduce((s,x)=>s+(arOf(x)??0),0)/t5rows.length):null;
   const totalN=mostN?mostN.sample_count:0;
 
   const kpiCards=`
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 14px 0">
     <div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:14px;border-top:2px solid #f87171;">
       <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">🏆 最高勝率條件</div>
-      <div style="font-size:15px;font-weight:700;color:#f87171;line-height:1.3">${{bestWr?Number(bestWr.win_rate).toFixed(1)+'%':'—'}}</div>
+      <div style="font-size:15px;font-weight:700;color:#f87171;line-height:1.3">${{bestWr&&wrOf(bestWr)!=null?wrOf(bestWr).toFixed(1)+'%':'—'}}</div>
       <div style="font-size:11px;color:#93c5fd;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{bestWr?bestWr.rule:'—'}}</div>
       <div style="font-size:10px;color:#64748b;margin-top:3px">n = ${{bestWr?bestWr.sample_count:'—'}}</div>
     </div>
@@ -1039,7 +1099,7 @@ function buildTabThreshold(){{
       <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">📊 樣本最豐富</div>
       <div style="font-size:15px;font-weight:700;color:#fbbf24;line-height:1.3">${{mostN?mostN.sample_count+' 筆':'—'}}</div>
       <div style="font-size:11px;color:#93c5fd;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{mostN?mostN.rule:'—'}}</div>
-      <div style="font-size:10px;color:#64748b;margin-top:3px">T+5 勝率 ${{mostN?Number(mostN.win_rate).toFixed(1)+'%':'—'}}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:3px">T+5 勝率 ${{mostN&&wrOf(mostN)!=null?wrOf(mostN).toFixed(1)+'%':'—'}}</div>
     </div>
     <div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:14px;border-top:2px solid #4ade80;">
       <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">📈 T+5 整體平均報酬</div>
@@ -1050,7 +1110,7 @@ function buildTabThreshold(){{
   </div>`;
 
   // Build horizontal bar chart data (T+5 win rate per rule)
-  const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?Number(x.win_rate):0;}});
+  const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?(wrOf(x)??0):0;}});
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
 
   const hdr = '<tr><th style="min-width:160px">條件</th><th>樣本</th>' + hs.map(h => `<th>T+${{h}} 勝率</th><th>T+${{h}} 報酬</th>`).join('') + '</tr>';
@@ -1060,7 +1120,7 @@ function buildTabThreshold(){{
     const cells=hs.map(h=>{{
       const x=rd.find(d=>d.horizon===h);
       if(!x)return'<td>—</td><td>—</td>';
-      return`<td>${{wrBadge(x.win_rate,x.sample_count)}}</td><td class="${{(x.avg_return||0)>=0?'pos':'neg'}}">${{pct(x.avg_return)}}</td>`;
+      return`<td>${{wrBadge(wrOf(x),x.sample_count)}}</td><td class="${{(arOf(x)||0)>=0?'pos':'neg'}}">${{pct(arOf(x))}}</td>`;
     }});
     return`<tr><td style="color:#93c5fd;font-weight:600">${{r}}</td><td style="color:#94a3b8">${{n}}</td>${{cells.join('')}}</tr>`;
   }});
@@ -1080,7 +1140,7 @@ function buildTabThreshold(){{
 function afterThreshold(){{
   const ts=STATS.threshold_stats||[];
   const rules=[...new Set(ts.map(x=>x.rule))];
-  const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?Number(x.win_rate):0;}});
+  const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?(wrOf(x)??0):0;}});
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
   _mkChart('chartThresh',{{type:'bar',data:{{labels:rules,datasets:[{{label:'T+5 勝率',data:t5data,backgroundColor:t5colors,borderRadius:4,borderSkipped:false}}]}},
     options:{{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.x.toFixed(1)}}%`}}}}}},
@@ -1123,7 +1183,7 @@ function mkHM(mode,axisAKey,axisBKey){{
     html+=`<div class="hm-row-lbl">${{ab.lbl}}</div>`;
     B.buckets.forEach(bb=>{{
       const cell=mat.find(m=>m[A.field]===ab.k&&m[B.field]===bb.k);
-      const val=cell?(mode==='wr'?cell.win_rate:cell.avg_return):null;
+      const val=cell?(mode==='wr'?wrOf(cell):arOf(cell)):null;
       const {{bg,txt}}=hmColor(val,mode);
       const disp=val!=null?(mode==='wr'?Number(val).toFixed(0)+'%':(val>=0?'+':'')+Number(val).toFixed(1)+'%'):'—';
       const sub=cell?`n=${{cell.sample_count}}`:'';
@@ -1204,7 +1264,7 @@ function buildCrossOverview(){{
     const ka=CROSS_TOP_BUCKET[a], kb=CROSS_TOP_BUCKET[b];
     const pts=hs.map(h=>{{
       const x=(STATS.summary||[]).find(s=>s.group_name===gname&&s[DIM_DEFS[a].field]===ka&&s[DIM_DEFS[b].field]===kb&&s.horizon===h);
-      return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;
+      return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count)}}:null;
     }}).filter(Boolean);
     return{{a,b,label:`${{DIM_DEFS[a].label}}高 × ${{DIM_DEFS[b].label}}高`,pts}};
   }});
@@ -1245,7 +1305,7 @@ function afterCrossOverview(){{
     const ka=CROSS_TOP_BUCKET[a], kb=CROSS_TOP_BUCKET[b];
     const data=hs.map(h=>{{
       const x=(STATS.summary||[]).find(s=>s.group_name===gname&&s[DIM_DEFS[a].field]===ka&&s[DIM_DEFS[b].field]===kb&&s.horizon===h);
-      return x?Number(x.win_rate):null;
+      return x?wrOf(x):null;
     }});
     return{{label:`${{DIM_DEFS[a].label}}高×${{DIM_DEFS[b].label}}高`,data}};
   }});
@@ -1263,7 +1323,7 @@ function drawSingleDimTrend(canvasId, dimKey){{
   const datasets=D.buckets.map((b,i)=>{{
     const pts=[1,3,5,7,10].map(h=>{{
       const cell=(STATS.summary||[]).find(m=>m.group_name===`single_${{dimKey}}`&&m[D.field]===b.k&&m.horizon===h);
-      return cell?Number(cell.win_rate):null;
+      return cell?wrOf(cell):null;
     }});
     return{{label:b.lbl,data:pts,borderColor:colors[i],backgroundColor:'transparent',tension:.3,pointRadius:4,pointBackgroundColor:colors[i]}};
   }});
@@ -1342,11 +1402,11 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('volume_ratio')" title="當日成交量/20日均量。實測≥2.5倍(真爆量)勝率反而最差">量比</th>
         <th class="stats-sort" onclick="statsSortBy('inst_buy_days')">法人</th>
         <th style="width:54px;min-width:54px;white-space:nowrap">入場價</th>
-        <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1</th>
-        <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3</th>
-        <th class="stats-sort" onclick="statsSortBy('t5_return')">T+5</th>
-        <th class="stats-sort" onclick="statsSortBy('t7_return')">T+7</th>
-        <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10</th>
+        <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1${{STATS_MODE==='excess'?'(超額)':''}}</th>
+        <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3${{STATS_MODE==='excess'?'(超額)':''}}</th>
+        <th class="stats-sort" onclick="statsSortBy('t5_return')">T+5${{STATS_MODE==='excess'?'(超額)':''}}</th>
+        <th class="stats-sort" onclick="statsSortBy('t7_return')">T+7${{STATS_MODE==='excess'?'(超額)':''}}</th>
+        <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10${{STATS_MODE==='excess'?'(超額)':''}}</th>
         <th class="stats-sort" onclick="statsSortBy('t5_excess')" title="個股T+5報酬 − 大盤(TWII)同期間報酬，扣除大盤方向後的真實選股貢獻">超額(T+5)</th>
         <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('event_type')">訊號</th>
         <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('entry_signal')">今日訊號</th>
@@ -1359,7 +1419,7 @@ function buildTabRecent(){{
 }}
 function afterRecent(){{
   // Dist histogram
-  const all=(STATS.recent||[]).filter(r=>r.t5_return!=null).map(r=>Number(r.t5_return));
+  const all=(STATS.recent||[]).filter(r=>retOf(r,5)!=null).map(r=>retOf(r,5));
   const bins=[-8,-6,-4,-2,0,2,4,6,8,10];
   const bLabels=bins.slice(0,-1).map((b,i)=>`${{b}}~${{bins[i+1]}}%`);
   const bCounts=bins.slice(0,-1).map((b,i)=>all.filter(v=>v>=b&&v<bins[i+1]).length);
@@ -1369,7 +1429,7 @@ function afterRecent(){{
 
   // Event T+5 WR bar
   const evTypes=[...new Set((STATS.summary||[]).filter(x=>x.group_name==='event_type').map(x=>x.event_type))];
-  const evWR=evTypes.map(et=>{{const x=(STATS.summary||[]).find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===5);return x?Number(x.win_rate):null;}});
+  const evWR=evTypes.map(et=>{{const x=(STATS.summary||[]).find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===5);return x?wrOf(x):null;}});
   const evColors=evWR.map((v,i)=>ET_COLORS[i%ET_COLORS.length]);
   _mkChart('chartEvWR',{{type:'bar',data:{{labels:evTypes.map(e=>labelEvent(e)),datasets:[{{data:evWR,backgroundColor:evColors,borderRadius:4,borderSkipped:false}}]}},
     options:{{responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.y?.toFixed(1)}}%`}}}}}},
@@ -1414,9 +1474,14 @@ function renderRecentStats(){{
     if(etFilt&&!eventList(r).includes(etFilt))return false;
     return true;
   }});
+  const _RET_SORT_H={{t1_return:1,t3_return:3,t5_return:5,t7_return:7,t10_return:10}};
   data=[...data].sort((a,b)=>{{
-    const av=statNum(a[_sigSort])??a[_sigSort]??'';
-    const bv=statNum(b[_sigSort])??b[_sigSort]??'';
+    let av,bv;
+    if(_RET_SORT_H[_sigSort]){{
+      av=retOf(a,_RET_SORT_H[_sigSort])??'';bv=retOf(b,_RET_SORT_H[_sigSort])??'';
+    }}else{{
+      av=statNum(a[_sigSort])??a[_sigSort]??'';bv=statNum(b[_sigSort])??b[_sigSort]??'';
+    }}
     if(av===bv)return 0;if(av==='')return 1;if(bv==='')return -1;
     if(typeof av==='number'&&typeof bv==='number')return _sigAsc?av-bv:bv-av;
     return _sigAsc?String(av).localeCompare(String(bv)):String(bv).localeCompare(String(av));
@@ -1440,8 +1505,8 @@ function renderRecentStats(){{
     <td style="text-align:center;font-weight:600;color:${{r.volume_ratio==null?'#94a3b8':r.volume_ratio>=2.5?'#f87171':r.volume_ratio<1.0?'#94a3b8':'#4ade80'}}" title="${{r.volume_ratio!=null&&r.volume_ratio>=2.5?'實測真爆量(≥2.5倍)反而勝率最差':''}}">${{r.volume_ratio!=null?Number(r.volume_ratio).toFixed(2):'-'}}</td>
     <td style="text-align:center">${{fInst(r.inst_buy_days)}}</td>
     <td style="color:#94a3b8;width:54px;min-width:54px;white-space:nowrap" title="${{r.entry_date ? '進場日：'+r.entry_date : '尚未取得下一個交易日開盤價'}}">${{r.entry_price!=null?Number(r.entry_price).toFixed(1):'-'}}</td>
-    <td>${{statCell(r.t1_return)}}</td><td>${{statCell(r.t3_return)}}</td>
-    <td>${{statCell(r.t5_return)}}</td><td>${{statCell(r.t7_return)}}</td><td>${{statCell(r.t10_return)}}</td>
+    <td>${{statCell(retOf(r,1))}}</td><td>${{statCell(retOf(r,3))}}</td>
+    <td>${{statCell(retOf(r,5))}}</td><td>${{statCell(retOf(r,7))}}</td><td>${{statCell(retOf(r,10))}}</td>
     <td title="個股T+5報酬 − 大盤同期間報酬">${{r.t5_excess!=null?statCell(r.t5_excess):'<span class="iz">—</span>'}}</td>
     <td style="color:#93c5fd;font-size:11px;width:75px;max-width:75px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr(labelEventList(r))}}">${{labelEventList(r)}}${{(r.volume_ratio||0)>=2.5?` <span title="量比${{Number(r.volume_ratio).toFixed(1)}}倍，實測真爆量(≥2.5倍)反而勝率最差" style="color:#f87171">🔺</span>`:''}}</td>
     <td class="recent-entry-signal">${{fSig(r.entry_signal)}}</td>
@@ -1459,7 +1524,7 @@ function buildTabPeak(){{
   if(!evTypes.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
   const hs=[1,3,5,7,10];
   const rows=evTypes.map((et,ei)=>{{
-    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
     if(!pts.length)return'';
     const best=pts.reduce((a,b)=>b.wr>a.wr?b:a);
     const bestAr=pts.reduce((a,b)=>b.ar>a.ar?b:a);
@@ -1497,7 +1562,7 @@ function buildPeakByDim(dimKey,title){{
   const D=DIM_DEFS[dimKey];
   const hs=[1,3,5,7,10];
   const rows=D.buckets.map(b=>{{
-    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name===`single_${{dimKey}}`&&s[D.field]===b.k&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
+    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name===`single_${{dimKey}}`&&s[D.field]===b.k&&s.horizon===h);return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
     if(!pts.length)return'';
     const best=pts.reduce((a,c)=>c.wr>a.wr?c:a);
     const bestAr=pts.reduce((a,c)=>c.ar>a.ar?c:a);
@@ -1525,7 +1590,7 @@ function afterPeak(){{
   const hs=[1,3,5,7,10];
   const hLabels=hs.map(h=>`T+${{h}}`);
   const datasets=evTypes.map((et,i)=>{{
-    const data=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?Number(x.win_rate):null;}});
+    const data=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?wrOf(x):null;}});
     return{{label:labelEvent(et),data,backgroundColor:ET_COLORS[i%ET_COLORS.length]+'bb',borderRadius:3,borderSkipped:false}};
   }});
   _mkChart('chartPeak',{{type:'bar',data:{{labels:hLabels,datasets}},
@@ -1544,7 +1609,7 @@ function buildTabStrategy(){{
     return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含六策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
   }}
   const rows=present.map(et=>{{
-    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:Number(x.win_rate),ar:Number(x.avg_return),n:Number(x.sample_count),ewr:x.excess_win_rate!=null?Number(x.excess_win_rate):null,ear:x.avg_excess_return!=null?Number(x.avg_excess_return):null}}:null;}}).filter(Boolean);
+    const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count),ewr:x.excess_win_rate!=null?Number(x.excess_win_rate):null,ear:x.avg_excess_return!=null?Number(x.avg_excess_return):null}}:null;}}).filter(Boolean);
     if(!pts.length)return'';
     const best=pts.reduce((a,b)=>b.wr>a.wr?b:a);
     const bestAr=pts.reduce((a,b)=>b.ar>a.ar?b:a);
@@ -1622,7 +1687,7 @@ function afterStrategy(){{
   if(!present.length)return;
   const hLabels=hs.map(h=>`T+${{h}}`);
   const datasets=present.map(et=>{{
-    const data=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?Number(x.win_rate):null;}});
+    const data=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?wrOf(x):null;}});
     return{{label:labelEvent(et),data,backgroundColor:(STRAT_COLORS[et]||'#3b82f6')+'bb',borderRadius:3,borderSkipped:false}};
   }});
   _mkChart('chartStrategy',{{type:'bar',data:{{labels:hLabels,datasets}},
@@ -1641,7 +1706,7 @@ function buildTabHot(){{
     if(!freq[key])freq[key]={{ticker:r.ticker,name:r.name||r.ticker,cnt:0,wins:0,total:0,retSum:0,lastDate:r.trade_date,types:new Set()}};
     freq[key].cnt++;
     eventList(r).forEach(t=>freq[key].types.add(t));
-    if(r.t5_return!=null){{freq[key].total++;freq[key].retSum+=Number(r.t5_return);if(Number(r.t5_return)>0)freq[key].wins++;}}
+    if(retOf(r,5)!=null){{freq[key].total++;freq[key].retSum+=retOf(r,5);if(retOf(r,5)>0)freq[key].wins++;}}
     if((r.trade_date||'')>(freq[key].lastDate||''))freq[key].lastDate=r.trade_date;
   }});
   const sorted=Object.values(freq).sort((a,b)=>b.cnt-a.cnt).slice(0,15);
@@ -1676,8 +1741,8 @@ function renderStats(){{
     return;
   }}
   const c=STATS.counts||{{}};
-  const matured=(STATS.recent||[]).filter(r=>r.t5_return!=null);
-  const wr5=matured.length?((matured.filter(r=>r.t5_return>0).length/matured.length)*100).toFixed(1):null;
+  const matured=(STATS.recent||[]).filter(r=>retOf(r,5)!=null);
+  const wr5=matured.length?((matured.filter(r=>retOf(r,5)>0).length/matured.length)*100).toFixed(1):null;
 
   document.getElementById('statsHeadNote').textContent=`訊號 ${{c.events||0}} 筆 · 績效 ${{c.outcomes||0}} 筆 · 觀察 ${{c.watches||0}} 筆`;
 
@@ -1686,7 +1751,7 @@ function renderStats(){{
     <div class="stats-kpi-row">
       <div class="stat-card sk1"><div class="stat-k">每日快照</div><div class="stat-v">${{(c.snapshots||0).toLocaleString()}}</div><div class="stat-sub">累積筆數</div></div>
       <div class="stat-card sk2"><div class="stat-k">訊號事件</div><div class="stat-v">${{(c.events||0).toLocaleString()}}</div><div class="stat-sub">已記錄</div></div>
-      <div class="stat-card sk3"><div class="stat-k">T+5 整體勝率</div><div class="stat-v" style="color:${{wr5>=50?'#f87171':'#4ade80'}}">${{wr5!=null?wr5+'%':'—'}}</div><div class="stat-sub">樣本 ${{matured.length}} 筆</div></div>
+      <div class="stat-card sk3"><div class="stat-k" id="statsKpiT5Label">T+5 整體勝率</div><div class="stat-v" id="statsKpiT5Value" style="color:${{wr5>=50?'#f87171':'#4ade80'}}">${{wr5!=null?wr5+'%':'—'}}</div><div class="stat-sub" id="statsKpiT5Sub">樣本 ${{matured.length}} 筆</div></div>
       <div class="stat-card sk4"><div class="stat-k">觀察追蹤</div><div class="stat-v">${{(c.watches||0).toLocaleString()}}</div><div class="stat-sub">待確認</div></div>
     </div>
     <div class="stats-inner-tabs">
