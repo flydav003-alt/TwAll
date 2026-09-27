@@ -571,7 +571,7 @@ STRAT_BB_OK_SETUP = ("lower_reversal", "squeeze_consolidation", "upper_breakout"
 def classify_strategy_events(kline_score, composite_score, breakout_score, swing_score,
                               rs_score, vcp_status, entry_signal,
                               bb_score=None, bb_setup=None, bb_consec_down_days=None,
-                              rsi14=None, volume_ratio=None):
+                              rsi14=None, volume_ratio=None, rs5d=None, inst_buy_days=None):
     events = []
     if (rs_score is not None and rs_score >= 85
             and breakout_score is not None and breakout_score >= 60
@@ -622,6 +622,33 @@ def classify_strategy_events(kline_score, composite_score, breakout_score, swing
     if (rs_score is not None and 70 <= rs_score < 85
             and kline_score is not None and kline_score < 60):
         events.append("STRAT_J_RS_COOLDOWN")
+    # 策略K：低波段蓄勢族 — 完全不看RS≥85高門檻，抓的是「波段分刻意低、代表短線
+    # 技術面還沒轉強」+ BB分50~69(沒有處在極端超買超賣) + RS50~69(甜蜜點) +
+    # 量比<1.0(賣壓已萎縮) + 綜合分<60(尚未被市場定價成強勢股)。這五項全部反著設計：
+    # 每一項都刻意排除「已經很強」的股票，抓的是「正在蓄勢、還沒被注意到」的組合。
+    # 這組合來自窮舉式多維度回測(2026/09/27分析)：在28,000+組合搜尋中，
+    # 波段分<30 + RS50~69這個核心是少數T+1~T+10全部天期超額報酬都一致為正的組合，
+    # 且訊號分散在22個交易日、51檔不重複股票，排除了單日/單股集中的假訊號風險。
+    # 樣本仍在累積中(初始n約70筆)，實際勝率請看資料庫統計即時數字。
+    if (swing_score is not None and swing_score < 30
+            and bb_score is not None and 50 <= bb_score < 70
+            and rs_score is not None and 50 <= rs_score < 85
+            and volume_ratio is not None and volume_ratio < 1.0
+            and composite_score is not None and composite_score < 60):
+        events.append("STRAT_K_LOWSWING_SETUP")
+    # 策略L：溫和轉強蓄勢族 — 跟G/H/I/J一樣抓RS甜蜜點(50~69，比85+門檻更嚴格地
+    # 限定在中段而非"以上")，但反過來要求K線分<60(短線技術面刻意不過熱，
+    # 這點跟本系統原本"K線分越高越好"的假設相反，是這次窮舉回測發現的反直覺訊號)、
+    # RS5日分0~9(短期正在溫和轉強、不是暴衝)、量比<1.0(當日量縮非追價)、
+    # 法人連買1~3天(法人剛啟動，非連買過久)。五項條件全部指向「還沒被市場注意到，
+    # 但已經有溫和的轉強跡象」，跟策略K的邏輯互補(K完全不看法人/RS5日，L則把這兩者
+    # 納入做更精細的「起漲初期」篩選)。樣本仍在累積中，實際勝率請看資料庫統計即時數字。
+    if (kline_score is not None and kline_score < 60
+            and rs_score is not None and 50 <= rs_score < 70
+            and rs5d is not None and 0 <= rs5d < 10
+            and volume_ratio is not None and volume_ratio < 1.0
+            and inst_buy_days is not None and 1 <= inst_buy_days <= 3):
+        events.append("STRAT_L_GENTLE_TURN")
     return events
 
 
@@ -731,6 +758,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                 kline, comp, breakout, swing, rs, vcp_status, s.get("entry_signal", ""),
                 bb, bb_setup, s.get("bb_consec_down_days"),
                 rsi14=s.get("rsi14"), volume_ratio=vol_ratio,
+                rs5d=rs5d, inst_buy_days=s.get("inst_buy_days"),
             )
             for strat_event_type in strat_events:
                 strat_event_id = f"{trade_date}:{ticker}:{strat_event_type}"
@@ -1297,6 +1325,7 @@ def refresh_monthly_strategy_stats(conn):
         "STRAT_A_BREAKOUT", "STRAT_B_SWING", "STRAT_C_KLINE", "STRAT_D_COMPOSITE",
         "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
         "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
+        "STRAT_K_LOWSWING_SETUP", "STRAT_L_GENTLE_TURN",
     )
 
     # 每個月「最後一筆訊號」的日期，用來判斷該月是否已經熟成
@@ -1385,6 +1414,7 @@ def refresh_yearly_strategy_stats(conn):
         "STRAT_A_BREAKOUT", "STRAT_B_SWING", "STRAT_C_KLINE", "STRAT_D_COMPOSITE",
         "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
         "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
+        "STRAT_K_LOWSWING_SETUP", "STRAT_L_GENTLE_TURN",
     )
     rows = conn.execute(
         """
@@ -1666,6 +1696,14 @@ def export_stats_payload(db_path=DB_PATH):
         ("波段分<30 且BB分<30 且K線>=78(過熱對照組)", "e.swing_score < 30 AND e.bb_score < 30 AND e.kline_score >= 78"),
         ("波段分<30 且BB分<30 且RS5日>=20", "e.swing_score < 30 AND e.bb_score < 30 AND e.rs5d >= 20"),
         ("RS5日>=20 且量比1~1.5倍", "e.rs5d >= 20 AND e.volume_ratio >= 1.0 AND e.volume_ratio < 1.5"),
+        ("策略K：波段<30+BB50-69+RS50-69+量比<1+綜合<60",
+         "e.swing_score < 30 AND e.bb_score >= 50 AND e.bb_score < 70 "
+         "AND e.rs_score >= 50 AND e.rs_score < 85 AND e.volume_ratio < 1.0 "
+         "AND e.composite_score < 60"),
+        ("策略L：K線<60+RS50-69+RS5日0-9+量比<1+法人1-3天",
+         "e.kline_score < 60 AND e.rs_score >= 50 AND e.rs_score < 70 "
+         "AND e.rs5d >= 0 AND e.rs5d < 10 AND e.volume_ratio < 1.0 "
+         "AND e.inst_buy_days >= 1 AND e.inst_buy_days <= 3"),
     ]
     for label, where_sql in threshold_defs:
         rows = conn.execute(
