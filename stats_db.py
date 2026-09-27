@@ -571,7 +571,7 @@ STRAT_BB_OK_SETUP = ("lower_reversal", "squeeze_consolidation", "upper_breakout"
 def classify_strategy_events(kline_score, composite_score, breakout_score, swing_score,
                               rs_score, vcp_status, entry_signal,
                               bb_score=None, bb_setup=None, bb_consec_down_days=None,
-                              rsi14=None, volume_ratio=None):
+                              rsi14=None, volume_ratio=None, rs5d=None, inst_buy_days=None):
     events = []
     if (rs_score is not None and rs_score >= 85
             and breakout_score is not None and breakout_score >= 60
@@ -622,6 +622,28 @@ def classify_strategy_events(kline_score, composite_score, breakout_score, swing
     if (rs_score is not None and 70 <= rs_score < 85
             and kline_score is not None and kline_score < 60):
         events.append("STRAT_J_RS_COOLDOWN")
+    # 策略K：低檔法人企穩 — 對462組「4/5指標窮舉搭配」回測中T+5勝率最高的組合(n=55,81.8%)。
+    # K線<60(短線不過熱)+RS50~69(中期強度適中，非極端)+RS5日0~9(短期溫和轉強非暴衝)+
+    # 量比<1.0(量縮非追價)+法人連買1~3天(剛啟動非連買過久)。概念上跟G/H/J同屬「RS中強+
+    # 短線降溫」家族，樣本期間僅涵蓋2026/08/19~09/25約5週，未經完整多空循環考驗，
+    # 且T+5之後(T+7/T+10)勝率有回落跡象，實際勝率請看資料庫統計即時數字。
+    if (kline_score is not None and kline_score < 60
+            and rs_score is not None and 50 <= rs_score < 70
+            and rs5d is not None and 0 <= rs5d < 10
+            and volume_ratio is not None and volume_ratio < 1.0
+            and inst_buy_days is not None and 1 <= inst_buy_days <= 3):
+        events.append("STRAT_K_LOWK_STABLE")
+    # 策略L：低分健康整理 — 同一輪窮舉搭配中，跟A~J重疊度最低的一組(與策略K僅6筆重疊)，
+    # 刻意挑「波段分<30(尚未成勢)+BB分50~69(中性偏整理)+RS分50~69(中強)+量比<1.0(量縮)+
+    # 綜合分<60(尚未被追捧)」的低分整理股，邏輯上跟A~K「追高分/追RS」完全相反，
+    # 用來驗證「還沒被市場注意到的健康整理股」是否有alpha。樣本期間同樣僅約5週(n=42)，
+    # T+10樣本更薄(n=31)，實際勝率請看資料庫統計即時數字，不要只看這段描述。
+    if (swing_score is not None and swing_score < 30
+            and bb_score is not None and 50 <= bb_score < 70
+            and rs_score is not None and 50 <= rs_score < 70
+            and volume_ratio is not None and volume_ratio < 1.0
+            and composite_score is not None and composite_score < 60):
+        events.append("STRAT_L_LOWSCORE_CONSOL")
     return events
 
 
@@ -731,6 +753,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                 kline, comp, breakout, swing, rs, vcp_status, s.get("entry_signal", ""),
                 bb, bb_setup, s.get("bb_consec_down_days"),
                 rsi14=s.get("rsi14"), volume_ratio=vol_ratio,
+                rs5d=rs5d, inst_buy_days=s.get("inst_buy_days"),
             )
             for strat_event_type in strat_events:
                 strat_event_id = f"{trade_date}:{ticker}:{strat_event_type}"
@@ -1297,6 +1320,7 @@ def refresh_monthly_strategy_stats(conn):
         "STRAT_A_BREAKOUT", "STRAT_B_SWING", "STRAT_C_KLINE", "STRAT_D_COMPOSITE",
         "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
         "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
+        "STRAT_K_LOWK_STABLE", "STRAT_L_LOWSCORE_CONSOL",
     )
 
     # 每個月「最後一筆訊號」的日期，用來判斷該月是否已經熟成
@@ -1385,6 +1409,7 @@ def refresh_yearly_strategy_stats(conn):
         "STRAT_A_BREAKOUT", "STRAT_B_SWING", "STRAT_C_KLINE", "STRAT_D_COMPOSITE",
         "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
         "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
+        "STRAT_K_LOWK_STABLE", "STRAT_L_LOWSCORE_CONSOL",
     )
     rows = conn.execute(
         """
