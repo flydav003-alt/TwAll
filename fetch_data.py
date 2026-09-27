@@ -249,13 +249,6 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
     base["cons_vol_ratio"]  = calc_consolidation_vol_ratio(volumes, recent_n=10, base_n=60)
     base["vcp_breakout"]    = calc_breakout_60d(closes, volumes, n=60, vol_mult=1.5)
     if len(closes) >= 25:
-        # 原本用「今天回推20天均值」vs「5天前回推20天均值」比較，
-        # 兩個窗口重疊15天，在急殺後止穩的初期會嚴重落後：
-        # 股價可能已經止跌好幾天，但均線還在消化更早之前的高點，
-        # 導致 ma20_rising 誤判為 True（其實只是均線還沒反應過來），
-        # 讓 bb_gate_multiplier / calc_swing_score 誤判假反轉為真轉強。
-        # 改用最近5天ma20本身的斜率（連續，不是單點比較），
-        # 且要求最近5天全部同向遞增，避免單日雜訊造成誤判。
         ma20_series = closes.rolling(20).mean().iloc[-5:]
         base["ma20_rising"] = bool(
             len(ma20_series) == 5
@@ -310,11 +303,26 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
 def is_trading_day() -> bool:
     """
     用大盤今日是否有成交來判定是否為交易日。
-    yfinance period='1d' 在非交易日（國定假日、週末）會回傳空 DataFrame。
+
+    ⚠ 修正說明（2026-09-28）：
+    原本只檢查 yf.Ticker("^TWII").history(period="1d") 是否為空——但 yfinance
+    在平日休市（國定假日）時常常不是回傳空 DataFrame，而是回傳「最近一個交易日」
+    的舊資料（例如 9/25 休市卻拿回 9/24 那筆），len(h) > 0 依然成立，導致誤判
+    成交易日，把舊資料當新資料重複寫入資料庫。
+    修正做法：
+      1) 先用星期幾快速排除週末，省一次網路請求。
+      2) 比對「回傳資料的日期」是否等於「今天的日期」，而不是只看有沒有資料——
+         這樣才能真正抓到「有資料但日期是舊的」這種情況。
     """
     try:
+        if datetime.now().weekday() >= 5:  # 5=Sat, 6=Sun
+            return False
         h = yf.Ticker("^TWII").history(period="1d")
-        return h is not None and len(h) > 0
+        if h is None or len(h) == 0:
+            return False
+        last_date = h.index[-1].strftime("%Y-%m-%d")
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        return last_date == today_str
     except Exception:
         return True   # 抓取失敗時保守地繼續執行，避免漏抓
 
