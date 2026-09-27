@@ -79,7 +79,7 @@ def backfill(start_date="2026-06-01", end_date="2026-09-30", dry_run=False, db_p
         strat_events = classify_strategy_events(
             r["kline_score"], r["composite_score"], r["breakout_score"], r["swing_score"],
             r["rs_score"], r["vcp_status"], r["entry_signal"] or "",
-            bb=r["bb_score"], bb_setup=r["bb_setup"], bb_consec_down_days=bb_consec_down_days,
+            bb_score=r["bb_score"], bb_setup=r["bb_setup"], bb_consec_down_days=bb_consec_down_days,
             rsi14=r["rsi14"], volume_ratio=r["volume_ratio"],
             rs5d=r["rs5d"], inst_buy_days=r["inst_buy_days"],
         )
