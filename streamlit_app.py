@@ -970,11 +970,20 @@ function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#64748
 function vcpCol(v){{return v>=70?'#f87171':v>=50?'#fbbf24':v>=30?'#4ade80':'#64748b';}}
 
 // ── Tab: 月度分析 ──────────────────────────────────────────────
-const REGIME_LBL={{UP:'📈 上漲趨勢',UP_CHOPPY:'📈 上漲(震盪走高)',DOWN:'📉 下跌趨勢',DOWN_CHOPPY:'📉 下跌(震盪走低)',RANGE:'↔️ 區間震盪',NA:'資料不足'}};
-const REGIME_COLOR={{UP:'#4ade80',UP_CHOPPY:'#86efac',DOWN:'#f87171',DOWN_CHOPPY:'#fca5a5',RANGE:'#fbbf24',NA:'#64748b'}};
+const REGIME_LBL={{UP:'📈 多頭上攻',UP_CHOPPY:'📈 多頭震盪',DOWN:'📉 空頭下殺',DOWN_CHOPPY:'📉 空頭震盪',RANGE:'↔️ 區間盤整',NA:'資料不足'}};
+// 台股慣例：紅=漲、綠=跌，與頁面其他地方一致
+const REGIME_COLOR={{UP:'#f87171',UP_CHOPPY:'#fca5a5',DOWN:'#4ade80',DOWN_CHOPPY:'#86efac',RANGE:'#fbbf24',NA:'#64748b'}};
+const FLAG_LBL={{SHARP_DROP:'⚡ 急殺',HIGH_VOL:'🔥 高波動',V_REVERSAL:'🔄 V轉'}};
+const FLAG_COLOR={{SHARP_DROP:'#f87171',HIGH_VOL:'#fb923c',V_REVERSAL:'#38bdf8'}};
 function regimeBadge(regime){{
   const r=regime||'NA';
   return`<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600;background:${{REGIME_COLOR[r]}}22;color:${{REGIME_COLOR[r]}};border:1px solid ${{REGIME_COLOR[r]}}55">${{REGIME_LBL[r]||r}}</span>`;
+}}
+function flagBadges(flags){{
+  return String(flags||'').split(',').filter(Boolean).map(f=>{{
+    const c=FLAG_COLOR[f]||'#94a3b8';
+    return`<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:${{c}}22;color:${{c}};border:1px solid ${{c}}55">${{FLAG_LBL[f]||f}}</span>`;
+  }}).join(' ');
 }}
 function buildTabMonthly(){{
   const sum=STATS.summary||[];
@@ -1023,12 +1032,13 @@ function buildTabMonthly(){{
   const regimeCards=months.map(ym=>{{
     const r=regimeByMonth[ym];
     const hasRegime=r&&r.regime&&r.regime!=='NA';
-    return`<div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:10px 14px;min-width:150px">
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${{ym}}</div>
+    return`<div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:10px 14px;min-width:190px">
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${{ym}}${{hasRegime&&r.is_partial?' <span style="color:#fbbf24">（進行中）</span>':''}}</div>
       ${{hasRegime?`
-        <div style="margin-bottom:4px">${{regimeBadge(r.regime)}}</div>
-        <div style="font-size:11px;color:#64748b">月報酬 <span style="color:${{r.month_return_pct>=0?'#f87171':'#4ade80'}};font-weight:600">${{r.month_return_pct>=0?'+':''}}${{r.month_return_pct}}%</span> · 站上MA20 ${{(100-r.pct_days_below_ma20).toFixed(0)}}%天數</div>
-      `:`<div style="font-size:11px;color:#64748b">${{regimeBadge('NA')}}<br><span style="font-size:10px">此月份大盤歷史尚未開始記錄</span></div>`}}
+        <div style="margin-bottom:6px;display:flex;gap:4px;flex-wrap:wrap">${{regimeBadge(r.regime)}} ${{flagBadges(r.flags)}}</div>
+        <div style="font-size:11px;color:#64748b" title="${{r.base_mode==='prev_close'?'以上月最後收盤為基準':'缺上月資料，改以本月首日收盤為基準'}}">大盤月報酬 <span style="color:${{r.month_return_pct>=0?'#f87171':'#4ade80'}};font-weight:600">${{r.month_return_pct>=0?'+':''}}${{r.month_return_pct}}%</span> · 最大回撤 ${{r.max_drawdown_pct!=null?r.max_drawdown_pct+'%':'-'}}</div>
+        <div style="font-size:11px;color:#64748b">站上MA20 ${{(100-r.pct_days_below_ma20).toFixed(0)}}%天數 · 單日±2%以上 ${{r.big_move_days!=null?r.big_move_days:'-'}}天</div>
+      `:`<div style="font-size:11px;color:#64748b">${{regimeBadge('NA')}}<br><span style="font-size:10px">大盤歷史尚未回補</span></div>`}}
     </div>`;
   }}).join('');
 
@@ -1053,7 +1063,7 @@ function buildTabMonthly(){{
     <div class="sc-box" style="margin-bottom:14px">
       <div class="sc-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span>${{ym}} 各策略勝率</span>
-        ${{r&&r.regime&&r.regime!=='NA'?regimeBadge(r.regime):''}}
+        ${{r&&r.regime&&r.regime!=='NA'?regimeBadge(r.regime)+' '+flagBadges(r.flags)+`<span style="font-size:11px;color:#94a3b8">大盤月報酬 <b style="color:${{r.month_return_pct>=0?'#f87171':'#4ade80'}}">${{r.month_return_pct>=0?'+':''}}${{r.month_return_pct}}%</b>${{r.is_partial?'（進行中）':''}}</span>`:''}}
         ${{!matured?'<span style="font-size:11px;color:#fbbf24">⏳ 本月尚未熟成，數字會隨月底訊號陸續跑完T+10而變動</span>':'<span style="font-size:11px;color:#4ade80">✓ 已熟成</span>'}}
       </div>
       <div class="stats-scroll" style="padding:0 0 10px">
@@ -1066,8 +1076,9 @@ function buildTabMonthly(){{
 
   return`
   <div style="padding:14px 14px 6px;font-size:12px;color:#94a3b8;line-height:1.7">
-    <div>每月大盤趨勢：月報酬≥5%記為上漲、≤-5%記為下跌，中間為區間震盪；再依站上/跌破MA20的天數比例細分是否走勢乾脆。<b style="color:#fbbf24">這組門檻是技術分析常見經驗值，尚未針對本系統回測驗證過最適切點</b>，先求有客觀依據可看，之後應隨資料量增加回頭檢視。</div>
-    <div style="margin-top:4px">大盤歷史從系統啟用當天才開始記錄，<b style="color:#f87171">過去月份沒有資料可回溯</b>，會顯示「資料不足」而非用其他方式推算，避免用不可靠的代理指標誤導判斷。</div>
+    <div><b style="color:#e2e8f0">大盤月報酬</b> = 加權指數當月最後收盤 ÷ 上月最後收盤 − 1（月初第一天的漲跌也算進來）。≥+5% 為多頭、≤−5% 為空頭，中間為區間盤整；再依站上MA20的天數比例區分「上攻／下殺（≥70%或≤30%天數同向）」與「震盪」。<b style="color:#fbbf24">這組門檻是技術分析常見經驗值，尚未針對本系統回測驗證</b>，月份累積夠多後應回頭檢視。</div>
+    <div style="margin-top:4px">事件旗標可與趨勢並存：<b style="color:#f87171">⚡急殺</b>＝月內最大回撤≥8%；<b style="color:#fb923c">🔥高波動</b>＝單日漲跌±2%以上達4天；<b style="color:#38bdf8">🔄V轉</b>＝曾急殺但月底收在上月收盤之上。</div>
+    <div style="margin-top:4px">大盤歷史由 ^TWII 歷史收盤自動回補，過去月份也有標籤。目前每種走勢只有約1個月樣本，<b style="color:#f87171">請把標籤當成「解讀勝率時的背景」，不要據此下結論說某策略只在某種走勢有效</b>。</div>
     <div style="margin-top:4px">「本月尚未熟成」代表當月最後一筆訊號還沒跑完T+10天，數字僅供參考，等熟成後才是完整結果——這是刻意的設計，不是資料缺漏。</div>
   </div>
   ${{yearTables?`<div style="padding:0 14px 14px">${{yearTables}}</div>`:''}}
