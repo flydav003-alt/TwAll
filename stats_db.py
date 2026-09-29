@@ -317,6 +317,11 @@ def init_db(conn):
         ("excess_win_rate", "REAL"),
     ])
 
+    # ── 新增欄位：月度大盤趨勢的輔助指標（最大回撤／劇烈波動天數／事件旗標）──
+    _ensure_columns(conn, "monthly_market_regime", [
+        ("max_drawdown_pct", "REAL"), ("big_move_days", "INTEGER"),
+        ("flags", "TEXT"), ("base_mode", "TEXT"), ("is_partial", "INTEGER"),
+    ])
     conn.commit()
 
 
@@ -344,53 +349,163 @@ def save_market_daily(conn, trade_date, market_info):
     conn.commit()
 
 
+# ── 大盤月度趨勢判定參數 ──
+# 全部是技術分析常見經驗值，不是從這份資料庫回測驗證出來的最適門檻。
+# 等累積更多月份後，應回頭比對「不同門檻切出的月份組，策略勝率差異大不大」再調整。
+REGIME_RET_PCT = 5.0        # 月報酬 >= +5% 視為多頭、<= -5% 視為空頭
+REGIME_BELOW_LO = 30        # 跌破MA20天數比例 <= 30% → 上漲乾脆（多頭上攻）
+REGIME_BELOW_HI = 70        # 跌破MA20天數比例 >= 70% → 下跌乾脆（空頭下殺）
+SHARP_DROP_DD_PCT = 8.0     # 月內最大回撤 >= 8% → ⚡急殺
+HIGH_VOL_DAY_PCT = 2.0      # 單日漲跌幅絕對值 >= 2% 算一個劇烈波動日
+HIGH_VOL_MIN_DAYS = 4       # 劇烈波動日 >= 4 天 → 🔥高波動
+
+
 def classify_regime(month_return_pct, pct_days_below_ma20):
-    """月度大盤趨勢判定：用「當月累計報酬」定方向，「站上/跌破MA20的天數比例」定是否為
-    有方向性的趨勢還是來回震盪。門檻是常見的技術分析經驗值(月漲跌5%作為多空分界、
-    MA20天數比例30%/70%作為震盪/趨勢分界)，不是從這份資料庫回測驗證出來的最適門檻——
-    等累積更多月份資料後，應該回頭比對「不同門檻切出的規則(月)組，策略勝率差異大不大」
-    來調整，而不是把這幾個數字當成已驗證的定論。"""
+    """月度大盤趨勢：月報酬(加權指數，以上月最後收盤為基準)定方向，
+    跌破MA20的天數比例定是否為乾脆的趨勢還是來回震盪。
+    UP=多頭上攻 / UP_CHOPPY=多頭震盪 / RANGE=區間盤整 / DOWN=空頭下殺 / DOWN_CHOPPY=空頭震盪"""
     if month_return_pct is None or pct_days_below_ma20 is None:
         return "NA"
-    if month_return_pct >= 5:
-        return "UP" if pct_days_below_ma20 <= 30 else "UP_CHOPPY"
-    if month_return_pct <= -5:
-        return "DOWN" if pct_days_below_ma20 >= 70 else "DOWN_CHOPPY"
+    if month_return_pct >= REGIME_RET_PCT:
+        return "UP" if pct_days_below_ma20 <= REGIME_BELOW_LO else "UP_CHOPPY"
+    if month_return_pct <= -REGIME_RET_PCT:
+        return "DOWN" if pct_days_below_ma20 >= REGIME_BELOW_HI else "DOWN_CHOPPY"
     return "RANGE"
 
 
+def classify_regime_flags(month_return_pct, max_drawdown_pct, big_move_days):
+    """事件旗標，可與趨勢標籤並存：SHARP_DROP急殺 / HIGH_VOL高波動 / V_REVERSAL V轉。"""
+    flags = []
+    if max_drawdown_pct is not None and max_drawdown_pct >= SHARP_DROP_DD_PCT:
+        flags.append("SHARP_DROP")
+    if big_move_days is not None and big_move_days >= HIGH_VOL_MIN_DAYS:
+        flags.append("HIGH_VOL")
+    if "SHARP_DROP" in flags and month_return_pct is not None and month_return_pct > 0:
+        flags.append("V_REVERSAL")   # 月內曾急殺，但月底收在上月收盤之上
+    return ",".join(flags)
+
+
+def _prev_ym(ym):
+    y, m = int(ym[:4]), int(ym[5:7])
+    return f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
+
+
+def backfill_market_history(conn, start="2025-11-01", verbose=True):
+    """用 ^TWII 歷史一次補齊(並校正) market_daily_history。
+    - 大盤價格／MA20／RSI 都能從歷史收盤價重算，過去月份不需要等它慢慢累積。
+    - 對已存在的日期以歷史資料為準覆蓋（算法與 fetch_data.fetch_twii_data 相同）。
+    - 順便清掉區間內「不是真實交易日」的殘留列（例如休市日誤寫入的舊資料）。
+    抓取失敗時回傳 reason，不動資料庫。"""
+    try:
+        h = yf.Ticker("^TWII").history(start=start, auto_adjust=False)
+    except Exception as exc:
+        return {"upserted": 0, "deleted": 0, "reason": type(exc).__name__}
+    if h is None or h.empty:
+        return {"upserted": 0, "deleted": 0, "reason": "no_history"}
+
+    c = h["Close"].astype(float)
+    ma20 = c.rolling(20).mean()
+    d = c.diff()
+    gain = d.clip(lower=0).rolling(14).mean()
+    loss = (-d.clip(upper=0)).rolling(14).mean()
+    rsi = 100 - 100 / (1 + gain / loss.replace(0, float("nan")))
+    ret5d = c.pct_change(5) * 100
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def _nn(v, nd):
+        return None if v != v else round(float(v), nd)
+
+    valid_dates = []
+    for dt in c.index:
+        ds = dt.strftime("%Y-%m-%d")
+        valid_dates.append(ds)
+        m20 = _nn(ma20[dt], 2)
+        conn.execute(
+            """
+            INSERT INTO market_daily_history
+                (trade_date, twii_price, twii_ret5d, twii_rsi, twii_ma20, below_ma20, created_at)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(trade_date) DO UPDATE SET
+                twii_price=excluded.twii_price, twii_ret5d=excluded.twii_ret5d,
+                twii_rsi=excluded.twii_rsi, twii_ma20=excluded.twii_ma20,
+                below_ma20=excluded.below_ma20, created_at=excluded.created_at
+            """,
+            (ds, round(float(c[dt]), 2), _nn(ret5d[dt], 2), _nn(rsi[dt], 1), m20,
+             None if m20 is None else (1 if float(c[dt]) < m20 else 0), now),
+        )
+
+    first, last = min(valid_dates), max(valid_dates)
+    valid = set(valid_dates)
+    stale = [r[0] for r in conn.execute(
+        "SELECT trade_date FROM market_daily_history WHERE trade_date >= ? AND trade_date <= ?",
+        (first, last),
+    ).fetchall() if r[0] not in valid]
+    for ds in stale:
+        conn.execute("DELETE FROM market_daily_history WHERE trade_date=?", (ds,))
+    conn.commit()
+    if verbose:
+        print(f"[大盤歷史回補] 寫入/校正={len(valid_dates)}, 清除非交易日殘留={len(stale)} {stale[:5]}")
+    return {"upserted": len(valid_dates), "deleted": len(stale)}
+
+
 def refresh_monthly_market_regime(conn):
-    """從 market_daily_history 重建每月的趨勢標記。只有這張表有資料的月份才會產生列，
-    在這張表開始記錄之前的月份(6~9月)不會出現，前端要顯示「資料不足」而不是留白或亂猜。"""
+    """從 market_daily_history 重建每月的大盤趨勢標記。
+    - 月報酬 = 當月最後收盤 / 「上月最後收盤」- 1（月初第一天的漲跌也算進來）；
+      缺上月資料時退回以本月首日收盤為基準（base_mode='first_day'）。
+    - max_drawdown_pct：含上月收盤為起點的月內最大回撤。
+    - big_move_days：單日漲跌幅絕對值 >= HIGH_VOL_DAY_PCT 的天數。"""
     conn.execute("DELETE FROM monthly_market_regime")
     rows = conn.execute(
         """
-        SELECT substr(trade_date,1,7) ym, trade_date, twii_price, twii_rsi, below_ma20
-        FROM market_daily_history ORDER BY trade_date
+        SELECT trade_date, twii_price, twii_rsi, below_ma20
+        FROM market_daily_history WHERE twii_price IS NOT NULL ORDER BY trade_date
         """
     ).fetchall()
     from collections import defaultdict
     by_month = defaultdict(list)
-    for ym, trade_date, price, rsi, below in rows:
-        by_month[ym].append((trade_date, price, rsi, below))
+    for r in rows:
+        by_month[r[0][:7]].append(r)
     updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for ym, items in by_month.items():
-        prices = [p for _, p, _, _ in items if p is not None]
-        rsis = [r for _, _, r, _ in items if r is not None]
-        belows = [b for _, _, _, b in items if b is not None]
-        if len(prices) < 2:
+    cur_ym = datetime.now().strftime("%Y-%m")
+
+    for ym in sorted(by_month):
+        items = by_month[ym]
+        prices = [float(r[1]) for r in items]
+        prev_items = by_month.get(_prev_ym(ym))
+        if prev_items:
+            base, base_mode = float(prev_items[-1][1]), "prev_close"
+            series = [base] + prices
+        else:
+            base, base_mode = prices[0], "first_day"
+            series = prices
+        if len(series) < 2 or base <= 0:
             continue
-        month_ret = round((prices[-1] / prices[0] - 1) * 100, 2)
+
+        month_ret = round((prices[-1] / base - 1) * 100, 2)
+        peak, mdd = series[0], 0.0
+        for p in series:
+            peak = max(peak, p)
+            mdd = max(mdd, (peak - p) / peak * 100)
+        mdd = round(mdd, 2)
+        big_days = sum(
+            1 for x, y in zip(series, series[1:])
+            if x > 0 and abs(y / x - 1) * 100 >= HIGH_VOL_DAY_PCT
+        )
+        rsis = [r[2] for r in items if r[2] is not None]
+        belows = [r[3] for r in items if r[3] is not None]
         avg_rsi = round(sum(rsis) / len(rsis), 1) if rsis else None
         pct_below = round(sum(belows) / len(belows) * 100, 1) if belows else None
         regime = classify_regime(month_ret, pct_below)
+        flags = classify_regime_flags(month_ret, mdd, big_days)
         conn.execute(
             """
             INSERT INTO monthly_market_regime
-                (year_month, trading_days, month_return_pct, avg_rsi, pct_days_below_ma20, regime, updated_at)
-            VALUES (?,?,?,?,?,?,?)
+                (year_month, trading_days, month_return_pct, avg_rsi, pct_days_below_ma20, regime, updated_at,
+                 max_drawdown_pct, big_move_days, flags, base_mode, is_partial)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-            (ym, len(items), month_ret, avg_rsi, pct_below, regime, updated),
+            (ym, len(items), month_ret, avg_rsi, pct_below, regime, updated,
+             mdd, big_days, flags, base_mode, 1 if ym == cur_ym else 0),
         )
     conn.commit()
 
@@ -809,6 +924,10 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
     refresh_summary_stats(conn)
     refresh_monthly_strategy_stats(conn)
     refresh_yearly_strategy_stats(conn)
+    try:
+        backfill_market_history(conn)   # 每天一次 ^TWII 請求，補齊漏跑的日子並校正
+    except Exception as e:
+        print(f"[WARN] 大盤歷史回補失敗，略過：{e}")
     refresh_monthly_market_regime(conn)
     conn.commit()
     conn.close()
