@@ -924,8 +924,11 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
     refresh_summary_stats(conn)
     refresh_monthly_strategy_stats(conn)
     refresh_yearly_strategy_stats(conn)
+    print("[INFO] 大盤歷史回補開始 ...")
     try:
-        backfill_market_history(conn)   # 每天一次 ^TWII 請求，補齊漏跑的日子並校正
+        _bf = backfill_market_history(conn)   # 每天一次 ^TWII 請求，補齊漏跑的日子並校正
+        if _bf.get("reason"):
+            print(f"[WARN] 大盤歷史回補未完成：{_bf['reason']}")
     except Exception as e:
         print(f"[WARN] 大盤歷史回補失敗，略過：{e}")
     refresh_monthly_market_regime(conn)
