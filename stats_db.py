@@ -396,12 +396,21 @@ def backfill_market_history(conn, start="2025-11-01", verbose=True):
     - 對已存在的日期以歷史資料為準覆蓋（算法與 fetch_data.fetch_twii_data 相同）。
     - 順便清掉區間內「不是真實交易日」的殘留列（例如休市日誤寫入的舊資料）。
     抓取失敗時回傳 reason，不動資料庫。"""
-    try:
-        h = yf.Ticker("^TWII").history(start=start, auto_adjust=False)
-    except Exception as exc:
-        return {"upserted": 0, "deleted": 0, "reason": type(exc).__name__}
-    if h is None or h.empty:
-        return {"upserted": 0, "deleted": 0, "reason": "no_history"}
+    h, last_err = None, "no_history"
+    for kwargs in ({"start": start}, {"period": "2y"}, {"period": "max"}):
+        try:
+            h = yf.Ticker("^TWII").history(auto_adjust=False, **kwargs)
+            if h is not None and not h.empty:
+                break
+        except Exception as exc:
+            last_err = f"{type(exc).__name__}: {exc}"
+        h = None
+    if h is None:
+        print(f"[WARN] ^TWII 歷史抓取失敗：{last_err}")
+        return {"upserted": 0, "deleted": 0, "reason": last_err}
+    h = h[[d.strftime("%Y-%m-%d") >= start for d in h.index]]
+    if h.empty:
+        return {"upserted": 0, "deleted": 0, "reason": "empty_after_start_filter"}
 
     c = h["Close"].astype(float)
     ma20 = c.rolling(20).mean()
