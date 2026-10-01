@@ -1,0 +1,33 @@
+name: backfill-market
+
+# 只補大盤歷史 + 重建月度趨勢，數十秒完成。手動觸發即可。
+on:
+  workflow_dispatch:
+
+# 與主流程共用同一把鎖，避免同時寫入 data/stats.db。
+# 建議在你原本的 workflow 也加上同樣的 concurrency 區塊。
+concurrency:
+  group: stats-db
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install yfinance pandas numpy openpyxl
+      - run: python backfill_market.py
+      - name: Commit stats.db
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name  "github-actions[bot]"
+          git add data/stats.db
+          git diff --staged --quiet || git commit -m "chore: backfill market history $(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M %Z')"
+          git pull --rebase origin main || true
+          git push
