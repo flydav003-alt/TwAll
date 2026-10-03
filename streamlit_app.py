@@ -974,9 +974,15 @@ function wrCellWithRet(wr,ar,n,isBest){{
   else if(n<30){{color='#fbbf24';}}
   else{{color=isBest?'#fbbf24':'#94a3b8';}}
   const title=n<10?`title="n=${{n}}，樣本太小，波動性極大，不能當作已驗證的訊號"`:n<30?`title="n=${{n}}，樣本偏小，數字可參考但信賴區間仍寬"`:'';
-  // 報酬率獨立一行、自己置中——不管上一行警示符號⚠️/🏆佔多寬，這行都不會被擠歪
-  const arTxt=ar!=null?`<div style="color:${{ar>=0?'#f87171':'#4ade80'}};font-weight:400;font-size:11px;margin-top:2px">${{ar>=0?'+':''}}${{ar.toFixed(2)}}%</div>`:'';
-  return`<td style="text-align:center;color:${{color}};font-weight:${{n>=30&&isBest?700:400}}" ${{title}}><div>${{wr.toFixed(1)}}%${{warn}}${{n>=30&&isBest?' 🏆':''}}</div>${{arTxt}}</td>`;
+  // 同一行顯示，但百分比/圖示/報酬率各自切成固定寬度的欄位，
+  // 不管有沒有⚠️或🏆，後面的報酬率都從同一個x位置開始，不會再左右飄移
+  const icon=n<10?'⚠️':(n>=30&&isBest?'🏆':'');
+  const arTxt=ar!=null?`<span style="display:inline-block;min-width:62px;text-align:left;color:${{ar>=0?'#f87171':'#4ade80'}};font-weight:400;font-size:11px">${{ar>=0?'+':''}}${{ar.toFixed(2)}}%</span>`:'';
+  return`<td style="text-align:center;color:${{color}};font-weight:${{n>=30&&isBest?700:400}}" ${{title}}>` +
+    `<span style="display:inline-flex;align-items:center;justify-content:center;white-space:nowrap">` +
+    `<span style="display:inline-block;min-width:44px;text-align:right">${{wr.toFixed(1)}}%</span>` +
+    `<span style="display:inline-block;width:18px;text-align:left;flex-shrink:0">${{icon}}</span>` +
+    `${{arTxt}}</span></td>`;
 }}
 function kCol(v){{return v>=78?'#f87171':v>=70?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
 function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
