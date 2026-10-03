@@ -974,8 +974,9 @@ function wrCellWithRet(wr,ar,n,isBest){{
   else if(n<30){{color='#fbbf24';}}
   else{{color=isBest?'#fbbf24':'#94a3b8';}}
   const title=n<10?`title="n=${{n}}，樣本太小，波動性極大，不能當作已驗證的訊號"`:n<30?`title="n=${{n}}，樣本偏小，數字可參考但信賴區間仍寬"`:'';
-  const arTxt=ar!=null?` <span style="color:${{ar>=0?'#f87171':'#4ade80'}};font-weight:400;font-size:11px">(${{ar>=0?'+':''}}${{ar.toFixed(2)}}%)</span>`:'';
-  return`<td style="text-align:center;color:${{color}};font-weight:${{n>=30&&isBest?700:400}}" ${{title}}>${{wr.toFixed(1)}}%${{warn}}${{n>=30&&isBest?' 🏆':''}}${{arTxt}}</td>`;
+  // 報酬率獨立一行、自己置中——不管上一行警示符號⚠️/🏆佔多寬，這行都不會被擠歪
+  const arTxt=ar!=null?`<div style="color:${{ar>=0?'#f87171':'#4ade80'}};font-weight:400;font-size:11px;margin-top:2px">${{ar>=0?'+':''}}${{ar.toFixed(2)}}%</div>`:'';
+  return`<td style="text-align:center;color:${{color}};font-weight:${{n>=30&&isBest?700:400}}" ${{title}}><div>${{wr.toFixed(1)}}%${{warn}}${{n>=30&&isBest?' 🏆':''}}</div>${{arTxt}}</td>`;
 }}
 function kCol(v){{return v>=78?'#f87171':v>=70?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
 function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
