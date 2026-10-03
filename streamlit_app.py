@@ -965,6 +965,18 @@ function wrCell(wr,n,isBest){{
   const title=n<10?`title="n=${{n}}，樣本太小，波動性極大，不能當作已驗證的訊號"`:n<30?`title="n=${{n}}，樣本偏小，數字可參考但信賴區間仍寬"`:'';
   return`<td style="text-align:center;color:${{color}};font-weight:${{n>=30&&isBest?700:400}}" ${{title}}>${{wr.toFixed(1)}}%${{warn}}${{n>=30&&isBest?' 🏆':''}}</td>`;
 }}
+// 月度/年度分析專用：勝率後面再附加平均報酬率，其他地方（熱圖、黃金出場、策略回測…）維持只顯示勝率
+function wrCellWithRet(wr,ar,n,isBest){{
+  if(n==null||n===0)return`<td style="text-align:center;color:#64748b">—</td>`;
+  if(wr==null)return`<td style="text-align:center;color:#64748b">—</td>`;
+  let color,warn='';
+  if(n<10){{color='#f87171';warn=' ⚠️';}}
+  else if(n<30){{color='#fbbf24';}}
+  else{{color=isBest?'#fbbf24':'#94a3b8';}}
+  const title=n<10?`title="n=${{n}}，樣本太小，波動性極大，不能當作已驗證的訊號"`:n<30?`title="n=${{n}}，樣本偏小，數字可參考但信賴區間仍寬"`:'';
+  const arTxt=ar!=null?` <span style="color:${{ar>=0?'#f87171':'#4ade80'}};font-weight:400;font-size:11px">(${{ar>=0?'+':''}}${{ar.toFixed(2)}}%)</span>`:'';
+  return`<td style="text-align:center;color:${{color}};font-weight:${{n>=30&&isBest?700:400}}" ${{title}}>${{wr.toFixed(1)}}%${{warn}}${{n>=30&&isBest?' 🏆':''}}${{arTxt}}</td>`;
+}}
 function kCol(v){{return v>=78?'#f87171':v>=70?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
 function cCol(v){{return v>=88?'#f87171':v>=75?'#fbbf24':v>=60?'#4ade80':'#64748b';}}
 function vcpCol(v){{return v>=70?'#f87171':v>=50?'#fbbf24':v>=30?'#4ade80':'#64748b';}}
@@ -1010,7 +1022,7 @@ function buildTabMonthly(){{
       const wrCells=hs.map(h=>{{
         const p=pts.find(x=>x.h===h);
         if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
-        return wrCell(p.wr,p.n,p.h===best.h);
+        return wrCellWithRet(p.wr,p.ar,p.n,p.h===best.h);
       }});
       return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}</tr>`;
     }}).filter(Boolean);
@@ -1054,7 +1066,7 @@ function buildTabMonthly(){{
       const wrCells=hs.map(h=>{{
         const p=pts.find(x=>x.h===h);
         if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
-        return wrCell(p.wr,p.n,p.h===best.h);
+        return wrCellWithRet(p.wr,p.ar,p.n,p.h===best.h);
       }});
       return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}</tr>`;
     }}).filter(Boolean);
