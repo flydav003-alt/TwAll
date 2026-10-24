@@ -1,25 +1,25 @@
 """
-backfill_strategy_kl.py
+backfill_strategy_mn.py
 ========================
-一次性回補腳本：掃描 daily_stock_snapshot 裡指定日期範圍(預設6/1~9/30)的歷史快照，
-用「現在版本」的 STRAT_K_LOWSWING_SETUP / STRAT_L_GENTLE_TURN 判斷條件重新跑一次，
+一次性回補腳本：掃描 daily_stock_snapshot 裡指定日期範圍(預設2026-06-01 ~ 今天)的歷史快照，
+用「現在版本」的 STRAT_M_HICOMP_LOWSWING / STRAT_N_MIDMID_RS85 判斷條件重新跑一次，
 把符合條件但當初尚未上線這兩個策略、所以沒被寫進 signal_events 的（日期,股票）補寫進去。
 
 不重抓 yfinance：daily_stock_snapshot 已經存了 kline_score/composite/swing_score/bb_score/
-rs_score/rs5d/volume_ratio/inst_buy_days 等策略K、L需要的全部欄位，直接讀出來重新判斷即可。
+rs_score/rs5d/volume_ratio/inst_buy_days 等策略M、N需要的全部欄位，直接讀出來重新判斷即可。
 唯一例外是 bb_consec_down_days 沒有獨立欄位，存在 raw_json 裡，用 json.loads 撈出來。
 
 用法：
-    python backfill_strategy_kl.py                     # 預設 2026-06-01 ~ 2026-09-30
-    python backfill_strategy_kl.py 2026-06-01 2026-09-30
-    python backfill_strategy_kl.py --dry-run            # 只印出會新增幾筆，不寫入
+    python backfill_strategy_mn.py                     # 預設 2026-06-01 ~ 今天
+    python backfill_strategy_mn.py 2026-06-01 2026-09-30
+    python backfill_strategy_mn.py --dry-run            # 只印出會新增幾筆，不寫入
 
 寫完新的 signal_events 之後，會自動：
     1. update_event_outcomes()      → 幫新事件補上 T+1~T+10 報酬（含超額報酬）
     2. backfill_excess_return()     → 補齊超額報酬缺漏
     3. refresh_summary_stats()      → 重建 summary_stats（近期訊號/門檻分析/分數熱圖用）
     4. refresh_monthly_strategy_stats() / refresh_yearly_strategy_stats() → 月度/年度策略表
-跑完後，網站的「策略組合回測」「月度分析」「近期訊號」分頁就會立刻看到 K、L 的完整歷史表現，
+跑完後，網站的「策略組合回測」「月度分析」「近期訊號」分頁就會立刻看到 M、N 的完整歷史表現，
 不需要再手動點什麼。
 """
 
@@ -36,20 +36,21 @@ from stats_db import (
     refresh_summary_stats, refresh_monthly_strategy_stats, refresh_yearly_strategy_stats,
 )
 
-TARGET_STRATS = ("STRAT_K_LOWSWING_SETUP", "STRAT_L_GENTLE_TURN")
+TARGET_STRATS = ("STRAT_M_HICOMP_LOWSWING", "STRAT_N_MIDMID_RS85")
 
 
 def _num(v):
     return None if v is None else float(v)
 
 
-def backfill(start_date="2026-06-01", end_date="2026-09-30", dry_run=False, db_path=DB_PATH):
+def backfill(start_date="2026-06-01", end_date=None, dry_run=False, db_path=DB_PATH):
+    end_date = end_date or datetime.now().strftime("%Y-%m-%d")
     conn = connect(db_path)
     init_db(conn)
 
     rows = conn.execute(
         """
-        SELECT trade_date, ticker, name, kline_score, composite_score, breakout_score,
+        SELECT trade_date, ticker, name, close_price, kline_score, composite_score, breakout_score,
                swing_score, bb_score, bb_setup, rs_score, vcp_status, entry_signal,
                rsi14, volume_ratio, rs5d, inst_buy_days, raw_json
         FROM daily_stock_snapshot
@@ -111,7 +112,7 @@ def backfill(start_date="2026-06-01", end_date="2026-09-30", dry_run=False, db_p
                 event_id, trade_date, ticker, r["name"], strat_event_type, "strategy_combo",
                 _num(r["kline_score"]), _num(r["composite_score"]), k_bucket, c_bucket,
                 _num(r["breakout_score"]), b_bucket, _num(r["swing_score"]), sw_bucket,
-                None, "next_open", "open", SCORE_VERSION, now,
+                _num(r["close_price"]), "next_open", "open", SCORE_VERSION, now,
                 _num(r["bb_score"]), bb_bucket, r["bb_setup"],
                 _num(r["rs_score"]), rs_bucket, _num(r["rs5d"]), rs5d_bucket,
                 _num(r["volume_ratio"]), vol_ratio_bucket,
@@ -165,12 +166,12 @@ def backfill(start_date="2026-06-01", end_date="2026-09-30", dry_run=False, db_p
     refresh_yearly_strategy_stats(conn)
     conn.commit()
     conn.close()
-    print("[完成] 策略K、L歷史回補完成，網站統計頁面重新整理後即可看到完整表現。")
+    print("[完成] 策略M、N歷史回補完成，網站統計頁面重新整理後即可看到完整表現。")
 
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry_run = "--dry-run" in sys.argv
     start = args[0] if len(args) > 0 else "2026-06-01"
-    end = args[1] if len(args) > 1 else "2026-09-30"
+    end = args[1] if len(args) > 1 else None
     backfill(start, end, dry_run=dry_run)
