@@ -773,6 +773,17 @@ def classify_strategy_events(kline_score, composite_score, breakout_score, swing
             and volume_ratio is not None and volume_ratio < 1.0
             and inst_buy_days is not None and 1 <= inst_buy_days <= 3):
         events.append("STRAT_L_GENTLE_TURN")
+    # 策略M：高綜合分+低波段分 — 綜合分>=88，但波段分<30(沒有「強勢股拉回」結構，
+    # 偏純動能/噴出型)。來自事後多維度回測(2026/10)，屬事後發現的組合，樣本累積前請謹慎看待。
+    if (composite_score is not None and composite_score >= 88
+            and swing_score is not None and swing_score < 30):
+        events.append("STRAT_M_HICOMP_LOWSWING")
+    # 策略N：突破分30~49 + 波段分30~49(皆為 C_30_49 中段) + RS>=85。
+    # 同樣來自事後回測，RS85+在T+10偏弱的疑慮仍在。
+    if (rs_score is not None and rs_score >= 85
+            and breakout_score is not None and 30 <= breakout_score < 50
+            and swing_score is not None and 30 <= swing_score < 50):
+        events.append("STRAT_N_MIDMID_RS85")
     return events
 
 
@@ -1396,6 +1407,71 @@ def backfill_excess_return(conn, verbose=True):
     return {"updated": updated, "skipped": skipped, "skip_samples": skip_samples}
 
 
+def backfill_strategy_mn(conn):
+    """
+    一次性回補：用 daily_stock_snapshot 既有歷史快照補出策略M/N過去符合條件的 signal_events，
+    再結算 T+1~T+10 與超額報酬並重建統計。可重複執行（INSERT OR IGNORE）。
+    注意：快照只含當時通過 fetch_data.py 入庫門檻的股票，門檻外的樣本無法回補。
+    """
+    rows = conn.execute(
+        """
+        SELECT * FROM daily_stock_snapshot
+        WHERE (composite_score >= 88 AND swing_score < 30)
+           OR (rs_score >= 85 AND breakout_score >= 30 AND breakout_score < 50
+               AND swing_score >= 30 AND swing_score < 50)
+        """
+    ).fetchall()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    added = 0
+    for r in rows:
+        evs = classify_strategy_events(
+            r["kline_score"], r["composite_score"], r["breakout_score"], r["swing_score"],
+            r["rs_score"], r["vcp_status"], r["entry_signal"] or "",
+            r["bb_score"], r["bb_setup"], None,
+            rsi14=r["rsi14"], volume_ratio=r["volume_ratio"], rs5d=r["rs5d"],
+            inst_buy_days=r["inst_buy_days"],
+        )
+        for et in evs:
+            if et not in ("STRAT_M_HICOMP_LOWSWING", "STRAT_N_MIDMID_RS85"):
+                continue
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO signal_events (
+                    event_id, trade_date, ticker, name, event_type, trigger_source,
+                    kline_score, composite_score, kline_bucket, composite_bucket,
+                    breakout_score, breakout_bucket, swing_score, swing_bucket,
+                    entry_reference_close, entry_price_mode, status, score_version, created_at,
+                    bb_score, bb_bucket, bb_setup,
+                    rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket, rsi14,
+                    vcp_status, entry_signal, inst_buy_days
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    f"{r['trade_date']}:{r['ticker']}:{et}", r["trade_date"], r["ticker"], r["name"],
+                    et, "strategy_combo",
+                    r["kline_score"], r["composite_score"], bucket_kline(r["kline_score"]),
+                    bucket_composite(r["composite_score"]),
+                    r["breakout_score"], bucket_breakout(r["breakout_score"]),
+                    r["swing_score"], bucket_swing(r["swing_score"]),
+                    r["close_price"], "next_open", "open", SCORE_VERSION, now,
+                    r["bb_score"], bucket_bb(r["bb_score"]), r["bb_setup"],
+                    r["rs_score"], bucket_rs(r["rs_score"]), r["rs5d"], bucket_rs5d(r["rs5d"]),
+                    r["volume_ratio"], bucket_volume_ratio(r["volume_ratio"]), r["rsi14"],
+                    r["vcp_status"], r["entry_signal"] or "", int(r["inst_buy_days"] or 0),
+                ),
+            )
+            added += cur.rowcount
+    conn.commit()
+    update_event_outcomes(conn)
+    backfill_excess_return(conn)
+    refresh_summary_stats(conn)
+    refresh_monthly_strategy_stats(conn)
+    refresh_yearly_strategy_stats(conn)
+    conn.commit()
+    print(f"[策略M/N回補完成] 新增事件={added}")
+    return added
+
+
 def _median(vals):
     vals = sorted(vals)
     if not vals:
@@ -1457,6 +1533,7 @@ def refresh_monthly_strategy_stats(conn):
         "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
         "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
         "STRAT_K_LOWSWING_SETUP", "STRAT_L_GENTLE_TURN",
+        "STRAT_M_HICOMP_LOWSWING", "STRAT_N_MIDMID_RS85",
     )
 
     # 每個月「最後一筆訊號」的日期，用來判斷該月是否已經熟成
@@ -1546,6 +1623,7 @@ def refresh_yearly_strategy_stats(conn):
         "STRAT_E_BB", "STRAT_F_MEANREV", "STRAT_G_RS_PULLBACK", "STRAT_H_RS_VOLDRY",
         "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
         "STRAT_K_LOWSWING_SETUP", "STRAT_L_GENTLE_TURN",
+        "STRAT_M_HICOMP_LOWSWING", "STRAT_N_MIDMID_RS85",
     )
     rows = conn.execute(
         """
@@ -1835,6 +1913,11 @@ def export_stats_payload(db_path=DB_PATH):
          "e.kline_score < 60 AND e.rs_score >= 50 AND e.rs_score < 70 "
          "AND e.rs5d >= 0 AND e.rs5d < 10 AND e.volume_ratio < 1.0 "
          "AND e.inst_buy_days >= 1 AND e.inst_buy_days <= 3"),
+        ("策略M：綜合分>=88+波段分<30",
+         "e.composite_score >= 88 AND e.swing_score < 30"),
+        ("策略N：突破分30-49+波段分30-49+RS>=85",
+         "e.breakout_score >= 30 AND e.breakout_score < 50 "
+         "AND e.swing_score >= 30 AND e.swing_score < 50 AND e.rs_score >= 85"),
     ]
     for label, where_sql in threshold_defs:
         rows = conn.execute(
