@@ -209,10 +209,11 @@ def fetch_tw_ticker(stock_id: str, name: str = ""):
         base["volume_ratio"] = round(base["volume_today"] / base["volume_avg20"], 2)
     base["ma5"]  = round(float(closes.iloc[-5:].mean()), 2)
     base["ma20"] = round(float(closes.iloc[-20:].mean()), 2)
+    # MA60 只在K線滿60根時才計算。以前不足60根會退而用「現有全部收盤的平均」當ma60，
+    # 那其實不是MA60，會污染 price_vs_ma60_pct（策略O的0~5%區間最容易被這種假值混進來）。
+    # 不足60根改為 None，tw_screener_core 的 B2回踩MA20 備用邏輯與MA60評分都已處理None。
     if len(closes) >= 60:
         base["ma60"] = round(float(closes.iloc[-60:].mean()), 2)
-    elif len(closes) >= 20:
-        base["ma60"] = round(float(closes.mean()), 2)
     base["ma120"] = calc_ma120(closes)
 
     if base["ma20"] and base["price"]:
