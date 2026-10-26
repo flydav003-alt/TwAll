@@ -253,6 +253,45 @@ def init_db(conn):
         ("rs_bucket", "TEXT"), ("rs5d_bucket", "TEXT"), ("volume_ratio_bucket", "TEXT"),
     ])
 
+    # ── 新增欄位：MA60乖離(price_vs_ma60_pct)與其分級 ──
+    # price_vs_ma60_pct 其實一直存在 daily_stock_snapshot（fetch_data.py 每天都有算），
+    # 但原本沒有寫進 signal_events，分析時每次都得 JOIN 快照表。現在補上原始值+bucket，
+    # 讓 single_ma60 / cross_*_ma60 與策略O都能直接用。
+    _ensure_columns(conn, "signal_events", [
+        ("price_vs_ma60_pct", "REAL"), ("ma60_bucket", "TEXT"),
+    ])
+    _ensure_columns(conn, "summary_stats", [
+        ("ma60_bucket", "TEXT"),
+    ])
+    # 舊事件從同日快照安全回填（只補 NULL，不覆蓋已有值；可重複執行）。
+    conn.execute(
+        """
+        UPDATE signal_events
+        SET price_vs_ma60_pct = (
+            SELECT d.price_vs_ma60_pct FROM daily_stock_snapshot d
+            WHERE d.trade_date = signal_events.trade_date AND d.ticker = signal_events.ticker
+        )
+        WHERE price_vs_ma60_pct IS NULL
+          AND EXISTS (
+            SELECT 1 FROM daily_stock_snapshot d
+            WHERE d.trade_date = signal_events.trade_date AND d.ticker = signal_events.ticker
+              AND d.price_vs_ma60_pct IS NOT NULL
+          )
+        """
+    )
+    conn.execute(
+        """
+        UPDATE signal_events
+        SET ma60_bucket = CASE
+            WHEN price_vs_ma60_pct < 0 THEN 'D_LT0'
+            WHEN price_vs_ma60_pct <= 5 THEN 'A_0_5'
+            WHEN price_vs_ma60_pct <= 10 THEN 'B_5_10'
+            ELSE 'C_GT10'
+        END
+        WHERE ma60_bucket IS NULL AND price_vs_ma60_pct IS NOT NULL
+        """
+    )
+
     # ── 新增欄位：月度策略統計要用的年月 + 熟成狀態 ──
     # 不塞進event_type複合字串，用獨立欄位查詢/排序才不容易出錯。
     _ensure_columns(conn, "summary_stats", [
@@ -624,7 +663,22 @@ def bucket_volume_ratio(score):
     return "D_LT1"
 
 
-# 八項分數維度的通用定義，供 summary_stats 的單維 / 交叉維度統計共用
+def bucket_ma60(pct):
+    """MA60乖離%（收盤價相對MA60的位置）分級。跟前面幾個分數不同，這個是「位置」不是「分數」，
+    A = 站上MA60 0~5%（貼著季線上方，策略O的條件區間）、B = 5~10%、C = 10%以上（離季線太遠）、
+    D = 跌破MA60。實測（2026/10，n仍薄）離MA60越遠、T+5勝率越低，但屬早期觀察，持續驗證中。"""
+    if pct is None:
+        return "NA"
+    if pct < 0:
+        return "D_LT0"
+    if pct <= 5:
+        return "A_0_5"
+    if pct <= 10:
+        return "B_5_10"
+    return "C_GT10"
+
+
+# 九項維度的通用定義，供 summary_stats 的單維 / 交叉維度統計共用
 SCORE_DIMS = {
     "kline":         {"bucket_col": "kline_bucket",         "label": "K線分"},
     "composite":     {"bucket_col": "composite_bucket",     "label": "綜合分"},
@@ -634,6 +688,7 @@ SCORE_DIMS = {
     "rs":            {"bucket_col": "rs_bucket",             "label": "RS分"},
     "rs5d":          {"bucket_col": "rs5d_bucket",           "label": "RS5日分"},
     "volume_ratio":  {"bucket_col": "volume_ratio_bucket",   "label": "量比"},
+    "ma60":          {"bucket_col": "ma60_bucket",           "label": "MA60位置"},
 }
 CROSS_PAIRS = [
     ("kline", "composite"), ("kline", "breakout"), ("kline", "swing"), ("kline", "bb"),
@@ -642,6 +697,9 @@ CROSS_PAIRS = [
     # 新增：只挑實測有互補資訊量的兩組，不把8個維度做滿28組排列組合
     ("rs5d", "volume_ratio"),   # 加速度 x 量能，對應「怎麼搭配看」的實測發現
     ("rs", "kline"),            # 驗證RS分獨立於K線分之外還有沒有邊際貢獻
+    # MA60位置只配兩組：RS（策略O的核心搭配）與BB（O的另一個條件），不把9個維度做滿
+    ("bb", "ma60"),
+    ("rs", "ma60"),
 ]
 
 
@@ -688,6 +746,8 @@ def classify_signal(kline_score, composite_score, breakout_score=None, swing_sco
 #   D：純綜合分基準線 — 你原本習慣的做法，用來當A、B有沒有真的比較好的比較基準
 #   E：BB時機濾網族 — 不看RS門檻，純粹用BB分本身的三選一setup(下軌反轉/擠壓/突破)
 #      當進場條件，驗證「BB分單獨使用」的時機濾網有沒有比D這個基準線更早/更準
+# 策略O正式上線日：此日(含)之後的O事件屬樣本外；之前的是用快照回補的樣本內資料。
+STRAT_O_LIVE_DATE = "2026-10-26"
 STRAT_VCP_OK_STATUS = ("高品質整理", "接近突破", "已突破")
 STRAT_BB_OK_SETUP = ("lower_reversal", "squeeze_consolidation", "upper_breakout")
 
@@ -695,7 +755,8 @@ STRAT_BB_OK_SETUP = ("lower_reversal", "squeeze_consolidation", "upper_breakout"
 def classify_strategy_events(kline_score, composite_score, breakout_score, swing_score,
                               rs_score, vcp_status, entry_signal,
                               bb_score=None, bb_setup=None, bb_consec_down_days=None,
-                              rsi14=None, volume_ratio=None, rs5d=None, inst_buy_days=None):
+                              rsi14=None, volume_ratio=None, rs5d=None, inst_buy_days=None,
+                              price_vs_ma60_pct=None):
     events = []
     if (rs_score is not None and rs_score >= 85
             and breakout_score is not None and breakout_score >= 60
@@ -784,6 +845,15 @@ def classify_strategy_events(kline_score, composite_score, breakout_score, swing
             and breakout_score is not None and 30 <= breakout_score < 50
             and swing_score is not None and 30 <= swing_score < 50):
         events.append("STRAT_N_MIDMID_RS85")
+    # 策略O：低BB分 + RS70~84 + 貼著MA60上方0~5%。來自2026/10事後回測：同樣是「BB分<30 + RS70~84」，
+    # 站上MA60 0~5%的組合明顯優於離MA60較遠(>10%)的組合，MA60位置看起來有區分力。
+    # ⚠ 同樣是事後挑出的組合(多重比較偏誤)，且與策略D(綜合分>=75)高度重疊(約65%事件同時屬於D)、
+    #   成績集中在大盤轉強的月份，對大盤的超額報酬接近0。2026/10/26起為「上線後樣本外」，
+    #   之前的資料是回補(樣本內)，看統計時請以 STRAT_O_LIVE_DATE 切開判讀。
+    if (bb_score is not None and bb_score < 30
+            and rs_score is not None and 70 <= rs_score < 85
+            and price_vs_ma60_pct is not None and 0 <= price_vs_ma60_pct <= 5):
+        events.append("STRAT_O_BB_MA60")
     return events
 
 
@@ -829,6 +899,8 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
         rs_bucket = bucket_rs(rs)
         rs5d_bucket = bucket_rs5d(rs5d)
         vol_ratio_bucket = bucket_volume_ratio(vol_ratio)
+        ma60_pct = s.get("price_vs_ma60_pct")   # 收盤相對MA60乖離%
+        ma60_bucket = bucket_ma60(ma60_pct)
         event_type, trigger_source = classify_signal(kline, comp, breakout, swing, bb)
         patterns = json.dumps(s.get("patterns", []), ensure_ascii=False, default=str)
 
@@ -874,8 +946,9 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         entry_reference_close, entry_price_mode, status, score_version, created_at,
                         bb_score, bb_bucket, bb_setup,
                         rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket, rsi14,
-                        vcp_status, entry_signal, inst_buy_days
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        vcp_status, entry_signal, inst_buy_days,
+                        price_vs_ma60_pct, ma60_bucket
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         event_id, trade_date, ticker, s.get("name"), event_type, trigger_source,
@@ -885,6 +958,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         _num(bb), bb_bucket, bb_setup,
                         _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
                         _num(s.get("rsi14")), vcp_status, s.get("entry_signal", ""), int(s.get("inst_buy_days") or 0),
+                        _num(ma60_pct), ma60_bucket,
                     ),
                 )
 
@@ -894,6 +968,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                 bb, bb_setup, s.get("bb_consec_down_days"),
                 rsi14=s.get("rsi14"), volume_ratio=vol_ratio,
                 rs5d=rs5d, inst_buy_days=s.get("inst_buy_days"),
+                price_vs_ma60_pct=ma60_pct,
             )
             for strat_event_type in strat_events:
                 strat_event_id = f"{trade_date}:{ticker}:{strat_event_type}"
@@ -906,8 +981,9 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         entry_reference_close, entry_price_mode, status, score_version, created_at,
                         bb_score, bb_bucket, bb_setup,
                         rs_score, rs_bucket, rs5d, rs5d_bucket, volume_ratio, volume_ratio_bucket, rsi14,
-                        vcp_status, entry_signal, inst_buy_days
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        vcp_status, entry_signal, inst_buy_days,
+                        price_vs_ma60_pct, ma60_bucket
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         strat_event_id, trade_date, ticker, s.get("name"), strat_event_type, "strategy_combo",
@@ -917,6 +993,7 @@ def save_daily_run(results, generated_at=None, db_path=DB_PATH, market_info=None
                         _num(bb), bb_bucket, bb_setup,
                         _num(rs), rs_bucket, _num(rs5d), rs5d_bucket, _num(vol_ratio), vol_ratio_bucket,
                         _num(s.get("rsi14")), vcp_status, s.get("entry_signal", ""), int(s.get("inst_buy_days") or 0),
+                        _num(ma60_pct), ma60_bucket,
                     ),
                 )
 
@@ -1517,7 +1594,7 @@ def backfill_rs_fields(conn):
 def refresh_monthly_strategy_stats(conn):
     """
     月度策略勝率彙總：group_name='monthly_event_type'，多一個 year_month 欄位。
-    只統計 STRAT_A~I 這幾個「策略組合回測」用的分類(不含ENTRY/BOTH_STRONG等舊版雙分訊號)，
+    只統計 STRAT_A~O 這幾個「策略組合回測」用的分類(不含ENTRY/BOTH_STRONG等舊版雙分訊號)，
     月度視角本來就是要比較策略優劣，混入其他分類只會讓表格失焦。
 
     「這個月能不能顯示」的規則：不是看今天日期有沒有過完這個月，是看「這個月最後一筆訊號的
@@ -1534,6 +1611,7 @@ def refresh_monthly_strategy_stats(conn):
         "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
         "STRAT_K_LOWSWING_SETUP", "STRAT_L_GENTLE_TURN",
         "STRAT_M_HICOMP_LOWSWING", "STRAT_N_MIDMID_RS85",
+        "STRAT_O_BB_MA60",
     )
 
     # 每個月「最後一筆訊號」的日期，用來判斷該月是否已經熟成
@@ -1624,6 +1702,7 @@ def refresh_yearly_strategy_stats(conn):
         "STRAT_I_RS_MOMENTUM", "STRAT_J_RS_COOLDOWN",
         "STRAT_K_LOWSWING_SETUP", "STRAT_L_GENTLE_TURN",
         "STRAT_M_HICOMP_LOWSWING", "STRAT_N_MIDMID_RS85",
+        "STRAT_O_BB_MA60",
     )
     rows = conn.execute(
         """
@@ -1709,7 +1788,8 @@ def refresh_summary_stats(conn):
                MAX(e.kline_bucket) AS kline_bucket, MAX(e.composite_bucket) AS composite_bucket,
                MAX(e.breakout_bucket) AS breakout_bucket, MAX(e.swing_bucket) AS swing_bucket,
                MAX(e.bb_bucket) AS bb_bucket, MAX(e.rs_bucket) AS rs_bucket,
-               MAX(e.rs5d_bucket) AS rs5d_bucket, MAX(e.volume_ratio_bucket) AS volume_ratio_bucket
+               MAX(e.rs5d_bucket) AS rs5d_bucket, MAX(e.volume_ratio_bucket) AS volume_ratio_bucket,
+               MAX(e.ma60_bucket) AS ma60_bucket
         FROM event_outcomes o
         JOIN signal_events e ON e.event_id = o.event_id
         GROUP BY e.trade_date, e.ticker, o.horizon
@@ -1721,8 +1801,9 @@ def refresh_summary_stats(conn):
         "kline": "kline_bucket", "composite": "composite_bucket",
         "breakout": "breakout_bucket", "swing": "swing_bucket", "bb": "bb_bucket",
         "rs": "rs_bucket", "rs5d": "rs5d_bucket", "volume_ratio": "volume_ratio_bucket",
+        "ma60": "ma60_bucket",
     }
-    DIM_ORDER = ["kline", "composite", "breakout", "swing", "bb", "rs", "rs5d", "volume_ratio"]
+    DIM_ORDER = ["kline", "composite", "breakout", "swing", "bb", "rs", "rs5d", "volume_ratio", "ma60"]
     NA8 = {d: "NA" for d in DIM_ORDER}
 
     groups = {}
@@ -1742,6 +1823,8 @@ def refresh_summary_stats(conn):
     for r in rows_unique_signal:
         h = r["horizon"]
         buckets = {dim: r[ROW_BUCKET_COL[dim]] for dim in DIM_ORDER}
+        # 舊事件若沒有MA60資料(NULL)，歸入 NA 組，不要讓 None 變成字串 "None" 的分組
+        buckets["ma60"] = buckets["ma60"] or "NA"
 
         # single_<dim> 分組
         for dim in DIM_ORDER:
@@ -1757,7 +1840,7 @@ def refresh_summary_stats(conn):
             add((f"cross_{a}_{b}", None) + key_tuple(key_buckets) + (h,), r)
 
     for key, items in groups.items():
-        group_name, event_type, kb, cb, brk_b, sw_b, bb_b, rs_b, rs5d_b, vr_b, horizon = key
+        group_name, event_type, kb, cb, brk_b, sw_b, bb_b, rs_b, rs5d_b, vr_b, ma_b, horizon = key
         vals = [float(x["return_close_pct"]) for x in items if x["return_close_pct"] is not None]
         if not vals:
             continue
@@ -1769,22 +1852,22 @@ def refresh_summary_stats(conn):
         # 這裡只用已經有值的樣本算，欄位本身允許比 sample_count 更少（不強制對齊）。
         excess_vals = [float(x["excess_return_pct"]) for x in items if x["excess_return_pct"] is not None]
         excess_wins = [v for v in excess_vals if v > 0]
-        stat_key = f"{group_name}:{event_type}:{kb}:{cb}:{brk_b}:{sw_b}:{bb_b}:{rs_b}:{rs5d_b}:{vr_b}:T{horizon}"
+        stat_key = f"{group_name}:{event_type}:{kb}:{cb}:{brk_b}:{sw_b}:{bb_b}:{rs_b}:{rs5d_b}:{vr_b}:{ma_b}:T{horizon}"
         conn.execute(
             """
             INSERT INTO summary_stats (
                 stat_key, group_name, event_type, kline_bucket, composite_bucket,
                 breakout_bucket, swing_bucket, bb_bucket,
-                rs_bucket, rs5d_bucket, volume_ratio_bucket,
+                rs_bucket, rs5d_bucket, volume_ratio_bucket, ma60_bucket,
                 horizon, sample_count, win_rate, avg_return, median_return,
                 avg_win, avg_loss, profit_factor, max_return, min_return,
                 avg_max_gain, avg_max_drawdown,
                 avg_excess_return, median_excess_return, excess_win_rate, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 stat_key, group_name, event_type, kb, cb, brk_b, sw_b, bb_b,
-                rs_b, rs5d_b, vr_b, horizon,
+                rs_b, rs5d_b, vr_b, ma_b, horizon,
                 len(vals), round(len(wins) / len(vals) * 100, 1),
                 round(sum(vals) / len(vals), 2), _median(vals),
                 round(sum(wins) / len(wins), 2) if wins else None,
@@ -1836,6 +1919,7 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(e.rs5d) AS rs5d,
                MAX(e.rsi14) AS rsi14,
                MAX(e.volume_ratio) AS volume_ratio,
+               MAX(e.price_vs_ma60_pct) AS price_vs_ma60_pct,
                MAX(e.entry_reference_close) AS entry_reference_close,
                MAX(e.entry_price) AS entry_price,
                MAX(e.entry_date) AS entry_date,
@@ -1918,6 +2002,14 @@ def export_stats_payload(db_path=DB_PATH):
         ("策略N：突破分30-49+波段分30-49+RS>=85",
          "e.breakout_score >= 30 AND e.breakout_score < 50 "
          "AND e.swing_score >= 30 AND e.swing_score < 50 AND e.rs_score >= 85"),
+        ("策略O：BB分<30+RS70-84+MA60上方0~5%",
+         "e.bb_score < 30 AND e.rs_score >= 70 AND e.rs_score < 85 "
+         "AND e.price_vs_ma60_pct >= 0 AND e.price_vs_ma60_pct <= 5"),
+        ("策略O對照：BB分<30+RS70-84(不看MA60)",
+         "e.bb_score < 30 AND e.rs_score >= 70 AND e.rs_score < 85"),
+        ("策略O對照：BB分<30+RS70-84+MA60上方>10%",
+         "e.bb_score < 30 AND e.rs_score >= 70 AND e.rs_score < 85 AND e.price_vs_ma60_pct > 10"),
+        ("MA60上方0~5%（單獨看位置）", "e.price_vs_ma60_pct >= 0 AND e.price_vs_ma60_pct <= 5"),
     ]
     for label, where_sql in threshold_defs:
         rows = conn.execute(
