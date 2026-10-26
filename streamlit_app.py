@@ -133,6 +133,7 @@ def main():
             s.get("bb_consec_down_days"), rsi14=s.get("rsi14"),
             volume_ratio=s.get("volume_ratio"), rs5d=s.get("rs5d"),
             inst_buy_days=s.get("inst_buy_days"),
+            price_vs_ma60_pct=s.get("price_vs_ma60_pct"),
         ))
         rows.append({
             "ticker":   s["ticker"],
@@ -168,6 +169,7 @@ def main():
             "rs5d":     s.get("rs5d"),
             "rs":       s.get("rs_score"),
             "inst":     s.get("inst_buy_days",0) or 0,
+            "ma60":     s.get("price_vs_ma60_pct"),
             "signal":   s.get("entry_signal",""),
             "sig_rank": SIG_RANK.get(s.get("entry_signal",""),0),
             "event_types": event_types,
@@ -568,7 +570,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
     <option value="STRAT_G_RS_PULLBACK">策略G強勢回檔</option><option value="STRAT_H_RS_VOLDRY">策略H強勢量縮</option>
     <option value="STRAT_I_RS_MOMENTUM">策略I中強動能</option><option value="STRAT_J_RS_COOLDOWN">策略J中強降溫</option>
     <option value="STRAT_K_LOWSWING_SETUP">策略K低波段蓄勢</option><option value="STRAT_L_GENTLE_TURN">策略L溫和轉強蓄勢</option>
-    <option value="STRAT_M_HICOMP_LOWSWING">策略M高綜低波段</option><option value="STRAT_N_MIDMID_RS85">策略N中段雙分RS85</option>
+    <option value="STRAT_M_HICOMP_LOWSWING">策略M高綜低波段</option><option value="STRAT_N_MIDMID_RS85">策略N中段雙分RS85</option><option value="STRAT_O_BB_MA60">策略O低BB站上季線</option>
   </select>
   <div class="sl-grp">
     <span class="sl-lbl">K線分</span>
@@ -663,6 +665,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
   <th class="sortable" data-k="rs5d">RS(5日)<span class="arr"></span></th>
   <th class="sortable" data-k="rs">RS分<span class="arr"></span></th>
   <th class="sortable" data-k="inst">法人<span class="arr"></span></th>
+  <th class="sortable" data-k="ma60" title="收盤價相對MA60(季線)的乖離%。金色0~5%=貼著季線上方(策略O區間)">MA60%<span class="arr"></span></th>
   <th>訊號</th>
   <th class="sortable" data-k="sig_rank">今日訊號<span class="arr"></span></th>
   <th class="sortable" data-k="vcp_status_rank">VCP狀態<span class="arr"></span></th>
@@ -689,6 +692,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
         <tr><td>爆量</td><td>1.5x 橘色警示；2.0x+ 紅色強訊號</td></tr>
         <tr><td>RSI</td><td>≥70 紅（過熱）；50~70 黃（偏強）；≤30 綠（超賣）</td></tr>
         <tr><td>法人</td><td>+3以上深紅強買；-3以下深綠強賣</td></tr>
+        <tr><td>MA60%</td><td>收盤價相對MA60(季線)的乖離。<span style="color:#fbbf24">金色 0~5%</span>＝貼著季線上方(策略O區間)；<span style="color:#4ade80">綠色負值</span>＝跌破季線；灰色＝站上5%以上，&gt;10%偏遠。K線不足60根時顯示「-」</td></tr>
         <tr><td>RS(5日)</td><td>個股5日漲跌 − 加權指數5日漲跌（超額報酬）</td></tr>
         <tr><td>A 法人爆量</td><td>法人連買≥3天 且 爆量≥1.5倍</td></tr>
         <tr><td>B 回踩MA60</td><td>股價在MA60附近、RSI 32~55、MA20上升中</td></tr>
@@ -864,6 +868,15 @@ function fInst(v){{
   if(v<0)return`<span class="is">${{v}}</span>`;
   return'<span class="iz">0</span>';
 }}
+function fMa60(v){{
+  if(v==null||isNaN(v))return'<span class="iz">-</span>';
+  v=Number(v);
+  const t=(v>=0?'+':'')+v.toFixed(1)+'%';
+  if(v<0)return`<span style="color:#4ade80" title="跌破MA60(季線)">${{t}}</span>`;
+  if(v<=5)return`<span style="color:#fbbf24;font-weight:700" title="貼著MA60上方0~5%（策略O區間）">${{t}}</span>`;
+  if(v<=10)return`<span style="color:#94a3b8" title="站上MA60 5~10%">${{t}}</span>`;
+  return`<span style="color:#64748b" title="離MA60偏遠(&gt;10%)，實測勝率偏低">${{t}}</span>`;
+}}
 function fSig(s){{
   if(!s)return'';
   return`<span class="sg ${{SC[s]||'s4'}}">${{s}}</span>`;
@@ -924,11 +937,11 @@ const _TICK={{color:'#94a3b8'}};
 const _BASE_SCALE={{x:{{grid:_GRID,ticks:_TICK}},y:{{grid:_GRID,ticks:_TICK}}}};
 const _NO_LEGEND={{legend:{{display:false}}}};
 
-const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分',STRAT_F_MEANREV:'策略F均值回歸',STRAT_G_RS_PULLBACK:'策略G強勢回檔',STRAT_H_RS_VOLDRY:'策略H強勢量縮',STRAT_I_RS_MOMENTUM:'策略I中強動能',STRAT_J_RS_COOLDOWN:'策略J中強降溫',STRAT_K_LOWSWING_SETUP:'策略K低波段蓄勢',STRAT_L_GENTLE_TURN:'策略L溫和轉強蓄勢',STRAT_M_HICOMP_LOWSWING:'策略M高綜低波段',STRAT_N_MIDMID_RS85:'策略N中段雙分RS85'}};
+const ETYPE_LBL={{BOTH_STRONG:'雙強',ENTRY:'雙分進場',COMP_STRONG_K_LOW:'綜強K低',COMP_HIGH_K_LOW:'綜高K低',K_STRONG_COMP_LOW:'K強綜低',K_HIGH_COMP_LOW:'K高綜低',BREAKOUT_SWING_STRONG:'突破波段雙強',BREAKOUT_STRONG:'突破強',SWING_STRONG:'波段強',BB_CONFIRMED_STRONG:'BB確認強',BB_STRONG:'BB強',WATCH_CONFIRMED:'觀察確認',STRAT_A_BREAKOUT:'策略A突破族',STRAT_B_SWING:'策略B波段族',STRAT_C_KLINE:'策略C純K線',STRAT_D_COMPOSITE:'策略D純綜合分',STRAT_E_BB:'策略E純BB分',STRAT_F_MEANREV:'策略F均值回歸',STRAT_G_RS_PULLBACK:'策略G強勢回檔',STRAT_H_RS_VOLDRY:'策略H強勢量縮',STRAT_I_RS_MOMENTUM:'策略I中強動能',STRAT_J_RS_COOLDOWN:'策略J中強降溫',STRAT_K_LOWSWING_SETUP:'策略K低波段蓄勢',STRAT_L_GENTLE_TURN:'策略L溫和轉強蓄勢',STRAT_M_HICOMP_LOWSWING:'策略M高綜低波段',STRAT_N_MIDMID_RS85:'策略N中段雙分RS85',STRAT_O_BB_MA60:'策略O低BB站上季線'}};
 const ET_COLORS=['#3b82f6','#6366f1','#06b6d4','#f59e0b','#f87171','#4ade80','#a78bfa','#fb923c','#2dd4bf'];
 // 十二策略組合回測：D 當基準線放最前面，接著是無RS門檻的純分數對照組C，接著是有結構驗證的A、B、E，均值回歸F，RS系列G/H/I/J，最後是窮舉回測發現的K、L
-const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB','STRAT_F_MEANREV','STRAT_G_RS_PULLBACK','STRAT_H_RS_VOLDRY','STRAT_I_RS_MOMENTUM','STRAT_J_RS_COOLDOWN','STRAT_K_LOWSWING_SETUP','STRAT_L_GENTLE_TURN','STRAT_M_HICOMP_LOWSWING','STRAT_N_MIDMID_RS85'];
-const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf',STRAT_F_MEANREV:'#60a5fa',STRAT_G_RS_PULLBACK:'#fb923c',STRAT_H_RS_VOLDRY:'#e879f9',STRAT_I_RS_MOMENTUM:'#facc15',STRAT_J_RS_COOLDOWN:'#38bdf8',STRAT_K_LOWSWING_SETUP:'#34d399',STRAT_L_GENTLE_TURN:'#f472b6',STRAT_M_HICOMP_LOWSWING:'#a3e635',STRAT_N_MIDMID_RS85:'#fb7185'}};
+const STRAT_ORDER=['STRAT_D_COMPOSITE','STRAT_C_KLINE','STRAT_A_BREAKOUT','STRAT_B_SWING','STRAT_E_BB','STRAT_F_MEANREV','STRAT_G_RS_PULLBACK','STRAT_H_RS_VOLDRY','STRAT_I_RS_MOMENTUM','STRAT_J_RS_COOLDOWN','STRAT_K_LOWSWING_SETUP','STRAT_L_GENTLE_TURN','STRAT_M_HICOMP_LOWSWING','STRAT_N_MIDMID_RS85','STRAT_O_BB_MA60'];
+const STRAT_COLORS={{STRAT_D_COMPOSITE:'#94a3b8',STRAT_C_KLINE:'#f87171',STRAT_A_BREAKOUT:'#4ade80',STRAT_B_SWING:'#a78bfa',STRAT_E_BB:'#2dd4bf',STRAT_F_MEANREV:'#60a5fa',STRAT_G_RS_PULLBACK:'#fb923c',STRAT_H_RS_VOLDRY:'#e879f9',STRAT_I_RS_MOMENTUM:'#facc15',STRAT_J_RS_COOLDOWN:'#38bdf8',STRAT_K_LOWSWING_SETUP:'#34d399',STRAT_L_GENTLE_TURN:'#f472b6',STRAT_M_HICOMP_LOWSWING:'#a3e635',STRAT_N_MIDMID_RS85:'#fb7185',STRAT_O_BB_MA60:'#d6a35c'}};
 
 function labelEvent(v){{return ETYPE_LBL[v]||v||'-';}}
 function eventList(r){{
@@ -1190,9 +1203,10 @@ const DIM_DEFS={{
   rs:{{label:'RS分',field:'rs_bucket',note:'實測樣本尚薄：85+在部分天期反而較差，非越高越好，仍持續累積驗證中',buckets:[{{k:'A_85UP',lbl:'RS≥85'}},{{k:'B_70_84',lbl:'RS70~84'}},{{k:'C_50_69',lbl:'RS50~69'}},{{k:'D_LT50',lbl:'RS<50'}}]}},
   rs5d:{{label:'RS5日分',field:'rs5d_bucket',note:'短期相對強度加速度，理論上越高代表轉強越快，樣本仍薄，尚待驗證',buckets:[{{k:'A_20UP',lbl:'≥20(加速)'}},{{k:'B_10_19',lbl:'10~19'}},{{k:'C_0_9',lbl:'0~9'}},{{k:'D_LT0',lbl:'<0'}}]}},
   volume_ratio:{{label:'量比',field:'volume_ratio_bucket',note:'實測樣本尚薄：2.5倍以上(真爆量)初步觀察不一定優於溫和放量，仍持續累積驗證中',buckets:[{{k:'A_2P5UP',lbl:'≥2.5倍'}},{{k:'B_1P5_2P4',lbl:'1.5~2.4倍'}},{{k:'C_1_1P4',lbl:'1~1.4倍'}},{{k:'D_LT1',lbl:'<1倍'}}]}},
+  ma60:{{label:'MA60位置',field:'ma60_bucket',note:'收盤相對MA60(季線)的乖離。早期樣本顯示離MA60越遠T+5勝率越低，仍持續驗證中；目前只有與BB分、RS分的交叉資料(其他組合會顯示無資料)',buckets:[{{k:'A_0_5',lbl:'0~5%'}},{{k:'B_5_10',lbl:'5~10%'}},{{k:'C_GT10',lbl:'>10%'}},{{k:'D_LT0',lbl:'<0(跌破)'}}]}},
 }};
-const DIM_ORDER=['kline','composite','breakout','swing','bb','rs','rs5d','volume_ratio'];
-const DIM_COLORS={{kline:'#f87171',composite:'#fbbf24',breakout:'#60a5fa',swing:'#c084fc',bb:'#2dd4bf',rs:'#fb923c',rs5d:'#e879f9',volume_ratio:'#facc15'}};
+const DIM_ORDER=['kline','composite','breakout','swing','bb','rs','rs5d','volume_ratio','ma60'];
+const DIM_COLORS={{kline:'#f87171',composite:'#fbbf24',breakout:'#60a5fa',swing:'#c084fc',bb:'#2dd4bf',rs:'#fb923c',rs5d:'#e879f9',volume_ratio:'#facc15',ma60:'#d6a35c'}};
 function crossGroupName(a,b){{return DIM_ORDER.indexOf(a)<=DIM_ORDER.indexOf(b)?`cross_${{a}}_${{b}}`:`cross_${{b}}_${{a}}`;}}
 function hmColor(v,mode){{
   if(v==null)return{{bg:'#06111e',txt:'#64748b'}};
@@ -1409,7 +1423,7 @@ function buildTabRecent(){{
       <option value="STRAT_K_LOWSWING_SETUP">策略K低波段蓄勢</option>
       <option value="STRAT_L_GENTLE_TURN">策略L溫和轉強蓄勢</option>
       <option value="STRAT_M_HICOMP_LOWSWING">策略M高綜低波段</option>
-      <option value="STRAT_N_MIDMID_RS85">策略N中段雙分RS85</option>
+      <option value="STRAT_N_MIDMID_RS85">策略N中段雙分RS85</option><option value="STRAT_O_BB_MA60">策略O低BB站上季線</option>
     </select>
     <div class="sl-grp"><span class="sl-lbl">K線</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillK" style="left:0%;width:100%"></div><input type="range" id="statsK_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsK','statsFillK','renderRecentStats')"><input type="range" id="statsK_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsK','statsFillK','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsK_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsK','min','statsFillK','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsK_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsK','max','statsFillK','renderRecentStats')"></div></div>
     <div class="sl-grp"><span class="sl-lbl">綜合</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillC" style="left:0%;width:100%"></div><input type="range" id="statsC_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsC','statsFillC','renderRecentStats')"><input type="range" id="statsC_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsC','statsFillC','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsC_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsC','min','statsFillC','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsC_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsC','max','statsFillC','renderRecentStats')"></div></div>
@@ -1438,6 +1452,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('rsi14')">RSI</th>
         <th class="stats-sort" onclick="statsSortBy('volume_ratio')" title="當日成交量/20日均量。實測≥2.5倍(真爆量)勝率反而最差">量比</th>
         <th class="stats-sort" onclick="statsSortBy('inst_buy_days')">法人</th>
+        <th class="stats-sort" onclick="statsSortBy('price_vs_ma60_pct')" title="收盤相對MA60(季線)乖離%。金色0~5%=策略O區間；實測離MA60越遠T+5勝率越低(早期樣本)">MA60%</th>
         <th style="width:54px;min-width:54px;white-space:nowrap">入場價</th>
         <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1${{STATS_MODE==='excess'?'(超額)':''}}</th>
         <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3${{STATS_MODE==='excess'?'(超額)':''}}</th>
@@ -1450,7 +1465,7 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('vcp_status')">VCP狀態</th>
         <th>狀態</th>
       </tr></thead>
-      <tbody id="recentStatsBody"><tr><td colspan="24" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
+      <tbody id="recentStatsBody"><tr><td colspan="25" style="padding:16px;color:#94a3b8">載入中...</td></tr></tbody>
     </table>
   </div>`;
 }}
@@ -1541,6 +1556,7 @@ function renderRecentStats(){{
     <td style="text-align:center;font-weight:600;color:${{r.rsi14==null?'#94a3b8':r.rsi14>=70?'#f87171':r.rsi14<=30?'#4ade80':'#94a3b8'}}">${{r.rsi14!=null?Number(r.rsi14).toFixed(1):'-'}}</td>
     <td style="text-align:center;font-weight:600;color:${{r.volume_ratio==null?'#94a3b8':r.volume_ratio>=2.5?'#f87171':r.volume_ratio<1.0?'#94a3b8':'#4ade80'}}" title="${{r.volume_ratio!=null&&r.volume_ratio>=2.5?'實測真爆量(≥2.5倍)反而勝率最差':''}}">${{r.volume_ratio!=null?Number(r.volume_ratio).toFixed(2):'-'}}</td>
     <td style="text-align:center">${{fInst(r.inst_buy_days)}}</td>
+    <td style="text-align:center">${{fMa60(r.price_vs_ma60_pct)}}</td>
     <td style="color:#94a3b8;width:54px;min-width:54px;white-space:nowrap" title="${{r.entry_date ? '進場日：'+r.entry_date : '尚未取得下一個交易日開盤價'}}">${{r.entry_price!=null?Number(r.entry_price).toFixed(1):'-'}}</td>
     <td>${{statCell(retOf(r,1))}}</td><td>${{statCell(retOf(r,3))}}</td>
     <td>${{statCell(retOf(r,5))}}</td><td>${{statCell(retOf(r,7))}}</td><td>${{statCell(retOf(r,10))}}</td>
@@ -1549,7 +1565,7 @@ function renderRecentStats(){{
     <td class="recent-entry-signal">${{fSig(r.entry_signal)}}</td>
     <td style="text-align:center">${{vcpStatusCell(r)}}</td>
     <td>${{stBadge(r.status)}}</td>
-  </tr>`).join('')||'<tr><td colspan="24" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
+  </tr>`).join('')||'<tr><td colspan="25" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
   const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
   schedResize();
 }}
@@ -1643,7 +1659,7 @@ function buildTabStrategy(){{
   const hs=[1,3,5,7,10];
   const present=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='event_type'&&s.event_type===et));
   if(!present.length){{
-    return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含十四策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
+    return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含十五策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
   }}
   const rows=present.map(et=>{{
     const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count),ewr:x.excess_win_rate!=null?Number(x.excess_win_rate):null,ear:x.avg_excess_return!=null?Number(x.avg_excess_return):null}}:null;}}).filter(Boolean);
@@ -1690,13 +1706,15 @@ function buildTabStrategy(){{
     <div><b style="color:#f472b6">策略L 溫和轉強蓄勢族</b>：K線分<60 + RS分50~69 + RS5日分0~9 + 量比<1.0 + 法人連買1~3天——K線分<60是反直覺設計(本系統原本假設K線分越高越好，但窮舉回測發現高K線分反而拖累T+5表現)，搭配RS5日溫和轉強(非暴衝)、量縮非追價、法人剛啟動非連買過久，五項條件共同指向「還沒被市場注意到，但已有溫和轉強跡象」。跟策略K邏輯互補(K不看法人/RS5日，L把這兩者納入做更精細的起漲初期篩選)。</div>
     <div><b style="color:#a3e635">策略M 高綜低波段</b>：綜合分≥88 + 波段分<30——綜合分極強、但沒有「強勢股拉回」結構，偏純動能/噴出型。樣本是D(綜合分≥75)的子集，要打贏的對象是D。</div>
     <div><b style="color:#fb7185">策略N 中段雙分RS85</b>：RS≥85 + 突破分30~49 + 波段分30~49——突破分與波段分都落在中段(熱圖C_30_49區間)的強勢股。</div>
-    <div style="margin-top:4px;color:#64748b">十四組樣本互不互斥、各自獨立計算。A、B要打贏的對象是D，不是C；G、H、I、J、K、L是2026/09新增；M、N是2026/10新增。</div>
+    <div><b style="color:#d6a35c">策略O 低BB站上季線</b>：BB分<30 + RS70~84 + 收盤站上MA60 0~5%——BB分偏低(沒有處在超買)、中強RS、且貼著季線上方的拉回整理股。來自2026/10事後回測：同樣是「BB分<30+RS70~84」，MA60位置0~5%明顯優於>10%(離季線太遠)。門檻分析頁有「O／不看MA60／MA60>10%」三組對照可檢視MA60的邊際貢獻。</div>
+    <div style="margin-top:4px;color:#64748b">十五組樣本互不互斥、各自獨立計算。A、B要打贏的對象是D，不是C；G、H、I、J、K、L是2026/09新增；M、N是2026/10新增。</div>
     <div style="margin-top:4px;color:#facc15">⚠ 策略M、N同樣來自事後回測挑出的高勝率組合，有多重比較偏誤風險；M是D的子集(樣本重疊)，N含RS≥85(RS分85+在部分天期偏弱)，建議樣本累積足夠並看超額報酬後再視為穩定訊號。</div>
     <div style="margin-top:4px;color:#facc15">⚠ 策略K、L來自事後窮舉多維度組合搜尋(非事先假設的邏輯)，統計上更容易受多重比較問題影響——找到的組合有一定機率只是巧合。已做過日期分散度、股票代號分散度、多天期一致性三項防呆檢查，但仍建議樣本累積到150筆以上再視為穩定訊號。</div>
+    <div style="margin-top:4px;color:#facc15">⚠ 策略O：(1) 門檻從同一批歷史資料挑出，<b>2026/10/26 之前的事件是用快照回補的「樣本內」資料，績效天生偏樂觀</b>，2026/10/26(含)之後即時產生的才是樣本外，請分開判讀；(2) 約三分之二的事件同時也是策略D(綜合分≥75)，不是獨立的新訊號；(3) 成績集中在大盤轉強的月份，對大盤的超額報酬接近0，請同時看「超額報酬」表與月度分析；(4) 回補只含當時通過入庫門檻的股票。</div>
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">十四策略 T+1~T+10 勝率對比</div>
+      <div class="sc-title">十五策略 T+1~T+10 勝率對比</div>
       <div style="position:relative;height:200px"><canvas id="chartStrategy"></canvas></div>
     </div>
   </div>
@@ -1893,7 +1911,7 @@ function editNum(el,groupId,which,fillId,fnName){{
 function renderRows(data){{
   const tb=document.getElementById('tBody');
   if(!data.length){{
-    tb.innerHTML='<tr><td colspan="18" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
+    tb.innerHTML='<tr><td colspan="19" style="text-align:center;padding:48px;color:#94a3b8;font-size:13px">沒有符合條件的股票</td></tr>';
     return;
   }}
   // 🎯 已套用超連結對調：代號連到 kline_url，名稱連到 yahoo_url
@@ -1912,6 +1930,7 @@ function renderRows(data){{
     <td>${{fRs(r.rs5d)}}</td>
     <td>${{fRsi(r.rs)}}</td>
     <td>${{fInst(r.inst)}}</td>
+    <td>${{fMa60(r.ma60)}}</td>
     <td style="color:#93c5fd;font-size:11px;max-width:132px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr((r.event_types||[]).map(labelEvent).join(' / ')||'—')}}">${{(r.event_types||[]).map(labelEvent).join(' / ')||'—'}}</td>
     <td>${{fSig(r.signal)}}</td>
     <td>${{vcpStatusCell(r)}}</td>
