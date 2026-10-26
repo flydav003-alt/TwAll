@@ -644,6 +644,15 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
     </div>
     <div class="sl-num"><input type="number" id="slVR_numMin" class="sl-num-in" min="0" max="5" step="0.1" value="0" onchange="editNum(this,'slVR','min','fillVR','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slVR_numMax" class="sl-num-in" min="0" max="5" step="0.1" value="5" onchange="editNum(this,'slVR','max','fillVR','applyFilter')"></div>
   </div>
+  <div class="sl-grp">
+    <span class="sl-lbl" title="收盤相對MA60(季線)乖離%。策略O區間為0~5。範圍縮小時，沒有MA60資料(K線不足60根)的股票會被排除">MA60%</span>
+    <div class="rng-wrap" style="width:140px">
+      <div class="rng-track"></div><div class="rng-fill" id="fillMA" style="left:0%;width:100%"></div>
+      <input type="range" id="slMA_min" class="rng-min" min="-30" max="60" step="0.5" value="-30" oninput="dragRange(this,'slMA','fillMA','applyFilter')">
+      <input type="range" id="slMA_max" class="rng-max" min="-30" max="60" step="0.5" value="60" oninput="dragRange(this,'slMA','fillMA','applyFilter')">
+    </div>
+    <div class="sl-num"><input type="number" id="slMA_numMin" class="sl-num-in" min="-30" max="60" step="0.5" value="-30" onchange="editNum(this,'slMA','min','fillMA','applyFilter')"><span class="sl-num-sep">–</span><input type="number" id="slMA_numMax" class="sl-num-in" min="-30" max="60" step="0.5" value="60" onchange="editNum(this,'slMA','max','fillMA','applyFilter')"></div>
+  </div>
 </div>
 
 <div class="stat" id="statLine">載入中…</div>
@@ -1434,6 +1443,7 @@ function buildTabRecent(){{
     <div class="sl-grp"><span class="sl-lbl">RSI</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillRSI" style="left:0%;width:100%"></div><input type="range" id="statsRSI_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsRSI','statsFillRSI','renderRecentStats')"><input type="range" id="statsRSI_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsRSI','statsFillRSI','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsRSI_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsRSI','min','statsFillRSI','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsRSI_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsRSI','max','statsFillRSI','renderRecentStats')"></div></div>
     <div class="sl-grp"><span class="sl-lbl" title="橫向排名相對強度。實測85+在T+10反而最差，50~85是甜蜜點，不是越高越好">RS分</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillRS" style="left:0%;width:100%"></div><input type="range" id="statsRS_min" class="rng-min" min="0" max="100" step="1" value="0" oninput="dragRange(this,'statsRS','statsFillRS','renderRecentStats')"><input type="range" id="statsRS_max" class="rng-max" min="0" max="100" step="1" value="100" oninput="dragRange(this,'statsRS','statsFillRS','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsRS_numMin" class="sl-num-in" min="0" max="100" value="0" onchange="editNum(this,'statsRS','min','statsFillRS','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsRS_numMax" class="sl-num-in" min="0" max="100" value="100" onchange="editNum(this,'statsRS','max','statsFillRS','renderRecentStats')"></div></div>
     <div class="sl-grp"><span class="sl-lbl">量比</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillVR" style="left:0%;width:100%"></div><input type="range" id="statsVR_min" class="rng-min" min="0" max="5" step="0.1" value="0" oninput="dragRange(this,'statsVR','statsFillVR','renderRecentStats')"><input type="range" id="statsVR_max" class="rng-max" min="0" max="5" step="0.1" value="5" oninput="dragRange(this,'statsVR','statsFillVR','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsVR_numMin" class="sl-num-in" min="0" max="5" step="0.1" value="0" onchange="editNum(this,'statsVR','min','statsFillVR','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsVR_numMax" class="sl-num-in" min="0" max="5" step="0.1" value="5" onchange="editNum(this,'statsVR','max','statsFillVR','renderRecentStats')"></div></div>
+    <div class="sl-grp"><span class="sl-lbl" title="收盤相對MA60(季線)乖離%。策略O區間為0~5。範圍縮小時，沒有MA60資料的訊號會被排除">MA60%</span><div class="rng-wrap" style="width:120px"><div class="rng-track"></div><div class="rng-fill" id="statsFillMA" style="left:0%;width:100%"></div><input type="range" id="statsMA_min" class="rng-min" min="-30" max="60" step="0.5" value="-30" oninput="dragRange(this,'statsMA','statsFillMA','renderRecentStats')"><input type="range" id="statsMA_max" class="rng-max" min="-30" max="60" step="0.5" value="60" oninput="dragRange(this,'statsMA','statsFillMA','renderRecentStats')"></div><div class="sl-num"><input type="number" id="statsMA_numMin" class="sl-num-in" min="-30" max="60" step="0.5" value="-30" onchange="editNum(this,'statsMA','min','statsFillMA','renderRecentStats')"><span class="sl-num-sep">–</span><input type="number" id="statsMA_numMax" class="sl-num-in" min="-30" max="60" step="0.5" value="60" onchange="editNum(this,'statsMA','max','statsFillMA','renderRecentStats')"></div></div>
     <span style="font-size:11px;color:#94a3b8">顯示 <b id="recentStatsCount" style="color:#e2e8f0">0</b> 筆</span>
   </div>
   <div class="stats-scroll">
@@ -1511,6 +1521,9 @@ function renderRecentStats(){{
   const rsMax=Number((document.getElementById('statsRS_max')||{{value:100}}).value??100);
   const vrMin=Number((document.getElementById('statsVR_min')||{{value:0}}).value||0);
   const vrMax=Number((document.getElementById('statsVR_max')||{{value:5}}).value??5);
+  const _smLo=document.getElementById('statsMA_min'), _smHi=document.getElementById('statsMA_max');
+  const smMin=_smLo?Number(_smLo.value):-30, smMax=_smHi?Number(_smHi.value):60;
+  const smLoOn=_smLo&&smMin>Number(_smLo.min), smHiOn=_smHi&&smMax<Number(_smHi.max);
   const etFilt=(document.getElementById('statsEt')||{{}}).value||'';
   let data=(STATS.recent||[]).filter(r=>{{
     if(q&&!(String(r.ticker||'').toLowerCase().includes(q)||String(r.name||'').toLowerCase().includes(q)))return false;
@@ -1523,6 +1536,7 @@ function renderRecentStats(){{
     if(r.rsi14!=null && (r.rsi14<rsiMin||r.rsi14>rsiMax))return false;
     if(r.rs_score!=null && (r.rs_score<rsMin||r.rs_score>rsMax))return false;
     if(r.volume_ratio!=null && (r.volume_ratio<vrMin||r.volume_ratio>vrMax))return false;
+    if(smLoOn||smHiOn){{if(r.price_vs_ma60_pct==null||(smLoOn&&r.price_vs_ma60_pct<smMin)||(smHiOn&&r.price_vs_ma60_pct>smMax))return false;}}
     if(etFilt&&!eventList(r).includes(etFilt))return false;
     return true;
   }});
@@ -1949,6 +1963,10 @@ function applyFilter(){{
   const rMin=+document.getElementById('slR_min').value, rMax=+document.getElementById('slR_max').value;
   const rsMin=+document.getElementById('slRS_min').value, rsMax=+document.getElementById('slRS_max').value;
   const vrMin=+document.getElementById('slVR_min').value, vrMax=+document.getElementById('slVR_max').value;
+  const _maLo=document.getElementById('slMA_min'), _maHi=document.getElementById('slMA_max');
+  const maMin=+_maLo.value, maMax=+_maHi.value;
+  // 滑桿在全範圍時不限制(含沒有MA60資料、或超出範圍的股票)；縮小範圍才篩選，此時無MA60資料者排除
+  const maLoOn=maMin>+_maLo.min, maHiOn=maMax<+_maHi.max;
   let data=RAW.filter(r=>{{
     if(r.kline==null&&r.vol==null)return false;
     if((r.kline||0)<kMin||(r.kline||0)>kMax)return false;
@@ -1959,6 +1977,7 @@ function applyFilter(){{
     if(r.rsi!=null&&(r.rsi<rMin||r.rsi>rMax))return false;
     if(r.rs!=null&&(r.rs<rsMin||r.rs>rsMax))return false;
     if(r.vol!=null&&(r.vol<vrMin||r.vol>vrMax))return false;
+    if(maLoOn||maHiOn){{if(r.ma60==null||(maLoOn&&r.ma60<maMin)||(maHiOn&&r.ma60>maMax))return false;}}
     if(eventFilter&&!(r.event_types||[]).includes(eventFilter))return false;
     if(q&&!r.ticker.toLowerCase().includes(q)&&!r.name.toLowerCase().includes(q))return false;
     return true;
@@ -1997,7 +2016,7 @@ function toggleLegend(){{
 function initApp() {{
   try {{
     // 1. 強制重置區間拉霸，清除瀏覽器的 Form Auto-restore 快取
-    ['slK','slC','slV','slS','slB','slR','slRS','slVR'].forEach(id => {{
+    ['slK','slC','slV','slS','slB','slR','slRS','slVR','slMA'].forEach(id => {{
       const minEl = document.getElementById(id+'_min'), maxEl = document.getElementById(id+'_max');
       if (minEl && maxEl) {{
         minEl.value = minEl.min;
@@ -2020,7 +2039,7 @@ function initApp() {{
     // 4. 初始化統計面板的區間拉霸（實際 HTML 樣板本身已預設為全選狀態，此處僅為保險重置）
     [['statsK','statsFillK'],['statsC','statsFillC'],['statsV','statsFillV'],
      ['statsS','statsFillS'],['statsB','statsFillB'],['statsR5','statsFillR5'],
-     ['statsRSI','statsFillRSI'],['statsRS','statsFillRS'],['statsVR','statsFillVR']].forEach(([id,fillId]) => {{
+     ['statsRSI','statsFillRSI'],['statsRS','statsFillRS'],['statsVR','statsFillVR'],['statsMA','statsFillMA']].forEach(([id,fillId]) => {{
       const minEl = document.getElementById(id+'_min'), maxEl = document.getElementById(id+'_max');
       if (minEl && maxEl) {{
         minEl.value = minEl.min; maxEl.value = maxEl.max;
