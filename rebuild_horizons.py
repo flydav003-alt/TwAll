@@ -31,6 +31,69 @@ from stats_db import HORIZONS, backfill_entry_price_to_next_open, connect, write
 COMPARE_HORIZONS = (1, 5, 10)   # 新舊兩套 horizon 都有的天期，用來對帳
 
 
+def _load_detail(path):
+    """回傳 (outcomes, events)：outcomes[(event_id,h)] = (報酬, 結算日)；events[event_id] = (代號, 訊號日, 進場日)。"""
+    conn = sqlite3.connect(path)
+    try:
+        outs = {
+            (r[0], r[1]): (r[2], r[3])
+            for r in conn.execute("SELECT event_id, horizon, return_close_pct, target_date FROM event_outcomes")
+        }
+        evs = {r[0]: (r[1], r[2], r[3]) for r in conn.execute("SELECT event_id, ticker, trade_date, entry_date FROM signal_events")}
+        return outs, evs
+    finally:
+        conn.close()
+
+
+def _diagnose(old_o, old_e, new_o, new_e, mism, csv_path):
+    """把不一致的筆數依成因分類，並輸出 CSV，方便判斷是「進場日變了」「結算日位移」還是「收盤價被修正」。"""
+    import collections
+    import csv
+    cats = collections.Counter()
+    by_h = collections.Counter()
+    by_date = collections.Counter()
+    shifts = collections.Counter()
+    diffs = []
+    rows = []
+    for k in mism:
+        eid, h = k
+        tk, sd, oe = old_e.get(eid, (None, None, None))
+        ne = new_e.get(eid, (None, None, None))[2]
+        o_ret, o_td = old_o[k]
+        n_ret, n_td = new_o.get(k, (None, None))
+        if oe != ne:
+            cat = "進場日改變"
+        elif o_td != n_td:
+            cat = "結算日位移"
+            shifts[(o_td, n_td)] += 1
+        else:
+            cat = "同日收盤價不同"
+            if o_ret is not None and n_ret is not None:
+                diffs.append(abs(float(o_ret) - float(n_ret)))
+        cats[cat] += 1
+        by_h[h] += 1
+        by_date[sd] += 1
+        rows.append([eid, tk, sd, h, o_ret, n_ret, o_td, n_td, oe, ne, cat])
+    try:
+        with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            w.writerow(["event_id", "ticker", "signal_date", "horizon", "old_ret", "new_ret",
+                        "old_target", "new_target", "old_entry", "new_entry", "category"])
+            w.writerows(rows)
+        print(f"[INFO] 不一致明細已輸出：{csv_path}")
+    except OSError as exc:
+        print(f"[WARN] 無法輸出不一致明細：{exc}")
+    print("\n---------- 不一致成因分析 ----------")
+    print("成因分類：", dict(cats))
+    print("依 horizon：", dict(sorted(by_h.items())))
+    print("訊號日最多的前 8 天：", by_date.most_common(8))
+    if shifts:
+        print("結算日位移（舊→新）最多的前 8 組：", shifts.most_common(8))
+    if diffs:
+        diffs.sort()
+        print(f"同日收盤價不同：中位數差 {diffs[len(diffs)//2]:.2f} 個百分點，最大 {diffs[-1]:.2f}")
+
+
 def _load_outcomes(path):
     conn = sqlite3.connect(path)
     try:
@@ -66,7 +129,8 @@ def main(argv=None):
     work = db + ".rebuild.tmp"
     _cleanup(work, work + "-wal", work + "-shm")
     shutil.copyfile(db, work)
-    old = _load_outcomes(db)
+    old_o, old_e = _load_detail(db)
+    old = {k: v[0] for k, v in old_o.items()}
     print(f"[INFO] 目前 HORIZONS = {HORIZONS}；舊資料 event_outcomes = {len(old)} 筆")
 
     conn = connect(work)
@@ -89,7 +153,8 @@ def main(argv=None):
     finally:
         conn.close()
 
-    new = _load_outcomes(work)
+    new_o, new_e = _load_detail(work)
+    new = {k: v[0] for k, v in new_o.items()}
     new_horizons = sorted({h for (_, h) in new})
     per_h = {h: sum(1 for (_, hh) in new if hh == h) for h in new_horizons}
 
@@ -104,6 +169,7 @@ def main(argv=None):
     mismatch_rate = len(mism) / len(common) if common else 1.0
     lost_rate = len(lost) / len(old_cmp) if old_cmp else 0.0
 
+    report_csv = os.path.join(os.path.dirname(db) or ".", "rebuild_mismatches.csv")
     checks = [
         ("只含新 horizon", set(new_horizons) <= set(HORIZONS) and bool(new_horizons)),
         ("T+20 有產出", per_h.get(20, 0) > 0),
@@ -122,6 +188,9 @@ def main(argv=None):
     for label, passed in checks:
         print(("  ✔ " if passed else "  ✘ ") + label)
         ok = ok and passed
+
+    if mism:
+        _diagnose(old_o, old_e, new_o, new_e, mism, report_csv)
 
     if not ok and not args.force:
         print("\n[ABORT] 驗證未通過，原始資料庫未更動。")
