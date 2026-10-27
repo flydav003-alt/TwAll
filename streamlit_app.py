@@ -6,7 +6,7 @@ streamlit_app.py — 台股半導體 Screener
 import json, os, streamlit as st
 import streamlit.components.v1 as components
 from tw_screener_core import yahoo_tw_url
-from stats_db import export_stats_payload, select_recent_rows, classify_signal, classify_strategy_events
+from stats_db import export_stats_payload, select_recent_rows, classify_signal, classify_strategy_events, HORIZONS
 
 st.set_page_config(page_title="台股半導體 Screener", page_icon="📈",
                    layout="wide", initial_sidebar_state="collapsed")
@@ -42,14 +42,15 @@ STATS_PER_TYPE_LIMIT = 1000      # 近期明細：每個訊號類型各自最新
 def _load_stats(full: bool = False):
     """優先讀 GitHub Actions 預先產生的 data/stats_payload.json（不用現場查詢），
     找不到或讀取失敗才退回即時計算。full=False 時近期明細依「筆數」裁切，True 則載入完整歷史。
-    統計總覽 summary 與 lite（T+5 KPI/分布/常勝標的用）一律是全歷史，不受裁切影響。"""
+    統計總覽 summary 與 lite（主要 horizon 的 KPI/分布/常勝標的用）一律是全歷史，不受裁切影響。"""
     payload = None
     p = os.path.join("data", "stats_payload.json")
     if os.path.exists(p):
         try:
             with open(p, encoding="utf-8") as f:
                 payload = json.load(f)
-            if not payload.get("ready"):
+            # 預先產生的檔案必須與目前 HORIZONS 一致，否則視為過期（例如 horizon 改版後尚未重跑 Actions）
+            if not payload.get("ready") or list(payload.get("horizons") or []) != list(HORIZONS):
                 payload = None
         except Exception:
             payload = None
@@ -567,7 +568,7 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 <div class="stats-wrap" id="statsBox">
   <div class="stats-head">
     <div class="stats-title">資料庫統計</div>
-    <div class="stats-note" id="statsHeadNote">每日真實訊號 + T+1 / T+3 / T+5 / T+7 / T+10 事後績效</div>
+    <div class="stats-note" id="statsHeadNote">每日真實訊號 + T+1 / T+5 / T+10 / T+20 / T+40 事後績效</div>
     <div class="mode-toggle-wrap" style="display:flex;gap:6px;">
       <button type="button" class="mode-toggle-btn active" data-mode="abs" onclick="setStatsMode('abs')"
         style="border:1px solid #334155;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">絕對報酬</button>
@@ -746,6 +747,8 @@ tbody td{{padding:9px 8px;vertical-align:middle;white-space:nowrap;border-bottom
 <script>
 const RAW = {rows_json};
 const STATS = {stats_json};
+const STATS_HS=(STATS.horizons&&STATS.horizons.length)?STATS.horizons:[1,5,10,20,40];
+const PH=STATS.primary_horizon||20;
 let sortKey='kline', sortAsc=false;
 let statsSortKey='trade_date', statsSortAsc=false;
 // ── 絕對報酬 / 超額報酬(扣大盤) 切換 ──
@@ -766,22 +769,22 @@ function retOf(r,h){{
   const v=(STATS_MODE==='excess')?r['t'+h+'_excess']:r['t'+h+'_return'];
   return (v==null||Number.isNaN(Number(v)))?null:Number(v);
 }}
-// 總覽型小工具（T+5 KPI／報酬分布／常勝標的）用全歷史精簡資料，不受近期明細筆數限制
+// 總覽型小工具（主要 horizon 的 KPI／報酬分布／常勝標的）用全歷史精簡資料，不受近期明細筆數限制
 function liteRows(){{
   if(!STATS.lite)return STATS.recent||[];
-  if(!STATS._lite)STATS._lite=STATS.lite.map(a=>({{ticker:a[0],name:a[1],trade_date:a[2],t5_return:a[3],t5_excess:a[4]}}));
+  if(!STATS._lite)STATS._lite=STATS.lite.map(a=>{{const o={{ticker:a[0],name:a[1],trade_date:a[2]}};o['t'+PH+'_return']=a[3];o['t'+PH+'_excess']=a[4];return o;}});
   return STATS._lite;
 }}
 function setStatsMode(m){{
   if(STATS_MODE===m)return;
   STATS_MODE=m;
   document.querySelectorAll('.mode-toggle-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
-  const matured=liteRows().filter(r=>retOf(r,5)!=null);
-  const wr5=matured.length?((matured.filter(r=>retOf(r,5)>0).length/matured.length)*100).toFixed(1):null;
+  const matured=liteRows().filter(r=>retOf(r,PH)!=null);
+  const wr5=matured.length?((matured.filter(r=>retOf(r,PH)>0).length/matured.length)*100).toFixed(1):null;
   const kpiLabel=document.getElementById('statsKpiT5Label');
   const kpiVal=document.getElementById('statsKpiT5Value');
   const kpiSub=document.getElementById('statsKpiT5Sub');
-  if(kpiLabel)kpiLabel.textContent = m==='excess' ? 'T+5 整體超額勝率' : 'T+5 整體勝率';
+  if(kpiLabel)kpiLabel.textContent = m==='excess' ? 'T+'+PH+' 整體超額勝率' : 'T+'+PH+' 整體勝率';
   if(kpiVal){{
     kpiVal.textContent = wr5!=null ? wr5+'%' : '—';
     kpiVal.style.color = (wr5!=null && wr5>=50) ? '#f87171' : '#4ade80';
@@ -1064,17 +1067,17 @@ function flagBadges(flags){{
 function buildTabMonthly(){{
   const sum=STATS.summary||[];
   const regimes=STATS.monthly_regime||[];
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
   // 新月份排最上面：資料越多，最新一個月才是最常被查看的，不用一直往下捲
   const months=[...new Set(sum.filter(x=>x.group_name==='monthly_event_type').map(x=>x.year_month))].sort().reverse();
   const years=[...new Set(sum.filter(x=>x.group_name==='yearly_event_type').map(x=>x.year_month))].sort().reverse();
   if(!months.length){{
-    return'<div style="padding:20px;color:#94a3b8">尚無月度資料——需要累積至少一個完整月份的訊號並跑完T+10才會顯示，請稍候幾週。</div>';
+    return'<div style="padding:20px;color:#94a3b8">尚無月度資料——需要累積至少一個完整月份的訊號並跑完T+20才會顯示，請稍候幾週。</div>';
   }}
   const regimeByMonth={{}};
   regimes.forEach(r=>{{regimeByMonth[r.year_month]=r;}});
 
-  // 年度表格：跟月度不同，不是整年熟不熟成二選一，是逐筆事件各自看有沒有T+10結果，
+  // 年度表格：跟月度不同，不是整年熟不熟成二選一，是逐筆事件各自看有沒有對應 horizon 結果，
   // 有的就納入，所以今年一開始就會持續顯示已熟成的部分，樣本量會隨時間增加，數字也會微調
   const yearTables=years.map(yr=>{{
     const rowsForYear=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='yearly_event_type'&&s.year_month===yr&&s.event_type===et));
@@ -1094,7 +1097,7 @@ function buildTabMonthly(){{
     <div class="sc-box" style="margin-bottom:14px;border-color:#8b5cf655">
       <div class="sc-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span>📆 ${{yr}}年 累計各策略勝率</span>
-        <span style="font-size:11px;color:#a78bfa">持續累積中——樣本會隨當年度新事件跑完T+10而增加，數字會逐漸逼近全年真實結果</span>
+        <span style="font-size:11px;color:#a78bfa">持續累積中——樣本會隨當年度新事件陸續跑完各天期而增加，數字會逐漸逼近全年真實結果</span>
       </div>
       <div class="stats-scroll" style="padding:0 0 10px">
         <table class="stats-table"><thead><tr><th>策略</th><th style="text-align:center">樣本</th>
@@ -1118,7 +1121,7 @@ function buildTabMonthly(){{
     </div>`;
   }}).join('');
 
-  // 每個月一張獨立表格：策略 × T+1~T+10，未熟成的月份整張表用警示條蓋頂，避免誤讀成「這個月已經跑完」
+  // 每個月一張獨立表格：策略 × T+1~T+40，未熟成的月份整張表用警示條蓋頂，避免誤讀成「這個月已經跑完」
   const monthTables=months.map(ym=>{{
     const rowsForMonth=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='monthly_event_type'&&s.year_month===ym&&s.event_type===et));
     if(!rowsForMonth.length)return'';
@@ -1140,7 +1143,7 @@ function buildTabMonthly(){{
       <div class="sc-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span>${{ym}} 各策略勝率</span>
         ${{r&&r.regime&&r.regime!=='NA'?regimeBadge(r.regime)+' '+flagBadges(r.flags)+`<span style="font-size:11px;color:#94a3b8">大盤月報酬 <b style="color:${{r.month_return_pct>=0?'#f87171':'#4ade80'}}">${{r.month_return_pct>=0?'+':''}}${{r.month_return_pct}}%</b>${{r.is_partial?'（進行中）':''}}</span>`:''}}
-        ${{!matured?'<span style="font-size:11px;color:#fbbf24">⏳ 本月尚未熟成，數字會隨月底訊號陸續跑完T+10而變動</span>':'<span style="font-size:11px;color:#4ade80">✓ 已熟成</span>'}}
+        ${{!matured?'<span style="font-size:11px;color:#fbbf24">⏳ 本月尚未熟成，數字會隨月底訊號陸續跑完T+20而變動</span>':'<span style="font-size:11px;color:#4ade80">✓ 已熟成</span>'}}
       </div>
       <div class="stats-scroll" style="padding:0 0 10px">
         <table class="stats-table"><thead><tr><th>策略</th><th style="text-align:center">樣本</th>
@@ -1155,7 +1158,7 @@ function buildTabMonthly(){{
     <div><b style="color:#e2e8f0">大盤月報酬</b> = 加權指數當月最後收盤 ÷ 上月最後收盤 − 1（月初第一天的漲跌也算進來）。≥+5% 為多頭、≤−5% 為空頭，中間為區間盤整；再依站上MA20的天數比例區分「上攻／下殺（≥70%或≤30%天數同向）」與「震盪」。<b style="color:#fbbf24">這組門檻是技術分析常見經驗值，尚未針對本系統回測驗證</b>，月份累積夠多後應回頭檢視。</div>
     <div style="margin-top:4px">事件旗標可與趨勢並存：<b style="color:#f87171">⚡急殺</b>＝月內最大回撤≥8%；<b style="color:#fb923c">🔥高波動</b>＝單日漲跌±2%以上達4天；<b style="color:#38bdf8">🔄V轉</b>＝曾急殺但月底收在上月收盤之上。</div>
     <div style="margin-top:4px">大盤歷史由 ^TWII 歷史收盤自動回補，過去月份也有標籤。目前每種走勢只有約1個月樣本，<b style="color:#f87171">請把標籤當成「解讀勝率時的背景」，不要據此下結論說某策略只在某種走勢有效</b>。</div>
-    <div style="margin-top:4px">「本月尚未熟成」代表當月最後一筆訊號還沒跑完T+10天，數字僅供參考，等熟成後才是完整結果——這是刻意的設計，不是資料缺漏。</div>
+    <div style="margin-top:4px">「本月尚未熟成」代表當月最後一筆訊號還沒跑完T+20天，數字僅供參考，等熟成後才是完整結果——這是刻意的設計，不是資料缺漏。</div>
   </div>
   ${{yearTables?`<div style="padding:0 14px 14px">${{yearTables}}</div>`:''}}
   <div style="display:flex;gap:10px;flex-wrap:wrap;padding:0 14px 14px">${{regimeCards}}</div>
@@ -1167,10 +1170,10 @@ function buildTabThreshold(){{
   const ts=STATS.threshold_stats||[];
   const rules=[...new Set(ts.map(x=>x.rule))];
   if(!rules.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
 
   // ── KPI 計算 ──
-  const t5rows=ts.filter(x=>x.horizon===5&&(x.sample_count||0)>=5);
+  const t5rows=ts.filter(x=>x.horizon===PH&&(x.sample_count||0)>=5);
   const bestWr=t5rows.length?[...t5rows].sort((a,b)=>(wrOf(b)??-1)-(wrOf(a)??-1))[0]:null;
   const mostN=t5rows.length?[...t5rows].sort((a,b)=>b.sample_count-a.sample_count)[0]:null;
   const avgRet=t5rows.length?(t5rows.reduce((s,x)=>s+(arOf(x)??0),0)/t5rows.length):null;
@@ -1188,10 +1191,10 @@ function buildTabThreshold(){{
       <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">📊 樣本最豐富</div>
       <div style="font-size:15px;font-weight:700;color:#fbbf24;line-height:1.3">${{mostN?mostN.sample_count+' 筆':'—'}}</div>
       <div style="font-size:11px;color:#93c5fd;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${{mostN?mostN.rule:'—'}}</div>
-      <div style="font-size:10px;color:#64748b;margin-top:3px">T+5 勝率 ${{mostN&&wrOf(mostN)!=null?wrOf(mostN).toFixed(1)+'%':'—'}}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:3px">T+${{PH}} 勝率 ${{mostN&&wrOf(mostN)!=null?wrOf(mostN).toFixed(1)+'%':'—'}}</div>
     </div>
     <div style="background:#080f1e;border:1px solid #0f2040;border-radius:8px;padding:14px;border-top:2px solid #4ade80;">
-      <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">📈 T+5 整體平均報酬</div>
+      <div style="font-size:10px;color:#94a3b8;letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px">📈 T+${{PH}} 整體平均報酬</div>
       <div style="font-size:15px;font-weight:700;color:${{avgRet!=null&&avgRet>=0?'#f87171':'#4ade80'}};line-height:1.3">${{avgRet!=null?(avgRet>=0?'+':'')+Number(avgRet).toFixed(2)+'%':'—'}}</div>
       <div style="font-size:11px;color:#94a3b8;margin-top:6px">所有門檻條件均值</div>
       <div style="font-size:10px;color:#64748b;margin-top:3px">共 ${{t5rows.length}} 個條件有效</div>
@@ -1199,7 +1202,7 @@ function buildTabThreshold(){{
   </div>`;
 
   // Build horizontal bar chart data (T+5 win rate per rule)
-  const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?(wrOf(x)??0):0;}});
+  const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===PH);return x?(wrOf(x)??0):0;}});
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
 
   const hdr = '<tr><th style="min-width:160px">條件</th><th>樣本</th>' + hs.map(h => `<th>T+${{h}} 勝率</th><th>T+${{h}} 報酬</th>`).join('') + '</tr>';
@@ -1217,7 +1220,7 @@ function buildTabThreshold(){{
   return`${{kpiCards}}
   <div class="sc-grid sc-wide" style="padding-bottom:0;padding-top:12px">
     <div class="sc-box">
-      <div class="sc-title">T+5 勝率比較（各門檻）</div>
+      <div class="sc-title">T+${{PH}} 勝率比較（各門檻）</div>
       <div style="position:relative;height:${{Math.max(rules.length*32,140)}}px"><canvas id="chartThresh"></canvas></div>
     </div>
   </div>
@@ -1229,9 +1232,9 @@ function buildTabThreshold(){{
 function afterThreshold(){{
   const ts=STATS.threshold_stats||[];
   const rules=[...new Set(ts.map(x=>x.rule))];
-  const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===5);return x?(wrOf(x)??0):0;}});
+  const t5data=rules.map(r=>{{const x=ts.find(t=>t.rule===r&&t.horizon===PH);return x?(wrOf(x)??0):0;}});
   const t5colors=t5data.map(v=>v>=65?'rgba(248,113,113,.7)':v>=55?'rgba(251,191,36,.7)':v>=45?'rgba(74,222,128,.7)':'rgba(100,116,139,.4)');
-  _mkChart('chartThresh',{{type:'bar',data:{{labels:rules,datasets:[{{label:'T+5 勝率',data:t5data,backgroundColor:t5colors,borderRadius:4,borderSkipped:false}}]}},
+  _mkChart('chartThresh',{{type:'bar',data:{{labels:rules,datasets:[{{label:'T+'+PH+' 勝率',data:t5data,backgroundColor:t5colors,borderRadius:4,borderSkipped:false}}]}},
     options:{{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.x.toFixed(1)}}%`}}}}}},
     scales:{{x:{{..._BASE_SCALE.x,min:0,max:100,ticks:{{color:'#94a3b8',callback:v=>v+'%'}}}},y:{{..._BASE_SCALE.y,ticks:{{color:'#94a3b8',font:{{size:10}}}}}}}}}}}});
 }}
@@ -1267,7 +1270,7 @@ function hmColor(v,mode){{
 function mkHM(mode,axisAKey,axisBKey){{
   const A=DIM_DEFS[axisAKey],B=DIM_DEFS[axisBKey];
   const gname=crossGroupName(axisAKey,axisBKey);
-  const mat=(STATS.summary||[]).filter(x=>x.group_name===gname&&x.horizon===5);
+  const mat=(STATS.summary||[]).filter(x=>x.group_name===gname&&x.horizon===PH);
   let html=`<div class="hm-grid"><div class="hm-hdr" style="text-align:left;font-size:10px;color:#94a3b8">${{A.label}} ↓ / ${{B.label}} →</div>${{B.buckets.map(c=>`<div class="hm-hdr">${{c.lbl}}</div>`).join('')}}`;
   A.buckets.forEach(ab=>{{
     html+=`<div class="hm-row-lbl">${{ab.lbl}}</div>`;
@@ -1298,7 +1301,7 @@ function buildTabMatrix(){{
   <div class="sc-grid" style="padding-bottom:0">
     <div class="sc-box" style="flex:1 1 100%">
       <div class="sc-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span>分數熱圖 — 四向交叉比對（T+5）</span>
+        <span>分數熱圖 — 四向交叉比對（T+${{PH}}）</span>
         <span style="font-size:11px;color:#94a3b8">座標 A
           <select id="matAxisA" onchange="renderMatHeatmaps()">${{dimOptionsHtml('kline')}}</select>
           × 座標 B
@@ -1309,37 +1312,37 @@ function buildTabMatrix(){{
   </div>
   <div class="sc-grid">
     <div class="sc-box">
-      <div class="sc-title">T+5 勝率熱圖 &nbsp;紅≥60% 橘≥50% 綠≥40%</div>
+      <div class="sc-title">T+${{PH}} 勝率熱圖 &nbsp;紅≥60% 橘≥50% 綠≥40%</div>
       <div id="hmWr"></div>
     </div>
     <div class="sc-box">
-      <div class="sc-title">T+5 平均報酬熱圖</div>
+      <div class="sc-title">T+${{PH}} 平均報酬熱圖</div>
       <div id="hmAr"></div>
     </div>
   </div>
   <div class="sc-grid sc-wide" style="padding-top:0">
     <div class="sc-box">
-      <div class="sc-title">各 K線分區間 T+1~T+10 勝率走勢</div>
+      <div class="sc-title">各 K線分區間 T+1~T+40 勝率走勢</div>
       <div style="position:relative;height:160px"><canvas id="chartMatLineKline"></canvas></div>
     </div>
     <div class="sc-box">
-      <div class="sc-title">各綜合分區間 T+1~T+10 勝率走勢</div>
+      <div class="sc-title">各綜合分區間 T+1~T+40 勝率走勢</div>
       <div style="position:relative;height:160px"><canvas id="chartMatLineComposite"></canvas></div>
     </div>
   </div>
   <div class="sc-grid sc-wide" style="padding-top:0">
     <div class="sc-box">
-      <div class="sc-title">各突破分區間 T+1~T+10 勝率走勢</div>
+      <div class="sc-title">各突破分區間 T+1~T+40 勝率走勢</div>
       <div style="position:relative;height:160px"><canvas id="chartMatLineBreakout"></canvas></div>
     </div>
     <div class="sc-box">
-      <div class="sc-title">各波段分區間 T+1~T+10 勝率走勢</div>
+      <div class="sc-title">各波段分區間 T+1~T+40 勝率走勢</div>
       <div style="position:relative;height:160px"><canvas id="chartMatLineSwing"></canvas></div>
     </div>
   </div>
   <div class="sc-grid sc-wide" style="padding-top:0">
     <div class="sc-box">
-      <div class="sc-title">各BB分區間 T+1~T+10 勝率走勢</div>
+      <div class="sc-title">各BB分區間 T+1~T+40 勝率走勢</div>
       <div style="position:relative;height:160px"><canvas id="chartMatLineBB"></canvas></div>
     </div>
   </div>`;
@@ -1348,7 +1351,7 @@ function buildTabMatrix(){{
 const CROSS_TOP_BUCKET={{kline:'A_78UP',composite:'A_88UP',breakout:'A_70UP',swing:'A_70UP',bb:'A_70UP',rs:'A_85UP',rs5d:'A_20UP',volume_ratio:'A_2P5UP'}};
 const CROSS_PAIR_LIST=[['kline','composite'],['kline','breakout'],['kline','swing'],['kline','bb'],['composite','breakout'],['composite','swing'],['composite','bb'],['breakout','swing'],['breakout','bb'],['swing','bb'],['rs5d','volume_ratio'],['rs','kline']];
 function buildCrossOverview(){{
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
   const rows=CROSS_PAIR_LIST.map(([a,b])=>{{
     const gname=crossGroupName(a,b);
     const ka=CROSS_TOP_BUCKET[a], kb=CROSS_TOP_BUCKET[b];
@@ -1361,12 +1364,12 @@ function buildCrossOverview(){{
   const validRows=rows.filter(r=>r.pts.length);
   if(!validRows.length)return'<div style="padding:14px;color:#94a3b8">尚無足夠交叉樣本，等資料庫多累積一些高分股票再回來看。</div>';
   const sorted=[...validRows].sort((r1,r2)=>{{
-    const b1=r1.pts.find(p=>p.h===5),b2=r2.pts.find(p=>p.h===5);
+    const b1=r1.pts.find(p=>p.h===PH),b2=r2.pts.find(p=>p.h===PH);
     return (b2?b2.wr:0)-(b1?b1.wr:0);
   }});
   const tableRows=sorted.map(r=>{{
     const best=r.pts.reduce((a,c)=>c.wr>a.wr?c:a);
-    const t5=r.pts.find(p=>p.h===5);
+    const t5=r.pts.find(p=>p.h===PH);
     const wrCells=hs.map(h=>{{
       const p=r.pts.find(x=>x.h===h);
       if(!p)return`<td style="text-align:center;color:#64748b">—</td>`;
@@ -1377,7 +1380,7 @@ function buildCrossOverview(){{
   return`
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">十二組合總覽 — 兩兩都在最高分位時的 T+1~T+10 勝率（依T+5排名）</div>
+      <div class="sc-title">十二組合總覽 — 兩兩都在最高分位時的 T+1~T+40 勝率（依T+${{PH}}排名）</div>
       <div style="position:relative;height:200px"><canvas id="chartCrossOverview"></canvas></div>
     </div>
   </div>
@@ -1389,7 +1392,7 @@ function buildCrossOverview(){{
   </div>`;
 }}
 function afterCrossOverview(){{
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
   const rows=CROSS_PAIR_LIST.map(([a,b])=>{{
     const gname=crossGroupName(a,b);
     const ka=CROSS_TOP_BUCKET[a], kb=CROSS_TOP_BUCKET[b];
@@ -1411,13 +1414,13 @@ function drawSingleDimTrend(canvasId, dimKey){{
   const D=DIM_DEFS[dimKey];
   const colors=['#f87171','#fbbf24','#4ade80','#475569'];
   const datasets=D.buckets.map((b,i)=>{{
-    const pts=[1,3,5,7,10].map(h=>{{
+    const pts=STATS_HS.map(h=>{{
       const cell=(STATS.summary||[]).find(m=>m.group_name===`single_${{dimKey}}`&&m[D.field]===b.k&&m.horizon===h);
       return cell?wrOf(cell):null;
     }});
     return{{label:b.lbl,data:pts,borderColor:colors[i],backgroundColor:'transparent',tension:.3,pointRadius:4,pointBackgroundColor:colors[i]}};
   }});
-  _mkChart(canvasId,{{type:'line',data:{{labels:['T+1','T+3','T+5','T+7','T+10'],datasets}},
+  _mkChart(canvasId,{{type:'line',data:{{labels:STATS_HS.map(h=>'T+'+h),datasets}},
     options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{labels:{{color:'#64748b',boxWidth:10,font:{{size:10}}}}}}}},
     scales:{{x:{{..._BASE_SCALE.x}},y:{{..._BASE_SCALE.y,ticks:{{color:'#94a3b8',callback:v=>v+'%'}},title:{{display:true,text:'勝率 %',color:'#94a3b8',font:{{size:10}}}}}}}}}}}});
 }}
@@ -1438,11 +1441,11 @@ function buildTabRecent(){{
   return`
   <div class="sc-grid" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">各訊號 T+5 勝率對比</div>
+      <div class="sc-title">各訊號 T+${{PH}} 勝率對比</div>
       <div style="position:relative;height:160px"><canvas id="chartEvWR"></canvas></div>
     </div>
     <div class="sc-box">
-      <div class="sc-title">T+5 報酬分布</div>
+      <div class="sc-title">T+${{PH}} 報酬分布</div>
       <div style="position:relative;height:160px"><canvas id="chartRetDist"></canvas></div>
     </div>
   </div>
@@ -1498,12 +1501,8 @@ function buildTabRecent(){{
         <th class="stats-sort" onclick="statsSortBy('inst_buy_days')">法人</th>
         <th class="stats-sort" onclick="statsSortBy('price_vs_ma60_pct')" title="收盤相對MA60(季線)乖離%。金色0~5%=策略O區間；實測離MA60越遠T+5勝率越低(早期樣本)">MA60%</th>
         <th style="width:54px;min-width:54px;white-space:nowrap">入場價</th>
-        <th class="stats-sort" onclick="statsSortBy('t1_return')">T+1${{STATS_MODE==='excess'?'(超額)':''}}</th>
-        <th class="stats-sort" onclick="statsSortBy('t3_return')">T+3${{STATS_MODE==='excess'?'(超額)':''}}</th>
-        <th class="stats-sort" onclick="statsSortBy('t5_return')">T+5${{STATS_MODE==='excess'?'(超額)':''}}</th>
-        <th class="stats-sort" onclick="statsSortBy('t7_return')">T+7${{STATS_MODE==='excess'?'(超額)':''}}</th>
-        <th class="stats-sort" onclick="statsSortBy('t10_return')">T+10${{STATS_MODE==='excess'?'(超額)':''}}</th>
-        <th class="stats-sort" onclick="statsSortBy('t5_excess')" title="個股T+5報酬 − 大盤(TWII)同期間報酬，扣除大盤方向後的真實選股貢獻">超額(T+5)</th>
+        ${{STATS_HS.map(h=>`<th class="stats-sort" onclick="statsSortBy('t${{h}}_return')">T+${{h}}${{STATS_MODE==='excess'?'(超額)':''}}</th>`).join('')}}
+        <th class="stats-sort" onclick="statsSortBy('t${{PH}}_excess')" title="個股T+${{PH}}報酬 − 大盤(TWII)同期間報酬，扣除大盤方向後的真實選股貢獻">超額(T+${{PH}})</th>
         <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('event_type')">訊號</th>
         <th class="stats-sort" style="width:75px;max-width:75px" onclick="statsSortBy('entry_signal')">今日訊號</th>
         <th class="stats-sort" onclick="statsSortBy('vcp_status')">VCP狀態</th>
@@ -1515,17 +1514,18 @@ function buildTabRecent(){{
 }}
 function afterRecent(){{
   // Dist histogram
-  const all=liteRows().filter(r=>retOf(r,5)!=null).map(r=>retOf(r,5));
-  const bins=[-8,-6,-4,-2,0,2,4,6,8,10];
-  const bLabels=bins.slice(0,-1).map((b,i)=>`${{b}}~${{bins[i+1]}}%`);
-  const bCounts=bins.slice(0,-1).map((b,i)=>all.filter(v=>v>=b&&v<bins[i+1]).length);
+  const all=liteRows().filter(r=>retOf(r,PH)!=null).map(r=>retOf(r,PH));
+  const bins=[-20,-15,-10,-5,0,5,10,15,20,30];
+  const _lastBin=bins.length-2;
+  const bLabels=bins.slice(0,-1).map((b,i)=>i===0?`<${{bins[1]}}%`:i===_lastBin?`≥${{b}}%`:`${{b}}~${{bins[i+1]}}%`);
+  const bCounts=bins.slice(0,-1).map((b,i)=>all.filter(v=>i===0?v<bins[1]:i===_lastBin?v>=b:(v>=b&&v<bins[i+1])).length);
   const bColors=bins.slice(0,-1).map(b=>b>=0?'rgba(74,222,128,.7)':'rgba(248,113,113,.7)');
   _mkChart('chartRetDist',{{type:'bar',data:{{labels:bLabels,datasets:[{{data:bCounts,backgroundColor:bColors,borderRadius:4,borderSkipped:false}}]}},
     options:{{responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.y}} 筆`}}}}}},scales:{{x:{{..._BASE_SCALE.x,ticks:{{color:'#94a3b8',font:{{size:9}}}}}},y:{{..._BASE_SCALE.y,ticks:{{color:'#94a3b8'}}}}}}}}}});
 
   // Event T+5 WR bar
   const evTypes=[...new Set((STATS.summary||[]).filter(x=>x.group_name==='event_type').map(x=>x.event_type))];
-  const evWR=evTypes.map(et=>{{const x=(STATS.summary||[]).find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===5);return x?wrOf(x):null;}});
+  const evWR=evTypes.map(et=>{{const x=(STATS.summary||[]).find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===PH);return x?wrOf(x):null;}});
   const evColors=evWR.map((v,i)=>ET_COLORS[i%ET_COLORS.length]);
   _mkChart('chartEvWR',{{type:'bar',data:{{labels:evTypes.map(e=>labelEvent(e)),datasets:[{{data:evWR,backgroundColor:evColors,borderRadius:4,borderSkipped:false}}]}},
     options:{{responsive:true,maintainAspectRatio:false,plugins:{{..._NO_LEGEND,tooltip:{{callbacks:{{label:ctx=>`${{ctx.parsed.y?.toFixed(1)}}%`}}}}}},
@@ -1574,7 +1574,7 @@ function renderRecentStats(){{
     if(etFilt&&!eventList(r).includes(etFilt))return false;
     return true;
   }});
-  const _RET_SORT_H={{t1_return:1,t3_return:3,t5_return:5,t7_return:7,t10_return:10}};
+  const _RET_SORT_H=Object.fromEntries(STATS_HS.map(h=>['t'+h+'_return',h]));
   data=[...data].sort((a,b)=>{{
     let av,bv;
     if(_RET_SORT_H[_sigSort]){{
@@ -1608,9 +1608,8 @@ function renderRecentStats(){{
     <td style="text-align:center">${{fInst(r.inst_buy_days)}}</td>
     <td style="text-align:center">${{fMa60(r.price_vs_ma60_pct)}}</td>
     <td style="color:#94a3b8;width:54px;min-width:54px;white-space:nowrap" title="${{r.entry_date ? '進場日：'+r.entry_date : '尚未取得下一個交易日開盤價'}}">${{r.entry_price!=null?Number(r.entry_price).toFixed(1):'-'}}</td>
-    <td>${{statCell(retOf(r,1))}}</td><td>${{statCell(retOf(r,3))}}</td>
-    <td>${{statCell(retOf(r,5))}}</td><td>${{statCell(retOf(r,7))}}</td><td>${{statCell(retOf(r,10))}}</td>
-    <td title="個股T+5報酬 − 大盤同期間報酬">${{r.t5_excess!=null?statCell(r.t5_excess):'<span class="iz">—</span>'}}</td>
+    ${{STATS_HS.map(h=>`<td>${{statCell(retOf(r,h))}}</td>`).join('')}}
+    <td title="個股T+${{PH}}報酬 − 大盤同期間報酬">${{r['t'+PH+'_excess']!=null?statCell(r['t'+PH+'_excess']):'<span class="iz">—</span>'}}</td>
     <td style="color:#93c5fd;font-size:11px;width:75px;max-width:75px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr(labelEventList(r))}}">${{labelEventList(r)}}${{(r.volume_ratio||0)>=2.5?` <span title="量比${{Number(r.volume_ratio).toFixed(1)}}倍，實測真爆量(≥2.5倍)反而勝率最差" style="color:#f87171">🔺</span>`:''}}</td>
     <td class="recent-entry-signal">${{fSig(r.entry_signal)}}</td>
     <td style="text-align:center">${{vcpStatusCell(r)}}</td>
@@ -1628,7 +1627,7 @@ function buildTabPeak(){{
   const sum=STATS.summary||[];
   const evTypes=[...new Set(sum.filter(x=>x.group_name==='event_type').map(x=>x.event_type))];
   if(!evTypes.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
   const rows=evTypes.map((et,ei)=>{{
     const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
     if(!pts.length)return'';
@@ -1645,7 +1644,7 @@ function buildTabPeak(){{
   return`
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">各訊號類型 T+1~T+10 勝率對比（Grouped Bar）</div>
+      <div class="sc-title">各訊號類型 T+1~T+40 勝率對比（Grouped Bar）</div>
       <div style="position:relative;height:200px"><canvas id="chartPeak"></canvas></div>
     </div>
   </div>
@@ -1666,7 +1665,7 @@ function buildTabPeak(){{
 function buildPeakByDim(dimKey,title){{
   const sum=STATS.summary||[];
   const D=DIM_DEFS[dimKey];
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
   const rows=D.buckets.map(b=>{{
     const pts=hs.map(h=>{{const x=sum.find(s=>s.group_name===`single_${{dimKey}}`&&s[D.field]===b.k&&s.horizon===h);return x?{{h,wr:wrOf(x),ar:arOf(x),n:Number(x.sample_count)}}:null;}}).filter(Boolean);
     if(!pts.length)return'';
@@ -1693,7 +1692,7 @@ function buildPeakByDim(dimKey,title){{
 function afterPeak(){{
   const sum=STATS.summary||[];
   const evTypes=[...new Set(sum.filter(x=>x.group_name==='event_type').map(x=>x.event_type))];
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
   const hLabels=hs.map(h=>`T+${{h}}`);
   const datasets=evTypes.map((et,i)=>{{
     const data=hs.map(h=>{{const x=sum.find(s=>s.group_name==='event_type'&&s.event_type===et&&s.horizon===h);return x?wrOf(x):null;}});
@@ -1709,7 +1708,7 @@ function afterPeak(){{
 // ── Tab: 策略組合回測（A突破族／B波段族／C純K線／D純綜合分基準線／E純BB分時機濾網）──────
 function buildTabStrategy(){{
   const sum=STATS.summary||[];
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
   const present=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='event_type'&&s.event_type===et));
   if(!present.length){{
     return'<div style="padding:20px;color:#94a3b8">尚無策略組合資料——請確認 stats_db.py 已更新到含十五策略標籤的版本，並且 GitHub Actions 已重新跑過幾天累積樣本。</div>';
@@ -1727,7 +1726,7 @@ function buildTabStrategy(){{
     return`<tr><td style="color:#93c5fd;font-weight:600">${{labelEvent(et)}}</td><td style="text-align:center;color:#94a3b8">${{pts[0]?.n||0}}</td>${{wrCells.join('')}}<td><span class="peak-badge">T+${{best.h}}</span></td><td class="pos" style="text-align:center">${{bestAr.ar>=0?'+':''}}${{bestAr.ar.toFixed(2)}}%</td></tr>`;
   }}).filter(Boolean);
 
-  // 超額報酬明細表（T+1~T+10全部天期），跟主表區隔開來獨立一張，
+  // 超額報酬明細表（T+1~T+40全部天期），跟主表區隔開來獨立一張，
   // 因為超額報酬是「扣除大盤方向後的alpha」，性質跟上面的絕對勝率/報酬不同，
   // 混在同一張表容易讓人誤以為兩者可以直接比大小。
   const excessRows=present.map(et=>{{
@@ -1755,7 +1754,7 @@ function buildTabStrategy(){{
     <div><b style="color:#e879f9">策略H 強勢量縮</b>：RS≥85 + 量比<1.0倍——長期強勢股當日量縮，代表短線賣壓萎縮、健康整理</div>
     <div><b style="color:#facc15">策略I 中強動能</b>：RS介於50~85（甜蜜點）+ K線分≥80——跟G/H邏輯相反，抓「尚未到極端強勢、但短線動能剛要噴出」的股票</div>
     <div><b style="color:#38bdf8">策略J 中強降溫</b>：RS介於70~84 + K線分<60——中期相對強度偏強、短線技術面降溫，抓法跟G類似但RS門檻略寬、K線分門檻更嚴。</div>
-    <div><b style="color:#34d399">策略K 低波段蓄勢族</b>：波段分<30 + BB分50~69 + RS分50~69 + 量比<1.0 + 綜合分<60——完全不看RS≥85高門檻，五項條件全部刻意排除「已經很強」的股票，抓「正在蓄勢、還沒被市場注意到」的組合。來自窮舉式多維度回測(2026/09)：波段分<30+RS50~69這個核心是28,000+組合搜尋中，少數T+1~T+10全部天期超額報酬都一致為正的組合，且訊號分散在22個交易日、51檔不重複股票，排除單日/單股集中的假訊號風險。</div>
+    <div><b style="color:#34d399">策略K 低波段蓄勢族</b>：波段分<30 + BB分50~69 + RS分50~69 + 量比<1.0 + 綜合分<60——完全不看RS≥85高門檻，五項條件全部刻意排除「已經很強」的股票，抓「正在蓄勢、還沒被市場注意到」的組合。來自窮舉式多維度回測(2026/09)：波段分<30+RS50~69這個核心是28,000+組合搜尋中，少數T+1~T+40全部天期超額報酬都一致為正的組合，且訊號分散在22個交易日、51檔不重複股票，排除單日/單股集中的假訊號風險。</div>
     <div><b style="color:#f472b6">策略L 溫和轉強蓄勢族</b>：K線分<60 + RS分50~69 + RS5日分0~9 + 量比<1.0 + 法人連買1~3天——K線分<60是反直覺設計(本系統原本假設K線分越高越好，但窮舉回測發現高K線分反而拖累T+5表現)，搭配RS5日溫和轉強(非暴衝)、量縮非追價、法人剛啟動非連買過久，五項條件共同指向「還沒被市場注意到，但已有溫和轉強跡象」。跟策略K邏輯互補(K不看法人/RS5日，L把這兩者納入做更精細的起漲初期篩選)。</div>
     <div><b style="color:#a3e635">策略M 高綜低波段</b>：綜合分≥88 + 波段分<30——綜合分極強、但沒有「強勢股拉回」結構，偏純動能/噴出型。樣本是D(綜合分≥75)的子集，要打贏的對象是D。</div>
     <div><b style="color:#fb7185">策略N 中段雙分RS85</b>：RS≥85 + 突破分30~49 + 波段分30~49——突破分與波段分都落在中段(熱圖C_30_49區間)的強勢股。</div>
@@ -1767,7 +1766,7 @@ function buildTabStrategy(){{
   </div>
   <div class="sc-grid sc-wide" style="padding-bottom:0">
     <div class="sc-box">
-      <div class="sc-title">十五策略 T+1~T+10 勝率對比</div>
+      <div class="sc-title">十五策略 T+1~T+40 勝率對比</div>
       <div style="position:relative;height:200px"><canvas id="chartStrategy"></canvas></div>
     </div>
   </div>
@@ -1781,7 +1780,7 @@ function buildTabStrategy(){{
   ${{excessRows.length?`
   <div class="sc-title" style="padding:0 14px 4px;display:flex;align-items:center;gap:8px">
     <span style="background:#1e2a1a;border:1px solid #365928;color:#86efac;border-radius:4px;padding:1px 8px;font-size:10px;letter-spacing:.5px">ALPHA</span>
-    <span>超額報酬(扣除大盤同期報酬) — 各策略 T+1~T+10</span>
+    <span>超額報酬(扣除大盤同期報酬) — 各策略 T+1~T+40</span>
   </div>
   <div style="padding:0 14px 4px;font-size:11px;color:#94a3b8">個股報酬 − 大盤(TWII)同期間報酬，代表扣掉「大盤本身漲跌」共同影響後的真實選股貢獻。「—」代表該筆尚未回補大盤對照資料。</div>
   <div class="stats-scroll" style="padding:0 0 14px">
@@ -1796,7 +1795,7 @@ function buildTabStrategy(){{
 }}
 function afterStrategy(){{
   const sum=STATS.summary||[];
-  const hs=[1,3,5,7,10];
+  const hs=STATS_HS;
   const present=STRAT_ORDER.filter(et=>sum.some(s=>s.group_name==='event_type'&&s.event_type===et));
   if(!present.length)return;
   const hLabels=hs.map(h=>`T+${{h}}`);
@@ -1820,7 +1819,7 @@ function buildTabHot(){{
     if(!freq[key])freq[key]={{ticker:r.ticker,name:r.name||r.ticker,cnt:0,wins:0,total:0,retSum:0,lastDate:r.trade_date,types:new Set()}};
     freq[key].cnt++;
     ((STATS.ticker_types||{{}})[r.ticker]||eventList(r)).forEach(t=>freq[key].types.add(t));
-    if(retOf(r,5)!=null){{freq[key].total++;freq[key].retSum+=retOf(r,5);if(retOf(r,5)>0)freq[key].wins++;}}
+    if(retOf(r,PH)!=null){{freq[key].total++;freq[key].retSum+=retOf(r,PH);if(retOf(r,PH)>0)freq[key].wins++;}}
     if((r.trade_date||'')>(freq[key].lastDate||''))freq[key].lastDate=r.trade_date;
   }});
   const sorted=Object.values(freq).sort((a,b)=>b.cnt-a.cnt).slice(0,15);
@@ -1840,9 +1839,9 @@ function buildTabHot(){{
       <td style="color:#94a3b8;font-size:11px">${{x.lastDate||''}}</td>
     </tr>`;
   }});
-  return`<div style="padding:10px 14px 6px;font-size:11px;color:#94a3b8">歷來被系統選中最多次的標的（T+5 樣本≥3筆才顯示勝率）</div>
+  return`<div style="padding:10px 14px 6px;font-size:11px;color:#94a3b8">歷來被系統選中最多次的標的（T+${{PH}} 樣本≥3筆才顯示勝率）</div>
   <div class="stats-scroll">
-  <table class="stats-table"><thead><tr><th style="text-align:center">#</th><th>代號</th><th>名稱</th><th>出現次數</th><th>訊號類型</th><th style="text-align:center">T+5 勝率</th><th style="text-align:center">T+5 平均報酬</th><th>最後出現</th></tr></thead>
+  <table class="stats-table"><thead><tr><th style="text-align:center">#</th><th>代號</th><th>名稱</th><th>出現次數</th><th>訊號類型</th><th style="text-align:center">T+${{PH}} 勝率</th><th style="text-align:center">T+${{PH}} 平均報酬</th><th>最後出現</th></tr></thead>
   <tbody>${{rows.join('')}}</tbody></table></div>`;
 }}
 
@@ -1855,8 +1854,8 @@ function renderStats(){{
     return;
   }}
   const c=STATS.counts||{{}};
-  const matured=liteRows().filter(r=>retOf(r,5)!=null);
-  const wr5=matured.length?((matured.filter(r=>retOf(r,5)>0).length/matured.length)*100).toFixed(1):null;
+  const matured=liteRows().filter(r=>retOf(r,PH)!=null);
+  const wr5=matured.length?((matured.filter(r=>retOf(r,PH)>0).length/matured.length)*100).toFixed(1):null;
 
   document.getElementById('statsHeadNote').textContent=`訊號 ${{c.events||0}} 筆 · 績效 ${{c.outcomes||0}} 筆 · 觀察 ${{c.watches||0}} 筆`;
 
@@ -1865,7 +1864,7 @@ function renderStats(){{
     <div class="stats-kpi-row">
       <div class="stat-card sk1"><div class="stat-k">每日快照</div><div class="stat-v">${{(c.snapshots||0).toLocaleString()}}</div><div class="stat-sub">累積筆數</div></div>
       <div class="stat-card sk2"><div class="stat-k">訊號事件</div><div class="stat-v">${{(c.events||0).toLocaleString()}}</div><div class="stat-sub">已記錄</div></div>
-      <div class="stat-card sk3"><div class="stat-k" id="statsKpiT5Label">T+5 整體勝率</div><div class="stat-v" id="statsKpiT5Value" style="color:${{wr5>=50?'#f87171':'#4ade80'}}">${{wr5!=null?wr5+'%':'—'}}</div><div class="stat-sub" id="statsKpiT5Sub">樣本 ${{matured.length}} 筆</div></div>
+      <div class="stat-card sk3"><div class="stat-k" id="statsKpiT5Label">T+${{PH}} 整體勝率</div><div class="stat-v" id="statsKpiT5Value" style="color:${{wr5>=50?'#f87171':'#4ade80'}}">${{wr5!=null?wr5+'%':'—'}}</div><div class="stat-sub" id="statsKpiT5Sub">樣本 ${{matured.length}} 筆</div></div>
       <div class="stat-card sk4"><div class="stat-k">觀察追蹤</div><div class="stat-v">${{(c.watches||0).toLocaleString()}}</div><div class="stat-sub">待確認</div></div>
     </div>
     <div class="stats-inner-tabs">
