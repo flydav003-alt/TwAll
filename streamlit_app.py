@@ -6,7 +6,7 @@ streamlit_app.py — 台股半導體 Screener
 import json, os, streamlit as st
 import streamlit.components.v1 as components
 from tw_screener_core import yahoo_tw_url
-from stats_db import export_stats_payload, classify_signal, classify_strategy_events
+from stats_db import export_stats_payload, select_recent_rows, classify_signal, classify_strategy_events
 
 st.set_page_config(page_title="台股半導體 Screener", page_icon="📈",
                    layout="wide", initial_sidebar_state="collapsed")
@@ -34,27 +34,31 @@ def _load_market():
     if not os.path.exists(p): return {}
     with open(p,encoding="utf-8") as f: return json.load(f)
 
+STATS_RECENT_LIMIT = 1000        # 近期明細：全體最新幾筆
+STATS_PER_TYPE_LIMIT = 1000      # 近期明細：每個訊號類型各自最新幾筆（選策略時不受日期窗口限制）
+
+
 @st.cache_data(ttl=600, show_spinner=False)
-def _load_stats(recent_days: int = 45):
+def _load_stats(full: bool = False):
     """優先讀 GitHub Actions 預先產生的 data/stats_payload.json（不用現場查詢），
-    找不到或讀取失敗時才退回即時計算（行為等同改版前）。
-    recent_days：近期明細只保留幾天（預設 45；展開按鈕為 120）。統計總覽 summary 一律是全歷史。"""
-    from datetime import datetime, timedelta
+    找不到或讀取失敗才退回即時計算。full=False 時近期明細依「筆數」裁切，True 則載入完整歷史。
+    統計總覽 summary 與 lite（T+5 KPI/分布/常勝標的用）一律是全歷史，不受裁切影響。"""
+    payload = None
     p = os.path.join("data", "stats_payload.json")
     if os.path.exists(p):
         try:
             with open(p, encoding="utf-8") as f:
                 payload = json.load(f)
-            if payload.get("ready"):
-                cutoff = (datetime.now() - timedelta(days=recent_days)).strftime("%Y-%m-%d")
-                payload["recent"] = [r for r in (payload.get("recent") or [])
-                                     if (r.get("trade_date") or "") >= cutoff]
-                payload["recent_days"] = recent_days
-                return payload
+            if not payload.get("ready"):
+                payload = None
         except Exception:
-            pass  # fallback below
-    payload = export_stats_payload(recent_days=recent_days)
-    payload["recent_days"] = recent_days
+            payload = None
+    if payload is None:
+        payload = export_stats_payload()
+    if payload.get("ready") and not full:
+        payload["recent"] = select_recent_rows(
+            payload.get("recent") or [], STATS_RECENT_LIMIT, STATS_PER_TYPE_LIMIT)
+    payload["recent_full"] = bool(full)
     return payload
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -203,11 +207,11 @@ def main():
     mkt_rsi = mkt.get("rsi")
     mkt_ma  = not mkt.get("below_ma20", False)
     _full_recent = st.toggle(
-        "📂 載入更早資料（近 120 天，含 T+20 / T+30 到期樣本）",
+        "📂 載入完整歷史明細",
         value=False, key="stats_full_recent",
-        help="預設只載入近 45 天以保持流暢。開啟後明細、T+5 KPI、報酬分布、常勝標的都會以 120 天計算。",
+        help="預設只載入「全體最新 1000 筆 ＋ 每個訊號類型各自最新 1000 筆」以保持流暢；開啟後載入全部歷史明細（較慢）。",
     )
-    stats_payload = _load_stats(120 if _full_recent else 45)
+    stats_payload = _load_stats(_full_recent)
     rows_json = json.dumps(rows, ensure_ascii=False, default=str)
     stats_json = json.dumps(stats_payload, ensure_ascii=False, default=str)
     total     = len(rows)
@@ -762,11 +766,17 @@ function retOf(r,h){{
   const v=(STATS_MODE==='excess')?r['t'+h+'_excess']:r['t'+h+'_return'];
   return (v==null||Number.isNaN(Number(v)))?null:Number(v);
 }}
+// 總覽型小工具（T+5 KPI／報酬分布／常勝標的）用全歷史精簡資料，不受近期明細筆數限制
+function liteRows(){{
+  if(!STATS.lite)return STATS.recent||[];
+  if(!STATS._lite)STATS._lite=STATS.lite.map(a=>({{ticker:a[0],name:a[1],trade_date:a[2],t5_return:a[3],t5_excess:a[4]}}));
+  return STATS._lite;
+}}
 function setStatsMode(m){{
   if(STATS_MODE===m)return;
   STATS_MODE=m;
   document.querySelectorAll('.mode-toggle-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
-  const matured=(STATS.recent||[]).filter(r=>retOf(r,5)!=null);
+  const matured=liteRows().filter(r=>retOf(r,5)!=null);
   const wr5=matured.length?((matured.filter(r=>retOf(r,5)>0).length/matured.length)*100).toFixed(1):null;
   const kpiLabel=document.getElementById('statsKpiT5Label');
   const kpiVal=document.getElementById('statsKpiT5Value');
@@ -1505,7 +1515,7 @@ function buildTabRecent(){{
 }}
 function afterRecent(){{
   // Dist histogram
-  const all=(STATS.recent||[]).filter(r=>retOf(r,5)!=null).map(r=>retOf(r,5));
+  const all=liteRows().filter(r=>retOf(r,5)!=null).map(r=>retOf(r,5));
   const bins=[-8,-6,-4,-2,0,2,4,6,8,10];
   const bLabels=bins.slice(0,-1).map((b,i)=>`${{b}}~${{bins[i+1]}}%`);
   const bCounts=bins.slice(0,-1).map((b,i)=>all.filter(v=>v>=b&&v<bins[i+1]).length);
@@ -1580,7 +1590,9 @@ function renderRecentStats(){{
     const cls=s==='matured'?'st-matured':s==='partial'?'st-partial':'st-open';
     return`<span class="${{cls}}">${{s||'-'}}</span>`;
   }};
-  host.innerHTML=data.map(r=>`<tr>
+  if(!window._recLimit)window._recLimit=1000;
+  const shown=data.slice(0,window._recLimit);
+  host.innerHTML=shown.map(r=>`<tr>
     <td style="color:#94a3b8;width:59px;min-width:59px;white-space:nowrap;font-size:10px;letter-spacing:-0.3px">${{r.trade_date||'-'}}</td>
     <td><a class="tk" href="https://flydav003-alt.github.io/k-line/?stock=${{encodeURIComponent(r.ticker||'')}}" target="_blank" rel="noopener noreferrer">${{r.ticker||'-'}}</a></td>
     <td style="width:80px;max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${{escAttr(r.name||'')}}">${{r.name||'-'}}</td>
@@ -1604,7 +1616,10 @@ function renderRecentStats(){{
     <td style="text-align:center">${{vcpStatusCell(r)}}</td>
     <td>${{stBadge(r.status)}}</td>
   </tr>`).join('')||'<tr><td colspan="25" style="text-align:center;padding:16px;color:#94a3b8">沒有符合篩選的訊號</td></tr>';
-  const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length;
+  if(data.length>shown.length){{
+    host.insertAdjacentHTML('beforeend',`<tr><td colspan="25" style="text-align:center;padding:14px"><button type="button" class="mode-toggle-btn" onclick="window._recLimit+=500;renderRecentStats()">顯示更多（還有 ${{data.length-shown.length}} 筆）</button></td></tr>`);
+  }}
+  const cnt=document.getElementById('recentStatsCount');if(cnt)cnt.textContent=data.length>shown.length?(shown.length+' / '+data.length):data.length;
   schedResize();
 }}
 
@@ -1798,13 +1813,13 @@ function afterStrategy(){{
 
 // ── Tab: 常勝標的 ──────────────────────────────────────────────
 function buildTabHot(){{
-  const recent=STATS.recent||[];if(!recent.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
+  const recent=liteRows();if(!recent.length)return'<div style="padding:20px;color:#94a3b8">尚無資料。</div>';
   const freq={{}};
   recent.forEach(r=>{{
     const key=r.ticker+'|'+(r.name||r.ticker);
     if(!freq[key])freq[key]={{ticker:r.ticker,name:r.name||r.ticker,cnt:0,wins:0,total:0,retSum:0,lastDate:r.trade_date,types:new Set()}};
     freq[key].cnt++;
-    eventList(r).forEach(t=>freq[key].types.add(t));
+    ((STATS.ticker_types||{{}})[r.ticker]||eventList(r)).forEach(t=>freq[key].types.add(t));
     if(retOf(r,5)!=null){{freq[key].total++;freq[key].retSum+=retOf(r,5);if(retOf(r,5)>0)freq[key].wins++;}}
     if((r.trade_date||'')>(freq[key].lastDate||''))freq[key].lastDate=r.trade_date;
   }});
@@ -1825,7 +1840,7 @@ function buildTabHot(){{
       <td style="color:#94a3b8;font-size:11px">${{x.lastDate||''}}</td>
     </tr>`;
   }});
-  return`<div style="padding:10px 14px 6px;font-size:11px;color:#94a3b8">近期被系統選中最多次的標的（T+5 樣本≥3筆才顯示勝率）</div>
+  return`<div style="padding:10px 14px 6px;font-size:11px;color:#94a3b8">歷來被系統選中最多次的標的（T+5 樣本≥3筆才顯示勝率）</div>
   <div class="stats-scroll">
   <table class="stats-table"><thead><tr><th style="text-align:center">#</th><th>代號</th><th>名稱</th><th>出現次數</th><th>訊號類型</th><th style="text-align:center">T+5 勝率</th><th style="text-align:center">T+5 平均報酬</th><th>最後出現</th></tr></thead>
   <tbody>${{rows.join('')}}</tbody></table></div>`;
@@ -1840,7 +1855,7 @@ function renderStats(){{
     return;
   }}
   const c=STATS.counts||{{}};
-  const matured=(STATS.recent||[]).filter(r=>retOf(r,5)!=null);
+  const matured=liteRows().filter(r=>retOf(r,5)!=null);
   const wr5=matured.length?((matured.filter(r=>retOf(r,5)>0).length/matured.length)*100).toFixed(1):null;
 
   document.getElementById('statsHeadNote').textContent=`訊號 ${{c.events||0}} 筆 · 績效 ${{c.outcomes||0}} 筆 · 觀察 ${{c.watches||0}} 筆`;
