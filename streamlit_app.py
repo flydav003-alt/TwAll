@@ -35,8 +35,27 @@ def _load_market():
     with open(p,encoding="utf-8") as f: return json.load(f)
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _load_stats():
-    return export_stats_payload()
+def _load_stats(recent_days: int = 45):
+    """優先讀 GitHub Actions 預先產生的 data/stats_payload.json（不用現場查詢），
+    找不到或讀取失敗時才退回即時計算（行為等同改版前）。
+    recent_days：近期明細只保留幾天（預設 45；展開按鈕為 120）。統計總覽 summary 一律是全歷史。"""
+    from datetime import datetime, timedelta
+    p = os.path.join("data", "stats_payload.json")
+    if os.path.exists(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                payload = json.load(f)
+            if payload.get("ready"):
+                cutoff = (datetime.now() - timedelta(days=recent_days)).strftime("%Y-%m-%d")
+                payload["recent"] = [r for r in (payload.get("recent") or [])
+                                     if (r.get("trade_date") or "") >= cutoff]
+                payload["recent_days"] = recent_days
+                return payload
+        except Exception:
+            pass  # fallback below
+    payload = export_stats_payload(recent_days=recent_days)
+    payload["recent_days"] = recent_days
+    return payload
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_live_prices(tickers: tuple) -> dict:
@@ -183,7 +202,12 @@ def main():
     mkt_r5  = mkt.get("ret5d",0) or 0
     mkt_rsi = mkt.get("rsi")
     mkt_ma  = not mkt.get("below_ma20", False)
-    stats_payload = _load_stats()
+    _full_recent = st.toggle(
+        "📂 載入更早資料（近 120 天，含 T+20 / T+30 到期樣本）",
+        value=False, key="stats_full_recent",
+        help="預設只載入近 45 天以保持流暢。開啟後明細、T+5 KPI、報酬分布、常勝標的都會以 120 天計算。",
+    )
+    stats_payload = _load_stats(120 if _full_recent else 45)
     rows_json = json.dumps(rows, ensure_ascii=False, default=str)
     stats_json = json.dumps(stats_payload, ensure_ascii=False, default=str)
     total     = len(rows)
