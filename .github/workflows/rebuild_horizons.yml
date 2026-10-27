@@ -9,6 +9,10 @@ on:
         description: "新舊 T+1/5/10 不一致占比上限（預設 0.02 = 2%）。看過診斷報告確認原因無害後，才調高重跑"
         type: string
         default: "0.02"
+      drop_closed_day_events:
+        description: "一併清除「訊號日當天大盤休市」（如颱風假 7/10、端午 6/19 仍跑出訊號）的事件，避免重複計算"
+        type: boolean
+        default: false
       force:
         description: "驗證未通過也強制覆蓋（一般請保持 false）"
         type: boolean
@@ -42,7 +46,7 @@ jobs:
           pip install yfinance pandas numpy openpyxl requests
 
       - name: Rebuild outcomes (validated, aborts on mismatch)
-        run: python rebuild_horizons.py --max-mismatch-rate ${{ inputs.max_mismatch_rate }} ${{ inputs.force && '--force' || '' }}
+        run: python rebuild_horizons.py --max-mismatch-rate ${{ inputs.max_mismatch_rate }} ${{ inputs.drop_closed_day_events && '--drop-closed-day-events' || '' }} ${{ inputs.force && '--force' || '' }}
 
       - name: Upload mismatch report (for diagnosis)
         if: always()
