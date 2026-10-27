@@ -1884,7 +1884,16 @@ def refresh_summary_stats(conn):
         )
 
 
-def export_stats_payload(db_path=DB_PATH):
+def _round_floats(rows, nd=2):
+    """只縮短顯示用的浮點數（網頁顯示本來就只到 1~2 位小數），不動資料庫原始值。"""
+    for r in rows:
+        for k, v in r.items():
+            if isinstance(v, float):
+                r[k] = round(v, nd)
+    return rows
+
+
+def export_stats_payload(db_path=DB_PATH, recent_days=90):
     if not os.path.exists(db_path):
         return {"ready": False}
     conn = connect(db_path)
@@ -1940,11 +1949,14 @@ def export_stats_payload(db_path=DB_PATH):
                MAX(CASE WHEN o.horizon=10 THEN o.excess_return_pct END) AS t10_excess
         FROM signal_events e
         LEFT JOIN event_outcomes o ON o.event_id=e.event_id
-        WHERE e.trade_date >= date('now', '-90 days')
+        WHERE e.trade_date >= date('now', ?)
         GROUP BY e.trade_date, e.ticker
         ORDER BY e.trade_date DESC, e.ticker
-        """
+        """,
+        (f"-{int(recent_days)} days",),
     ).fetchall()]
+    _round_floats(recent)
+    _round_floats(summary)
     threshold_stats = []
     threshold_defs = [
         ("K線 >= 70", "e.kline_score >= 70"),
@@ -2061,3 +2073,16 @@ def export_stats_payload(db_path=DB_PATH):
         "watch": watch,
         "monthly_regime": monthly_regime,
     }
+
+
+def write_stats_payload(db_path=DB_PATH, out_path="data/stats_payload.json", recent_days=120):
+    """GitHub Actions 用：預先算好統計 payload 存成 JSON，Streamlit 開頁時直接讀檔、不再現場查詢。
+    recent_days 取 120 天（涵蓋 T+30 + 連假緩衝）；頁面預設只顯示近 45 天，按鈕才展開到全部。"""
+    import json as _json
+    payload = export_stats_payload(db_path, recent_days=recent_days)
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    tmp = out_path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        _json.dump(payload, f, ensure_ascii=False, separators=(",", ":"), default=str)
+    os.replace(tmp, out_path)
+    return out_path
