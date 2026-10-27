@@ -29,7 +29,7 @@ from tw_screener_core import (
     calc_vcp_status, calc_swing_score,
     calc_bb_data, calc_bb_score,
 )
-from stats_db import save_daily_run
+from stats_db import save_daily_run, write_stats_payload
 
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("peewee").setLevel(logging.CRITICAL)
@@ -449,6 +449,14 @@ def main():
           f"或 均值回歸bb_score≥{DB_MEANREV_MIN}）：{len(qualified)} 檔")
     save_daily_run(qualified, generated_at=ts, market_info=market_info)
     print(f"[INFO] 已更新統計資料庫 → {os.path.join(DATA_DIR, 'stats.db')}")
+    try:
+        _p = write_stats_payload(
+            db_path=os.path.join(DATA_DIR, "stats.db"),
+            out_path=os.path.join(DATA_DIR, "stats_payload.json"),
+        )
+        print(f"[INFO] 已預先產生統計 payload → {_p}")
+    except Exception as e:  # 失敗不影響主流程，Streamlit 會自動 fallback 回即時計算
+        print(f"[WARN] 預先產生 stats_payload.json 失敗：{e}")
 
 
 if __name__ == "__main__":
