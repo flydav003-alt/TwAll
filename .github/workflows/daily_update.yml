@@ -6,6 +6,11 @@ on:
     - cron: "31 7 * * 1-5"
   workflow_dispatch:
 
+# 與「重算 horizon」工作共用同一把鎖，避免兩個流程同時改 stats.db
+concurrency:
+  group: stats-db-write
+  cancel-in-progress: false
+
 jobs:
   fetch-and-update:
     runs-on: ubuntu-latest
