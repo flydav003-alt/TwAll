@@ -24,6 +24,7 @@ import os
 import shutil
 import sqlite3
 import sys
+from datetime import date, datetime, timedelta
 
 import stats_db
 from stats_db import HORIZONS, backfill_entry_price_to_next_open, connect, write_stats_payload
@@ -113,11 +114,44 @@ def _cleanup(*paths):
             pass
 
 
+def _find_closed_days(conn, max_days=8):
+    """找出「訊號日當天大盤其實休市」的日期（例如颱風假、國定假日卻仍有排程跑出訊號）。
+    判斷依據：該日期是平日、落在大盤歷史資料範圍內，但 ^TWII 沒有那天的 K 棒。
+    回傳 (closed_days, 說明)；資料不足或疑似誤判（日數過多）時回傳 (None, 原因)，呼叫端就不會刪除任何東西。"""
+    dates = [r[0] for r in conn.execute("SELECT DISTINCT trade_date FROM signal_events ORDER BY 1")]
+    if not dates:
+        return [], "無事件"
+    start = (datetime.fromisoformat(dates[0]) - timedelta(days=5)).strftime("%Y-%m-%d")
+    end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    twii = stats_db._twii_history(start, end)
+    if twii is None or len(twii) < 20:
+        return None, "大盤歷史資料取得失敗或太短，無法判斷休市日"
+    bars = set(twii["date_str"])
+    lo, hi = min(bars), max(bars)
+    closed = [d for d in dates if lo <= d <= hi and d not in bars and date.fromisoformat(d).weekday() < 5]
+    if len(closed) > max_days:
+        return None, f"偵測到 {len(closed)} 個休市日（超過上限 {max_days}），疑似大盤資料缺漏，為安全起見不刪除"
+    return closed, "ok"
+
+
+def _drop_closed_day_events(conn, closed):
+    marks = ",".join("?" * len(closed))
+    ids = [r[0] for r in conn.execute(f"SELECT event_id FROM signal_events WHERE trade_date IN ({marks})", closed)]
+    n_snap = conn.execute(f"SELECT COUNT(*) FROM daily_stock_snapshot WHERE trade_date IN ({marks})", closed).fetchone()[0]
+    conn.execute(f"DELETE FROM event_outcomes WHERE event_id IN (SELECT event_id FROM signal_events WHERE trade_date IN ({marks}))", closed)
+    conn.execute(f"DELETE FROM signal_events WHERE trade_date IN ({marks})", closed)
+    conn.execute(f"DELETE FROM daily_stock_snapshot WHERE trade_date IN ({marks})", closed)
+    conn.commit()
+    return set(ids), n_snap
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="一次性重算 event_outcomes 為新的 HORIZONS")
     ap.add_argument("--db", default=stats_db.DB_PATH)
     ap.add_argument("--max-fail-rate", type=float, default=0.03, help="下載失敗事件占比上限")
     ap.add_argument("--max-mismatch-rate", type=float, default=0.02, help="新舊 T+1/5/10 不一致占比上限")
+    ap.add_argument("--drop-closed-day-events", action="store_true",
+                    help="刪除「訊號日當天大盤休市」（颱風假/國定假日仍跑出訊號）的事件與快照，避免與前一交易日重複計算")
     ap.add_argument("--force", action="store_true", help="驗證未通過也覆蓋原檔")
     args = ap.parse_args(argv)
 
@@ -134,7 +168,17 @@ def main(argv=None):
     print(f"[INFO] 目前 HORIZONS = {HORIZONS}；舊資料 event_outcomes = {len(old)} 筆")
 
     conn = connect(work)
+    removed_ids = set()
     try:
+        if args.drop_closed_day_events:
+            closed, why = _find_closed_days(conn)
+            if closed is None:
+                print(f"[WARN] 略過休市日清理：{why}")
+            elif not closed:
+                print("[INFO] 未發現休市日的訊號事件，無需清理")
+            else:
+                removed_ids, n_snap = _drop_closed_day_events(conn, closed)
+                print(f"[INFO] 已清除休市日 {closed} 的事件 {len(removed_ids)} 筆、每日快照 {n_snap} 筆")
         result = backfill_entry_price_to_next_open(conn)
         # 只是「還沒有下一個交易日」的事件 → 改回 open，之後每日更新自動補上
         conn.execute(
@@ -158,8 +202,8 @@ def main(argv=None):
     new_horizons = sorted({h for (_, h) in new})
     per_h = {h: sum(1 for (_, hh) in new if hh == h) for h in new_horizons}
 
-    common = [k for k in old if k[1] in COMPARE_HORIZONS and k in new]
-    old_cmp = [k for k in old if k[1] in COMPARE_HORIZONS]
+    common = [k for k in old if k[1] in COMPARE_HORIZONS and k in new and k[0] not in removed_ids]
+    old_cmp = [k for k in old if k[1] in COMPARE_HORIZONS and k[0] not in removed_ids]
     mism = [
         k for k in common
         if old[k] is None or new[k] is None or abs(float(old[k]) - float(new[k])) > 0.05
