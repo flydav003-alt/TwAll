@@ -11,7 +11,9 @@ from tw_screener_core import is_otc
 
 DB_PATH = os.path.join("data", "stats.db")
 SCORE_VERSION = "2026-06-23-v2"
-HORIZONS = (1, 3, 5, 7, 10)
+HORIZONS = (1, 5, 10, 20, 40)
+PRIMARY_HORIZON = 20     # 頁面主要看的 horizon（KPI／報酬分布／勝率對比／超額報酬）
+MATURITY_HORIZON = 20    # 月度策略表判斷「這個月是否熟成」的基準 horizon
 
 
 def connect(db_path=DB_PATH):
@@ -1163,7 +1165,7 @@ def _calc_excess_return(twii_hist, entry_date, target_date, stock_ret_pct):
 
 def _history_after_signal(ticker, signal_date, market=None):
     start = (datetime.fromisoformat(signal_date) - timedelta(days=1)).strftime("%Y-%m-%d")
-    end = (datetime.fromisoformat(signal_date) + timedelta(days=35)).strftime("%Y-%m-%d")
+    end = (datetime.fromisoformat(signal_date) + timedelta(days=100)).strftime("%Y-%m-%d")
     for symbol in (_ticker_symbol(ticker, market), f"{ticker}.TW", f"{ticker}.TWO"):
         try:
             # 明確不復權，避免用未復權 Open 搭配復權 Close，造成報酬失真。
@@ -1243,6 +1245,9 @@ OUTCOME_INSERT_SQL = """
 
 
 def update_event_outcomes(conn):
+    """結算尚未完成(open/partial)的事件。
+    T+40 要等約 2~3 個月才完整，同時處於「未完成」的事件可達數千筆，所以改成「每檔股票只下載一次」
+    （原本是每筆事件各打一次 yfinance，數千次會拖垮每日排程），同一檔的多筆事件共用同一份歷史。"""
     events = conn.execute(
         """
         SELECT e.*, d.market
@@ -1254,48 +1259,60 @@ def update_event_outcomes(conn):
         """
     ).fetchall()
     filled_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not events:
+        return
 
     # 一次抓涵蓋全部待結算事件的大盤區間，供底下逐筆事件共用，避免每筆事件各打一次API。
-    twii_hist = None
-    if events:
-        earliest = min(e["trade_date"] for e in events)
-        start = (datetime.fromisoformat(earliest) - timedelta(days=1)).strftime("%Y-%m-%d")
-        end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        twii_hist = _twii_history(start, end)
+    earliest = min(e["trade_date"] for e in events)
+    start = (datetime.fromisoformat(earliest) - timedelta(days=1)).strftime("%Y-%m-%d")
+    end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    twii_hist = _twii_history(start, end)
 
+    groups = {}
     for e in events:
-        hist = _history_after_signal(e["ticker"], e["trade_date"], e["market"])
+        groups.setdefault((e["ticker"], e["market"]), []).append(e)
+    horizon_marks = ",".join("?" * len(HORIZONS))
+    total_groups = len(groups)
+    for index, ((ticker, market), group_events) in enumerate(groups.items(), 1):
+        first_date = min(x["trade_date"] for x in group_events)
+        g_start = (datetime.fromisoformat(first_date) - timedelta(days=1)).strftime("%Y-%m-%d")
+        hist, _reason = _history_for_range(ticker, market, g_start, end)
+        if index % 100 == 0 or index == total_groups:
+            print(f"[結算] 股票 {index}/{total_groups}")
         if hist is None:
             continue
-        future = hist[hist["date_str"] > e["trade_date"]].copy()
-        if future.empty:
-            continue
-        # 進場價改成「隔日開盤價」，不再用訊號當天收盤價(entry_reference_close)。
-        # 原本用訊號當天收盤價當進場價，等於假設訊號出來當下就能成交，但訊號其實是收盤後
-        # 才跑批次算出來的，實際上最快只能在隔天開盤才進場，用收盤價回測會系統性高估績效。
-        # entry_reference_close欄位保留供顯示「當時觸發訊號時的價位」參考，不再用於報酬計算。
-        if not _valid_price(future.iloc[0]["Open"]):
-            continue
-        entry = float(future.iloc[0]["Open"])
-        entry_date = future.iloc[0]["date_str"]
-        conn.execute(
-            "UPDATE signal_events SET entry_price=?, entry_date=?, entry_price_mode='next_open' WHERE event_id=?",
-            (entry, entry_date, e["event_id"]),
-        )
-        filled = 0
-        for row in _outcome_rows(e, future, entry, filled_at, twii_hist=twii_hist, entry_date=entry_date):
-            exists = conn.execute("SELECT 1 FROM event_outcomes WHERE event_id=? AND horizon=?", (e["event_id"], row[3])).fetchone()
-            if not exists:
-                conn.execute(OUTCOME_INSERT_SQL, row)
-                filled += 1
-        done = conn.execute(
-            "SELECT COUNT(*) AS c FROM event_outcomes WHERE event_id=?",
-            (e["event_id"],),
-        ).fetchone()["c"]
-        if done >= len(HORIZONS):
-            conn.execute("UPDATE signal_events SET status='matured' WHERE event_id=?", (e["event_id"],))
-        elif done > 0 or filled > 0:
-            conn.execute("UPDATE signal_events SET status='partial' WHERE event_id=?", (e["event_id"],))
+        for e in group_events:
+            future = hist[hist["date_str"] > e["trade_date"]].copy()
+            if future.empty:
+                continue
+            # 進場價改成「隔日開盤價」，不再用訊號當天收盤價(entry_reference_close)。
+            # 原本用訊號當天收盤價當進場價，等於假設訊號出來當下就能成交，但訊號其實是收盤後
+            # 才跑批次算出來的，實際上最快只能在隔天開盤才進場，用收盤價回測會系統性高估績效。
+            # entry_reference_close欄位保留供顯示「當時觸發訊號時的價位」參考，不再用於報酬計算。
+            if not _valid_price(future.iloc[0]["Open"]):
+                continue
+            entry = float(future.iloc[0]["Open"])
+            entry_date = future.iloc[0]["date_str"]
+            conn.execute(
+                "UPDATE signal_events SET entry_price=?, entry_date=?, entry_price_mode='next_open' WHERE event_id=?",
+                (entry, entry_date, e["event_id"]),
+            )
+            filled = 0
+            for row in _outcome_rows(e, future, entry, filled_at, twii_hist=twii_hist, entry_date=entry_date):
+                exists = conn.execute("SELECT 1 FROM event_outcomes WHERE event_id=? AND horizon=?", (e["event_id"], row[3])).fetchone()
+                if not exists:
+                    conn.execute(OUTCOME_INSERT_SQL, row)
+                    filled += 1
+            # 只計算「目前 HORIZONS 內」的結果筆數，避免舊 horizon（例如已停用的 T+3/T+7）殘留列
+            # 讓事件被誤判為已完成、永遠補不上 T+20/T+40。
+            done = conn.execute(
+                f"SELECT COUNT(*) AS c FROM event_outcomes WHERE event_id=? AND horizon IN ({horizon_marks})",
+                (e["event_id"], *HORIZONS),
+            ).fetchone()["c"]
+            if done >= len(HORIZONS):
+                conn.execute("UPDATE signal_events SET status='matured' WHERE event_id=?", (e["event_id"],))
+            elif done > 0 or filled > 0:
+                conn.execute("UPDATE signal_events SET status='partial' WHERE event_id=?", (e["event_id"],))
 
 
 def backfill_entry_price_to_next_open(conn):
@@ -1487,7 +1504,7 @@ def backfill_excess_return(conn, verbose=True):
 def backfill_strategy_mn(conn):
     """
     一次性回補：用 daily_stock_snapshot 既有歷史快照補出策略M/N過去符合條件的 signal_events，
-    再結算 T+1~T+10 與超額報酬並重建統計。可重複執行（INSERT OR IGNORE）。
+    再結算各 horizon（見 HORIZONS）與超額報酬並重建統計。可重複執行（INSERT OR IGNORE）。
     注意：快照只含當時通過 fetch_data.py 入庫門檻的股票，門檻外的樣本無法回補。
     """
     rows = conn.execute(
@@ -1598,9 +1615,9 @@ def refresh_monthly_strategy_stats(conn):
     月度視角本來就是要比較策略優劣，混入其他分類只會讓表格失焦。
 
     「這個月能不能顯示」的規則：不是看今天日期有沒有過完這個月，是看「這個月最後一筆訊號的
-    T+10結果是不是已經存在」——例如9月要等到9/30那天(若為交易日)發出的訊號也跑完10個交易日
-    的event_outcomes才算「熟了」，不然9月的T+10欄位會因為月底那幾筆還沒到期而被拖累失真，
-    跟你要求的「9/30資料跑完到+10再一起顯示9月」是同一件事。
+    T+20結果是不是已經存在」——例如9月要等到9/30那天(若為交易日)發出的訊號也跑完20個交易日
+    的event_outcomes才算「熟了」，不然9月的T+20欄位會因為月底那幾筆還沒到期而被拖累失真。
+    （T+40 欄位在月底訊號尚未到期時樣本數會較少，畫面以樣本數反映成熟度。）
     """
     conn.execute("DELETE FROM summary_stats WHERE group_name='monthly_event_type'")
     updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1647,10 +1664,10 @@ def refresh_monthly_strategy_stats(conn):
         last_date = last_signal_per_month.get(ym)
         if last_date is None:
             continue
-        # 該月「最晚一筆訊號」是否已經有 horizon=10 的結果 → 代表這個月已經熟成，可以顯示
+        # 該月「最晚一筆訊號」是否已經有 MATURITY_HORIZON 的結果 → 代表這個月已經熟成，可以顯示
         matured = conn.execute(
             "SELECT COUNT(*) FROM event_outcomes o JOIN signal_events e ON e.event_id=o.event_id "
-            "WHERE e.trade_date=? AND o.horizon=10", (last_date,)
+            "WHERE e.trade_date=? AND o.horizon=?", (last_date, MATURITY_HORIZON)
         ).fetchone()[0] > 0
         vals = [v for v in vals if v is not None]
         if not vals:
@@ -1688,9 +1705,9 @@ def refresh_monthly_strategy_stats(conn):
 def refresh_yearly_strategy_stats(conn):
     """
     年度策略勝率彙總：group_name='yearly_event_type'，多一個 year 欄位。
-    跟月度不同：月度是「整月熟不熟成」二選一，年度改成「逐筆事件各自看有沒有T+10結果，
+    跟月度不同：月度是「整月熟不熟成」二選一，年度改成「逐筆事件各自看有沒有對應 horizon 結果，
     有的就納入」——這樣今年一開始就能持續顯示已經熟成的部分，不用等到12/31才有數字，
-    是你要的「當年度直接顯示已有T+10的統計」。也因此年度數字會逐日增加樣本、逐漸逼近
+    是「當年度直接顯示已熟成部分的統計」。也因此年度數字會逐日增加樣本、逐漸逼近
     真正的全年結果，不是一次性定案的數字，每天都可能因為新增熟成事件而微調。
     """
     conn.execute("DELETE FROM summary_stats WHERE group_name='yearly_event_type'")
@@ -1760,7 +1777,7 @@ def refresh_summary_stats(conn):
     重建 summary_stats，產生：
       - event_type            各訊號類型 × horizon
       - single_<dim>          K線分/綜合分/突破分/波段分/BB分 各自的單一分數區間 × horizon
-                               （供「各分數區間 T+1~T+10 勝率走勢」五張圖使用）
+                               （供「各分數區間各 horizon 勝率走勢」五張圖使用）
       - cross_<a>_<b>         五項分數兩兩交叉（共 10 組，來自 CROSS_PAIRS）× horizon
                                （供「分數熱圖」與「十大組合總覽」使用）
     改用 SCORE_DIMS / CROSS_PAIRS 通用產生，之後再加新分數維度只需要改那兩個常數，
@@ -1893,6 +1910,13 @@ def _round_floats(rows, nd=2):
     return rows
 
 
+def _horizon_select_cols():
+    """依 HORIZONS 產生近期明細的 t<h>_return / t<h>_excess 欄位，避免手寫漏改。"""
+    parts = [f"MAX(CASE WHEN o.horizon={int(h)} THEN o.return_close_pct END) AS t{int(h)}_return" for h in HORIZONS]
+    parts += [f"MAX(CASE WHEN o.horizon={int(h)} THEN o.excess_return_pct END) AS t{int(h)}_excess" for h in HORIZONS]
+    return ",\n               ".join(parts)
+
+
 def _row_event_types(r):
     raw = r.get("event_types") or r.get("event_type") or ""
     return [x.strip() for x in str(raw).split(",") if x.strip()]
@@ -1963,28 +1987,20 @@ def export_stats_payload(db_path=DB_PATH, recent_days=None, recent_limit=None, p
                  WHEN SUM(CASE WHEN e.status = 'partial' THEN 1 ELSE 0 END) > 0 THEN 'partial'
                  ELSE MAX(e.status)
                END AS status,
-               MAX(CASE WHEN o.horizon=1 THEN o.return_close_pct END) AS t1_return,
-               MAX(CASE WHEN o.horizon=3 THEN o.return_close_pct END) AS t3_return,
-               MAX(CASE WHEN o.horizon=5 THEN o.return_close_pct END) AS t5_return,
-               MAX(CASE WHEN o.horizon=7 THEN o.return_close_pct END) AS t7_return,
-               MAX(CASE WHEN o.horizon=10 THEN o.return_close_pct END) AS t10_return,
-               MAX(CASE WHEN o.horizon=1 THEN o.excess_return_pct END) AS t1_excess,
-               MAX(CASE WHEN o.horizon=3 THEN o.excess_return_pct END) AS t3_excess,
-               MAX(CASE WHEN o.horizon=5 THEN o.excess_return_pct END) AS t5_excess,
-               MAX(CASE WHEN o.horizon=7 THEN o.excess_return_pct END) AS t7_excess,
-               MAX(CASE WHEN o.horizon=10 THEN o.excess_return_pct END) AS t10_excess
+               /*HORIZON_COLS*/
         FROM signal_events e
         LEFT JOIN event_outcomes o ON o.event_id=e.event_id
         WHERE (? IS NULL OR e.trade_date >= date('now', ?))
         GROUP BY e.trade_date, e.ticker
         ORDER BY e.trade_date DESC, e.ticker
-        """,
+        """.replace("/*HORIZON_COLS*/", _horizon_select_cols()),
         ((None, None) if recent_days is None else (f"-{int(recent_days)} days",) * 2),
     ).fetchall()]
     _round_floats(recent)
     _round_floats(summary)
     # 總覽型小工具用的全歷史精簡資料（陣列比物件省體積）
-    lite = [[r["ticker"], r["name"], r["trade_date"], r.get("t5_return"), r.get("t5_excess")] for r in recent]
+    _pk = int(PRIMARY_HORIZON)
+    lite = [[r["ticker"], r["name"], r["trade_date"], r.get(f"t{_pk}_return"), r.get(f"t{_pk}_excess")] for r in recent]
     _tt = {}
     for r in recent:
         for t in _row_event_types(r):
@@ -2106,6 +2122,8 @@ def export_stats_payload(db_path=DB_PATH, recent_days=None, recent_limit=None, p
         "summary": summary,
         "recent": recent,
         "recent_total": recent_total,
+        "horizons": list(HORIZONS),
+        "primary_horizon": int(PRIMARY_HORIZON),
         "lite": lite,
         "ticker_types": ticker_types,
         "threshold_stats": threshold_stats,
