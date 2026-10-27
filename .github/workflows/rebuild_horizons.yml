@@ -5,6 +5,10 @@ name: Rebuild outcomes for new horizons (one-time)
 on:
   workflow_dispatch:
     inputs:
+      max_mismatch_rate:
+        description: "新舊 T+1/5/10 不一致占比上限（預設 0.02 = 2%）。看過診斷報告確認原因無害後，才調高重跑"
+        type: string
+        default: "0.02"
       force:
         description: "驗證未通過也強制覆蓋（一般請保持 false）"
         type: boolean
@@ -38,7 +42,15 @@ jobs:
           pip install yfinance pandas numpy openpyxl requests
 
       - name: Rebuild outcomes (validated, aborts on mismatch)
-        run: python rebuild_horizons.py ${{ inputs.force && '--force' || '' }}
+        run: python rebuild_horizons.py --max-mismatch-rate ${{ inputs.max_mismatch_rate }} ${{ inputs.force && '--force' || '' }}
+
+      - name: Upload mismatch report (for diagnosis)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebuild-mismatches
+          path: data/rebuild_mismatches.csv
+          if-no-files-found: ignore
 
       - name: Commit and push rebuilt data
         run: |
