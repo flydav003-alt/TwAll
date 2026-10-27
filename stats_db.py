@@ -1893,7 +1893,33 @@ def _round_floats(rows, nd=2):
     return rows
 
 
-def export_stats_payload(db_path=DB_PATH, recent_days=90):
+def _row_event_types(r):
+    raw = r.get("event_types") or r.get("event_type") or ""
+    return [x.strip() for x in str(raw).split(",") if x.strip()]
+
+
+def select_recent_rows(rows, recent_limit=1000, per_type_limit=1000):
+    """依「筆數」而不是「天數」挑近期明細（rows 需已按日期新→舊排序）：
+    全體最新 recent_limit 筆 ∪ 每個訊號類型各自最新 per_type_limit 筆。
+    這樣選某個策略時，不會因為它的訊號比較舊就被日期窗口切掉；輸出維持原本的新→舊順序。"""
+    if not rows:
+        return rows
+    keep = set(range(min(recent_limit, len(rows)))) if recent_limit else set()
+    if per_type_limit:
+        seen = {}
+        for i, r in enumerate(rows):
+            for t in _row_event_types(r):
+                n = seen.get(t, 0)
+                if n < per_type_limit:
+                    keep.add(i)
+                    seen[t] = n + 1
+    return [rows[i] for i in sorted(keep)]
+
+
+def export_stats_payload(db_path=DB_PATH, recent_days=None, recent_limit=None, per_type_limit=None):
+    """recent_days / recent_limit / per_type_limit 皆為 None → 輸出完整歷史明細。
+    另外附 lite（全歷史每列精簡版）與 ticker_types，供 T+5 KPI、報酬分布、常勝標的
+    這三個「總覽型」小工具使用，讓它們不受近期明細筆數限制。"""
     if not os.path.exists(db_path):
         return {"ready": False}
     conn = connect(db_path)
@@ -1949,14 +1975,24 @@ def export_stats_payload(db_path=DB_PATH, recent_days=90):
                MAX(CASE WHEN o.horizon=10 THEN o.excess_return_pct END) AS t10_excess
         FROM signal_events e
         LEFT JOIN event_outcomes o ON o.event_id=e.event_id
-        WHERE e.trade_date >= date('now', ?)
+        WHERE (? IS NULL OR e.trade_date >= date('now', ?))
         GROUP BY e.trade_date, e.ticker
         ORDER BY e.trade_date DESC, e.ticker
         """,
-        (f"-{int(recent_days)} days",),
+        ((None, None) if recent_days is None else (f"-{int(recent_days)} days",) * 2),
     ).fetchall()]
     _round_floats(recent)
     _round_floats(summary)
+    # 總覽型小工具用的全歷史精簡資料（陣列比物件省體積）
+    lite = [[r["ticker"], r["name"], r["trade_date"], r.get("t5_return"), r.get("t5_excess")] for r in recent]
+    _tt = {}
+    for r in recent:
+        for t in _row_event_types(r):
+            _tt.setdefault(r["ticker"], set()).add(t)
+    ticker_types = {k: sorted(v) for k, v in _tt.items()}
+    recent_total = len(recent)
+    if recent_limit or per_type_limit:
+        recent = select_recent_rows(recent, recent_limit or 0, per_type_limit or 0)
     threshold_stats = []
     threshold_defs = [
         ("K線 >= 70", "e.kline_score >= 70"),
@@ -2069,17 +2105,20 @@ def export_stats_payload(db_path=DB_PATH, recent_days=90):
         "counts": counts,
         "summary": summary,
         "recent": recent,
+        "recent_total": recent_total,
+        "lite": lite,
+        "ticker_types": ticker_types,
         "threshold_stats": threshold_stats,
         "watch": watch,
         "monthly_regime": monthly_regime,
     }
 
 
-def write_stats_payload(db_path=DB_PATH, out_path="data/stats_payload.json", recent_days=120):
-    """GitHub Actions 用：預先算好統計 payload 存成 JSON，Streamlit 開頁時直接讀檔、不再現場查詢。
-    recent_days 取 120 天（涵蓋 T+30 + 連假緩衝）；頁面預設只顯示近 45 天，按鈕才展開到全部。"""
+def write_stats_payload(db_path=DB_PATH, out_path="data/stats_payload.json"):
+    """GitHub Actions 用：預先算好完整統計 payload 存成 JSON（含全歷史明細），
+    Streamlit 開頁時直接讀檔、不再現場查詢；近期明細的筆數限制由 select_recent_rows 在載入時套用。"""
     import json as _json
-    payload = export_stats_payload(db_path, recent_days=recent_days)
+    payload = export_stats_payload(db_path)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     tmp = out_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
