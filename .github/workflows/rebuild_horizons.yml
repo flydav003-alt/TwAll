@@ -1,0 +1,49 @@
+name: Rebuild outcomes for new horizons (one-time)
+
+# 一次性手動執行：把 stats.db 依新的 HORIZONS（T+1/5/10/20/40）全部重算。
+# 在副本上重算並對帳，驗證通過才會覆蓋 data/stats.db 並 commit；未通過會直接失敗，不會動到資料。
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "驗證未通過也強制覆蓋（一般請保持 false）"
+        type: boolean
+        default: false
+
+concurrency:
+  group: stats-db-write
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas numpy openpyxl requests
+
+      - name: Rebuild outcomes (validated, aborts on mismatch)
+        run: python rebuild_horizons.py ${{ inputs.force && '--force' || '' }}
+
+      - name: Commit and push rebuilt data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name  "github-actions[bot]"
+          git add data/stats.db data/stats_payload.json
+          git diff --staged --quiet || git commit -m "chore: rebuild outcomes for horizons T+1/5/10/20/40 $(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M %Z')"
+          git push
